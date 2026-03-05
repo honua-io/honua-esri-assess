@@ -128,6 +128,42 @@ describe("migration demo helpers", () => {
     expect(startRequest?.body).toContain("\"tableName\":\"incidents\"");
   });
 
+  it("redacts API keys from migration demo error messages", async () => {
+    const apiKey = "demo-key-secret";
+    const fetchFn: typeof fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          error: `apiKey=${apiKey} is invalid`,
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        },
+      )) as typeof fetch;
+
+    await expect(
+      runGeoservicesImportJob({
+        adminBaseUrl: "http://127.0.0.1:5050",
+        adminApiKey: apiKey,
+        sourceServiceUrl: "https://arcgis.example/rest/services/incidents/FeatureServer",
+        layerId: 0,
+        tableName: "incidents",
+        fetchFn,
+      }),
+    ).rejects.toThrow("[REDACTED]");
+
+    await expect(
+      runGeoservicesImportJob({
+        adminBaseUrl: "http://127.0.0.1:5050",
+        adminApiKey: apiKey,
+        sourceServiceUrl: "https://arcgis.example/rest/services/incidents/FeatureServer",
+        layerId: 0,
+        tableName: "incidents",
+        fetchFn,
+      }),
+    ).rejects.not.toThrow(apiKey);
+  });
+
   it("runs migration demo codemod stage and writes fixture output", async () => {
     const outputDir = makeTempDir();
     const report = await runMigrationDemo({

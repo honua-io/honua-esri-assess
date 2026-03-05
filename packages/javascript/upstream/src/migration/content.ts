@@ -9,6 +9,7 @@ const DEFAULT_PORTAL_PAGE_SIZE = 100;
 const DEFAULT_LAYER_QUERY_PAGE_SIZE = 2_000;
 const DEFAULT_IMPORT_TIMEOUT_MS = 10 * 60 * 1_000;
 const DEFAULT_IMPORT_POLL_INTERVAL_MS = 2_000;
+const REDACTED_SECRET = "[REDACTED]";
 
 const MANUAL_INTERVENTION_WARNING_CODES = new Set([
   "unsupported-renderer",
@@ -912,12 +913,14 @@ async function fetchJson(fetchFn: typeof fetch, url: string): Promise<unknown> {
   }
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} for ${url}: ${text.slice(0, 300)}`);
+    throw new Error(
+      `HTTP ${response.status} for ${redactSensitiveUrl(url)}: ${redactSensitiveText(text).slice(0, 300)}`,
+    );
   }
 
   if (isRecord(body) && isRecord(body.error)) {
     const code = readOptionalNumber(body.error, "code");
-    const message = readOptionalString(body.error, "message") ?? "ArcGIS error";
+    const message = redactSensitiveText(readOptionalString(body.error, "message") ?? "ArcGIS error");
     throw new Error(`ArcGIS error${code ? ` ${code}` : ""}: ${message}`);
   }
 
@@ -942,6 +945,37 @@ function quotePortalQueryValue(value: string): string {
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
+}
+
+function redactSensitiveUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    for (const key of Array.from(parsed.searchParams.keys())) {
+      if (isSensitiveKey(key)) {
+        parsed.searchParams.set(key, REDACTED_SECRET);
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return redactSensitiveText(url);
+  }
+}
+
+function redactSensitiveText(value: string): string {
+  return value
+    .replace(
+      /([?&](?:token|api[_-]?key|access[_-]?token|auth[_-]?token)=)[^&#\s]*/gi,
+      `$1${REDACTED_SECRET}`,
+    )
+    .replace(
+      /("(?:token|api[_-]?key|access[_-]?token|auth[_-]?token)"\s*:\s*")([^"]*)(")/gi,
+      `$1${REDACTED_SECRET}$3`,
+    )
+    .replace(/((?:token|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[=:]\s*)([^,\s]+)/gi, `$1${REDACTED_SECRET}`);
+}
+
+function isSensitiveKey(key: string): boolean {
+  return /token|api[_-]?key|access[_-]?token|auth[_-]?token/i.test(key);
 }
 
 function buildUrl(base: string, params: Record<string, string>): string {

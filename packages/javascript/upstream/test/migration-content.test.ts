@@ -106,6 +106,40 @@ describe("migration content workflow", () => {
     expect(reconcile.summary.webMapsManual).toBe(0);
     expect(reconcile.summary.webMapsFailed).toBe(0);
   });
+
+  it("redacts tokens from migration content error messages", async () => {
+    const portalUrl = "https://org.maps.arcgis.com";
+    const token = "super-secret-token";
+    const fetchFn: typeof fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 498,
+            message: `token=${token} is invalid`,
+          },
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        },
+      )) as typeof fetch;
+
+    await expect(
+      runContentScan({
+        portalUrl,
+        token,
+        fetchFn,
+      }),
+    ).rejects.toThrow("[REDACTED]");
+
+    await expect(
+      runContentScan({
+        portalUrl,
+        token,
+        fetchFn,
+      }),
+    ).rejects.not.toThrow(token);
+  });
 });
 
 function createPortalFetch(portalUrl: string): typeof fetch {

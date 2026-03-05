@@ -25,6 +25,7 @@ const IMPORT_STATUS_BY_ENUM_VALUE = new Map<number, string>([
 const TERMINAL_IMPORT_STATUSES = new Set(["Completed", "Failed", "Cancelled"]);
 const DEFAULT_IMPORT_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_IMPORT_POLL_INTERVAL_MS = 2_000;
+const REDACTED_SECRET = "[REDACTED]";
 
 export interface ParsedGeoservicesServiceUrl {
   baseUrl: string;
@@ -239,7 +240,9 @@ export async function runGeoservicesImportJob(
   const errorMessage = readOptionalString(latestProgress, "errorMessage");
 
   if (status !== "Completed") {
-    throw new Error(`Import job ${jobId} ended with status ${status}${errorMessage ? `: ${errorMessage}` : ""}`);
+    throw new Error(
+      `Import job ${jobId} ended with status ${status}${errorMessage ? `: ${redactSensitiveText(errorMessage)}` : ""}`,
+    );
   }
 
   return {
@@ -324,7 +327,9 @@ async function fetchJson(fetchFn: typeof fetch, url: string, init: RequestInit):
 
   if (!response.ok) {
     const preview = text.length > 0 ? text.slice(0, 300) : `${response.status} ${response.statusText}`;
-    throw new Error(`HTTP ${response.status} for ${url}: ${preview}`);
+    throw new Error(
+      `HTTP ${response.status} for ${redactSensitiveUrl(url)}: ${redactSensitiveText(preview)}`,
+    );
   }
 
   return body;
@@ -382,6 +387,37 @@ function buildJsonHeaders(adminApiKey?: string): Record<string, string> {
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
+}
+
+function redactSensitiveUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    for (const key of Array.from(parsed.searchParams.keys())) {
+      if (isSensitiveKey(key)) {
+        parsed.searchParams.set(key, REDACTED_SECRET);
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return redactSensitiveText(url);
+  }
+}
+
+function redactSensitiveText(value: string): string {
+  return value
+    .replace(
+      /([?&](?:token|api[_-]?key|access[_-]?token|auth[_-]?token)=)[^&#\s]*/gi,
+      `$1${REDACTED_SECRET}`,
+    )
+    .replace(
+      /("(?:token|api[_-]?key|access[_-]?token|auth[_-]?token)"\s*:\s*")([^"]*)(")/gi,
+      `$1${REDACTED_SECRET}$3`,
+    )
+    .replace(/((?:token|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[=:]\s*)([^,\s]+)/gi, `$1${REDACTED_SECRET}`);
+}
+
+function isSensitiveKey(key: string): boolean {
+  return /token|api[_-]?key|access[_-]?token|auth[_-]?token/i.test(key);
 }
 
 function resolveJobStatusUrl(importApiBase: string, providedStatusUrl: string | undefined, jobId: string): string {

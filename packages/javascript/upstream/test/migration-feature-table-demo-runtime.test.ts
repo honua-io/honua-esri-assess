@@ -158,6 +158,6 @@ describe("feature-table demo runtime", () => {
   }, 60_000);
 });
 
-function isRecord(value: unknown): value is Record<string, any> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }

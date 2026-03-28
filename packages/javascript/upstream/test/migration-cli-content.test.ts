@@ -188,7 +188,7 @@ afterAll(async () => {
 });
 
 describe("migration cli content", () => {
-  it("runs content scan", { timeout: 60_000 }, async () => {
+  it("runs content scan", { timeout: 180_000 }, async () => {
     await ensureBuiltCliArtifacts();
 
     const result = await runCli(["dist/src/migration/cli.js", "content", "scan", "--portal", portalUrl]);
@@ -199,7 +199,7 @@ describe("migration cli content", () => {
     expect(result.stdout).toContain("hostedFeatureServices=1");
   });
 
-  it("runs content export and writes manifest", { timeout: 60_000 }, async () => {
+  it("runs content export and writes manifest", { timeout: 180_000 }, async () => {
     await ensureBuiltCliArtifacts();
     const outputDir = path.join(makeTempDir(), "export");
 

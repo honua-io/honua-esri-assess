@@ -263,9 +263,7 @@ describe("runEsriCompatCodemod", () => {
       'import { PointCompat, SimpleLineSymbolCompat, SimpleMarkerSymbolCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).toContain("new PointCompat({ x: -157.81, y: 21.30, spatialReference: { wkid: 4326 } })");
-    expect(nextSource).toContain(
-      "new SimpleLineSymbolCompat({ style: 'solid', color: 'white', width: 1 })",
-    );
+    expect(nextSource).toContain("new SimpleLineSymbolCompat({ style: 'solid', color: 'white', width: 1 })");
     expect(nextSource).toContain(
       "new SimpleMarkerSymbolCompat({ style: 'circle', color: 'orange', size: 12, outline })",
     );
@@ -333,7 +331,9 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("new SpatialReferenceCompat({ wkid: 4326 })");
     expect(nextSource).toContain("new ExtentCompat({ xmin: -10, ymin: -5, xmax: 30, ymax: 15, spatialReference: sr })");
     expect(nextSource).toContain("new PolylineCompat({ paths: [[[0, 0], [1, 1]]], spatialReference: sr })");
-    expect(nextSource).toContain("new PolygonCompat({ rings: [[[0, 0], [10, 0], [10, 10], [0, 0]]], spatialReference: sr })");
+    expect(nextSource).toContain(
+      "new PolygonCompat({ rings: [[[0, 0], [10, 0], [10, 10], [0, 0]]], spatialReference: sr })",
+    );
     expect(nextSource).not.toContain("@arcgis/core/geometry/SpatialReference");
     expect(nextSource).not.toContain("@arcgis/core/geometry/Extent");
     expect(nextSource).not.toContain("@arcgis/core/geometry/Polyline");
@@ -463,7 +463,8 @@ describe("runEsriCompatCodemod", () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: "label-class",
-          reason: "LabelClass options include unsupported properties: deconflictionStrategy; requires manual migration.",
+          reason:
+            "LabelClass options include unsupported properties: deconflictionStrategy; requires manual migration.",
         }),
       ]),
     );
@@ -595,7 +596,9 @@ describe("runEsriCompatCodemod", () => {
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain("@arcgis/core/renderers/SimpleRenderer");
-    expect(nextSource).toContain("new SimpleRenderer({ symbol: { type: 'simple-fill' }, authoringInfo: { foo: true } })");
+    expect(nextSource).toContain(
+      "new SimpleRenderer({ symbol: { type: 'simple-fill' }, authoringInfo: { foo: true } })",
+    );
   });
 
   it("rewrites safe FeatureSet constructor and removes ArcGIS import", () => {
@@ -842,10 +845,10 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { FeatureLayerCompat, FeatureTableCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain(
-      'import { FeatureLayerCompat, FeatureTableCompat } from "@honua/sdk-esri-compat";',
+      "new FeatureTableCompat({ layer, container: 'feature-table', where: '1=1', objectIdField: 'OBJECTID' })",
     );
-    expect(nextSource).toContain("new FeatureTableCompat({ layer, container: 'feature-table', where: '1=1', objectIdField: 'OBJECTID' })");
     expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureTable");
   });
 
@@ -913,7 +916,9 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain(
       'import { FeatureLayerCompat, FeatureTableCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
     );
-    expect(nextSource).toContain("new MapViewCompat({ map, container: 'viewDiv', popup: { dockEnabled: true, dockOptions: { breakpoint: false } } })");
+    expect(nextSource).toContain(
+      "new MapViewCompat({ map, container: 'viewDiv', popup: { dockEnabled: true, dockOptions: { breakpoint: false } } })",
+    );
     expect(nextSource).toContain("const table = new FeatureTableCompat({");
     expect(nextSource).toContain("relatedRecordsEnabled: true");
     expect(nextSource).toContain("filterBySelectionEnabled: false");
@@ -1040,9 +1045,7 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'import { FeatureCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(nextSource).toContain('import { FeatureCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain(
       "new FeatureCompat({ view, container: 'feature-div', title: 'Selected', graphic: { attributes: { OBJECTID: 1 } } })",
     );
@@ -1081,9 +1084,7 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'import { FeatureFormCompat, FeatureLayerCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(nextSource).toContain('import { FeatureFormCompat, FeatureLayerCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain(
       "new FeatureFormCompat({ layer, container: 'feature-form', feature: { attributes: { OBJECTID: 1 } }, fieldConfig: [{ name: 'status' }], groupDisplay: 'all', headingLevel: 3, visibleElements: { description: true } })",
     );
@@ -1165,10 +1166,10 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { MapCompat, MapViewCompat, PrintCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain(
-      'import { MapCompat, MapViewCompat, PrintCompat } from "@honua/sdk-esri-compat";',
+      "new PrintCompat({ view, container: 'print-div', printServiceUrl: printUrl, templateOptions: { format: 'pdf', layout: 'a4-landscape' } })",
     );
-    expect(nextSource).toContain("new PrintCompat({ view, container: 'print-div', printServiceUrl: printUrl, templateOptions: { format: 'pdf', layout: 'a4-landscape' } })");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Print");
   });
 
@@ -1206,9 +1207,7 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'import { MapCompat, MapViewCompat, SwipeCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(nextSource).toContain('import { MapCompat, MapViewCompat, SwipeCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain(
       "new SwipeCompat({ view, container: 'swipe-div', position: 40, leadingLayers: [], trailingLayers: [] })",
     );
@@ -1314,9 +1313,7 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'import { MapCompat, MapViewCompat, TableListCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(nextSource).toContain('import { MapCompat, MapViewCompat, TableListCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain(
       "new TableListCompat({ view, container: 'table-list', tables: [{ id: 'parcels' }], autoRefresh: false })",
     );
@@ -1397,7 +1394,9 @@ describe("runEsriCompatCodemod", () => {
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain('import { GraphicsLayerCompat } from "@honua/sdk-esri-compat";');
-    expect(nextSource).toContain("const graphics = new GraphicsLayerCompat({ id: 'graphics', visible: true, opacity: 0.9 });");
+    expect(nextSource).toContain(
+      "const graphics = new GraphicsLayerCompat({ id: 'graphics', visible: true, opacity: 0.9 });",
+    );
     expect(nextSource).not.toContain("@arcgis/core/layers/GraphicsLayer");
   });
 
@@ -1652,7 +1651,9 @@ describe("runEsriCompatCodemod", () => {
       "const routeLayer = new RouteLayerCompat({ stops: [{ name: 'Start', location: [-157.0, 21.3] }, { name: 'End', location: [-157.01, 21.31] }] });",
     );
     expect(nextSource).toContain("const layerList = new LayerListCompat({ view, container: 'layer-list-div' });");
-    expect(nextSource).toContain("const legend = new LegendCompat({ view, container: 'legend-div', includeHidden: true, autoRefresh: false });");
+    expect(nextSource).toContain(
+      "const legend = new LegendCompat({ view, container: 'legend-div', includeHidden: true, autoRefresh: false });",
+    );
     expect(nextSource).toContain("const popup = new PopupCompat({ view, container: 'popup-div', dockEnabled: true });");
     expect(nextSource).toContain(
       "const home = new HomeCompat({ view, container: 'home-div', viewpoint: { center: [0, 0], zoom: 3 } });",
@@ -1663,7 +1664,9 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain(
       "const locate = new LocateCompat({ view, container: 'locate-div', zoom: 12, locateProvider: async () => ({ coords: { latitude: 21.3069, longitude: -157.8583 } }) });",
     );
-    expect(nextSource).toContain("const scaleBar = new ScaleBarCompat({ view, container: 'scale-div', unit: 'dual' });");
+    expect(nextSource).toContain(
+      "const scaleBar = new ScaleBarCompat({ view, container: 'scale-div', unit: 'dual' });",
+    );
     expect(nextSource).toContain(
       "const search = new SearchCompat({ view, container: 'search-div', includeDefaultSources: false, autoRefreshSources: false });",
     );
@@ -1772,12 +1775,8 @@ describe("runEsriCompatCodemod", () => {
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
     expect(nextSource).toContain("const fl = HonuaEsriLeaflet.featureLayer({ url: serviceUrl });");
-    expect(nextSource).toContain(
-      "const mil = HonuaEsriLeaflet.dynamicMapLayer({ url: mapUrl, visible: true });",
-    );
-    expect(nextSource).toContain(
-      "const tiled = HonuaEsriLeaflet.tiledMapLayer({ url: tileUrl, opacity: 0.4 });",
-    );
+    expect(nextSource).toContain("const mil = HonuaEsriLeaflet.dynamicMapLayer({ url: mapUrl, visible: true });");
+    expect(nextSource).toContain("const tiled = HonuaEsriLeaflet.tiledMapLayer({ url: tileUrl, opacity: 0.4 });");
     expect(nextSource).not.toContain("@arcgis/core/layers/FeatureLayer");
     expect(nextSource).not.toContain("@arcgis/core/layers/MapImageLayer");
     expect(nextSource).not.toContain("@arcgis/core/layers/TileLayer");
@@ -1936,8 +1935,12 @@ describe("runEsriCompatCodemod", () => {
       'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, PopupCompat, ScaleBarCompat, SceneViewCompat, SearchCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).toContain("const map = new MapCompat({ basemap: 'streets' });");
-    expect(nextSource).toContain("const view = new MapViewCompat({ map, container: 'viewDiv', center: [0, 0], zoom: 4 });");
-    expect(nextSource).toContain("const scene = new SceneViewCompat({ map, container: 'sceneDiv', viewingMode: 'global' });");
+    expect(nextSource).toContain(
+      "const view = new MapViewCompat({ map, container: 'viewDiv', center: [0, 0], zoom: 4 });",
+    );
+    expect(nextSource).toContain(
+      "const scene = new SceneViewCompat({ map, container: 'sceneDiv', viewingMode: 'global' });",
+    );
     expect(nextSource).toContain("const layerList = new LayerListCompat({ view });");
     expect(nextSource).toContain("const legend = new LegendCompat({ view });");
     expect(nextSource).toContain("const popup = new PopupCompat({ view });");
@@ -1981,7 +1984,7 @@ describe("runEsriCompatCodemod", () => {
       [
         "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
         "const layer = new FeatureLayer({ url: serviceUrl });",
-        "const ids = await layer.queryObjectIds({ where: \"1=1\" });",
+        'const ids = await layer.queryObjectIds({ where: "1=1" });',
         "void ids;",
       ].join("\n"),
       "utf8",
@@ -2004,11 +2007,9 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'import { FeatureLayerCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(nextSource).toContain('import { FeatureLayerCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain("const layer = new FeatureLayerCompat({ url: serviceUrl });");
-    expect(nextSource).toContain("const ids = await layer.queryObjectIds({ where: \"1=1\" });");
+    expect(nextSource).toContain('const ids = await layer.queryObjectIds({ where: "1=1" });');
     expect(nextSource).not.toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
     expect(nextSource).not.toContain("@arcgis/core/layers/FeatureLayer");
   });
@@ -2021,7 +2022,7 @@ describe("runEsriCompatCodemod", () => {
       [
         "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
         "const layer = new FeatureLayer({ url: serviceUrl });",
-        "const features = await layer.queryFeatures({ where: \"1=1\" });",
+        'const features = await layer.queryFeatures({ where: "1=1" });',
         "const all = await layer.queryFeaturesAll({ pageSize: 2000 });",
         "void features; void all;",
       ].join("\n"),
@@ -2045,11 +2046,9 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'import { FeatureLayerCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(nextSource).toContain('import { FeatureLayerCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain("const layer = new FeatureLayerCompat({ url: serviceUrl });");
-    expect(nextSource).toContain("const features = await layer.queryFeatures({ where: \"1=1\" });");
+    expect(nextSource).toContain('const features = await layer.queryFeatures({ where: "1=1" });');
     expect(nextSource).toContain("const all = await layer.queryFeaturesAll({ pageSize: 2000 });");
     expect(nextSource).not.toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
     expect(nextSource).not.toContain("@arcgis/core/layers/FeatureLayer");
@@ -2063,7 +2062,7 @@ describe("runEsriCompatCodemod", () => {
       [
         "import MapImageLayer from '@arcgis/core/layers/MapImageLayer';",
         "const layer = new MapImageLayer({ url: serviceUrl });",
-        "const hit = await layer.identify({ geometry: { x: 1, y: 2 }, mapExtent: \"0,0,10,10\", imageDisplay: \"800,600,96\" });",
+        'const hit = await layer.identify({ geometry: { x: 1, y: 2 }, mapExtent: "0,0,10,10", imageDisplay: "800,600,96" });',
         "const related = await layer.queryRelatedFeatures({ layerId: 0, relationshipId: 2, objectIds: [1, 2] });",
         "void related;",
         "void hit;",
@@ -2088,11 +2087,11 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'import { MapImageLayerCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(nextSource).toContain('import { MapImageLayerCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain("const layer = new MapImageLayerCompat({ url: serviceUrl });");
-    expect(nextSource).toContain("const hit = await layer.identify({ geometry: { x: 1, y: 2 }, mapExtent: \"0,0,10,10\", imageDisplay: \"800,600,96\" });");
+    expect(nextSource).toContain(
+      'const hit = await layer.identify({ geometry: { x: 1, y: 2 }, mapExtent: "0,0,10,10", imageDisplay: "800,600,96" });',
+    );
     expect(nextSource).toContain(
       "const related = await layer.queryRelatedFeatures({ layerId: 0, relationshipId: 2, objectIds: [1, 2] });",
     );
@@ -2108,10 +2107,10 @@ describe("runEsriCompatCodemod", () => {
       [
         "import MapImageLayer from '@arcgis/core/layers/MapImageLayer';",
         "const layer = new MapImageLayer({ url: serviceUrl });",
-        "const features = await layer.queryFeatures({ layerId: 0, where: \"1=1\" });",
-        "const count = await layer.queryFeatureCount({ layerId: 0, where: \"1=1\" });",
+        'const features = await layer.queryFeatures({ layerId: 0, where: "1=1" });',
+        'const count = await layer.queryFeatureCount({ layerId: 0, where: "1=1" });',
         "const sub = layer.sublayer(0);",
-        "const subFeatures = await sub?.queryFeatures({ where: \"1=1\" });",
+        'const subFeatures = await sub?.queryFeatures({ where: "1=1" });',
         "void features; void count; void subFeatures;",
       ].join("\n"),
       "utf8",
@@ -2134,14 +2133,12 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'import { MapImageLayerCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(nextSource).toContain('import { MapImageLayerCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain("const layer = new MapImageLayerCompat({ url: serviceUrl });");
-    expect(nextSource).toContain("const features = await layer.queryFeatures({ layerId: 0, where: \"1=1\" });");
-    expect(nextSource).toContain("const count = await layer.queryFeatureCount({ layerId: 0, where: \"1=1\" });");
+    expect(nextSource).toContain('const features = await layer.queryFeatures({ layerId: 0, where: "1=1" });');
+    expect(nextSource).toContain('const count = await layer.queryFeatureCount({ layerId: 0, where: "1=1" });');
     expect(nextSource).toContain("const sub = layer.sublayer(0);");
-    expect(nextSource).toContain("const subFeatures = await sub?.queryFeatures({ where: \"1=1\" });");
+    expect(nextSource).toContain('const subFeatures = await sub?.queryFeatures({ where: "1=1" });');
     expect(nextSource).not.toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
     expect(nextSource).not.toContain("@arcgis/core/layers/MapImageLayer");
   });
@@ -2401,10 +2398,7 @@ describe("runEsriCompatCodemod", () => {
     const file = path.join(root, "require-map.cjs");
     fs.writeFileSync(
       file,
-      [
-        "const Map = require('@arcgis/core/Map');",
-        "const map = new Map({ basemap: 'streets' });",
-      ].join("\n"),
+      ["const Map = require('@arcgis/core/Map');", "const map = new Map({ basemap: 'streets' });"].join("\n"),
       "utf8",
     );
 
@@ -2614,9 +2608,7 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("@arcgis/core/layers/FeatureLayer");
     expect(nextSource).toContain('import { FeatureLayerCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain("const a = new FeatureLayerCompat({ url: serviceUrl });");
-    expect(nextSource).toContain(
-      "const b = new FeatureLayer({ url: serviceUrl, portalItem: { id: 'abc123' } });",
-    );
+    expect(nextSource).toContain("const b = new FeatureLayer({ url: serviceUrl, portalItem: { id: 'abc123' } });");
   });
 
   it("can annotate manual todos inline without duplicating markers on rerun", () => {
@@ -2691,10 +2683,7 @@ describe("runEsriCompatCodemod", () => {
     const file = path.join(root, "esri-config.ts");
     fs.writeFileSync(
       file,
-      [
-        "import esriConfig from '@arcgis/core/config';",
-        "esriConfig.apiKey = token;",
-      ].join("\n"),
+      ["import esriConfig from '@arcgis/core/config';", "esriConfig.apiKey = token;"].join("\n"),
       "utf8",
     );
 
@@ -2750,9 +2739,7 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'await import("@honua/sdk-esri-compat").then((m) => ({ default: m.esriConfig }))',
-    );
+    expect(nextSource).toContain('await import("@honua/sdk-esri-compat").then((m) => ({ default: m.esriConfig }))');
     expect(nextSource).not.toContain("@arcgis/core/config");
   });
 
@@ -2820,9 +2807,7 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'await import("@honua/sdk-esri-compat").then((m) => ({ default: m.esriRequest }))',
-    );
+    expect(nextSource).toContain('await import("@honua/sdk-esri-compat").then((m) => ({ default: m.esriRequest }))');
     expect(nextSource).not.toContain("@arcgis/core/request");
   });
 
@@ -2894,9 +2879,7 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'import { identityManager as IdentityManager } from "@honua/sdk-esri-compat";',
-    );
+    expect(nextSource).toContain('import { identityManager as IdentityManager } from "@honua/sdk-esri-compat";');
     expect(nextSource).not.toContain("@arcgis/core/identity/IdentityManager");
   });
 
@@ -2967,9 +2950,7 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'import { reactiveUtils } from "@honua/sdk-esri-compat";',
-    );
+    expect(nextSource).toContain('import { reactiveUtils } from "@honua/sdk-esri-compat";');
     expect(nextSource).not.toContain("@arcgis/core/core/reactiveUtils");
   });
 
@@ -3004,9 +2985,7 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'await import("@honua/sdk-esri-compat").then((m) => ({ default: m.reactiveUtils }))',
-    );
+    expect(nextSource).toContain('await import("@honua/sdk-esri-compat").then((m) => ({ default: m.reactiveUtils }))');
     expect(nextSource).not.toContain("@arcgis/core/core/reactiveUtils");
   });
 
@@ -3047,12 +3026,8 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'await import("@honua/sdk-esri-compat").then((m) => ({ default: m.MapCompat }))',
-    );
-    expect(nextSource).toContain(
-      'await import("@honua/sdk-esri-compat").then((m) => ({ default: m.MapViewCompat }))',
-    );
+    expect(nextSource).toContain('await import("@honua/sdk-esri-compat").then((m) => ({ default: m.MapCompat }))');
+    expect(nextSource).toContain('await import("@honua/sdk-esri-compat").then((m) => ({ default: m.MapViewCompat }))');
     expect(nextSource).not.toContain("@arcgis/core/Map.js");
     expect(nextSource).not.toContain("@arcgis/core/views/MapView");
   });
@@ -3089,9 +3064,7 @@ describe("runEsriCompatCodemod", () => {
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
-    expect(nextSource).toContain(
-      "await Promise.resolve({ default: HonuaEsriLeaflet.featureLayer })",
-    );
+    expect(nextSource).toContain("await Promise.resolve({ default: HonuaEsriLeaflet.featureLayer })");
     expect(nextSource).not.toContain("@arcgis/core/layers/FeatureLayer");
   });
 
@@ -3169,10 +3142,7 @@ describe("runEsriCompatCodemod", () => {
 
     fs.writeFileSync(
       brokenFile,
-      [
-        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
-        "const broken = new FeatureLayer({",
-      ].join("\n"),
+      ["import FeatureLayer from '@arcgis/core/layers/FeatureLayer';", "const broken = new FeatureLayer({"].join("\n"),
       "utf8",
     );
     fs.writeFileSync(
@@ -3282,9 +3252,7 @@ describe("runEsriCompatCodemod", () => {
     expect(result.metrics.manualCallSites).toBe(0);
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'import { FeatureLayerCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(nextSource).toContain('import { FeatureLayerCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain("new FeatureLayerCompat({ url: serviceUrl })");
     expect(nextSource).not.toContain("@arcgis/core/layers");
   });
@@ -3325,9 +3293,7 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextAppSource = fs.readFileSync(appFile, "utf8");
-    expect(nextAppSource).toContain(
-      'import { FeatureLayerCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(nextAppSource).toContain('import { FeatureLayerCompat } from "@honua/sdk-esri-compat";');
     expect(nextAppSource).toContain("new FeatureLayerCompat({ url: serviceUrl })");
   });
 
@@ -3336,16 +3302,8 @@ describe("runEsriCompatCodemod", () => {
     const baseWrapper = path.join(root, "arcgis-wrapper.ts");
     const chainWrapper = path.join(root, "chain-wrapper.ts");
     const appFile = path.join(root, "app.ts");
-    fs.writeFileSync(
-      baseWrapper,
-      "export { default as MapView } from '@arcgis/core/views/MapView';\n",
-      "utf8",
-    );
-    fs.writeFileSync(
-      chainWrapper,
-      "export { MapView } from './arcgis-wrapper';\n",
-      "utf8",
-    );
+    fs.writeFileSync(baseWrapper, "export { default as MapView } from '@arcgis/core/views/MapView';\n", "utf8");
+    fs.writeFileSync(chainWrapper, "export { MapView } from './arcgis-wrapper';\n", "utf8");
     fs.writeFileSync(
       appFile,
       [
@@ -3373,9 +3331,7 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextAppSource = fs.readFileSync(appFile, "utf8");
-    expect(nextAppSource).toContain(
-      'import { MapViewCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(nextAppSource).toContain('import { MapViewCompat } from "@honua/sdk-esri-compat";');
     expect(nextAppSource).toContain("new MapViewCompat({ map, container: 'viewDiv' })");
   });
 

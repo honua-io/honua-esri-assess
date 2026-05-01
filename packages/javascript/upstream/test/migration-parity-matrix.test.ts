@@ -52,9 +52,7 @@ describe("JS parity matrix", () => {
     const tableListWidget = matrix.find((row) => row.kind === "table-list-widget");
     const featureTemplatesWidget = matrix.find((row) => row.kind === "feature-templates-widget");
     const basemapLayerListWidget = matrix.find((row) => row.kind === "basemap-layer-list-widget");
-    const distanceMeasurement2dWidget = matrix.find(
-      (row) => row.kind === "distance-measurement-2d-widget",
-    );
+    const distanceMeasurement2dWidget = matrix.find((row) => row.kind === "distance-measurement-2d-widget");
     const areaMeasurement2dWidget = matrix.find((row) => row.kind === "area-measurement-2d-widget");
     const query = matrix.find((row) => row.kind === "query");
     const oauthInfo = matrix.find((row) => row.kind === "oauth-info");
@@ -245,10 +243,7 @@ describe("JS parity matrix", () => {
     const matrix = getJsParityMatrix();
     const summary = summarizeJsParityMatrix(matrix);
     const totalHonua = Object.values(summary.honuaCompat).reduce((acc, value) => acc + value, 0);
-    const totalEsriLeaflet = Object.values(summary.esriLeaflet).reduce(
-      (acc, value) => acc + value,
-      0,
-    );
+    const totalEsriLeaflet = Object.values(summary.esriLeaflet).reduce((acc, value) => acc + value, 0);
 
     expect(totalHonua).toBe(matrix.length);
     expect(totalEsriLeaflet).toBe(matrix.length);

@@ -1,10 +1,10 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { getProjectRoot, withCliLock } from "./migration-cli-lock.js";
 
 const tempDirs: string[] = [];
 let builtOnce = false;
@@ -13,36 +13,6 @@ function makeTempDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "honua-cli-matrix-"));
   tempDirs.push(dir);
   return dir;
-}
-
-function getProjectRoot(): string {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-}
-
-function sleep(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function withCliLock<T>(work: () => T): T {
-  const lockDir = path.join(getProjectRoot(), ".tmp", "vitest-cli-lock");
-  fs.mkdirSync(path.dirname(lockDir), { recursive: true });
-  for (;;) {
-    try {
-      fs.mkdirSync(lockDir);
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-        throw error;
-      }
-      sleep(25);
-    }
-  }
-
-  try {
-    return work();
-  } finally {
-    fs.rmSync(lockDir, { recursive: true, force: true });
-  }
 }
 
 function ensureBuiltCliArtifacts(): void {
@@ -139,12 +109,8 @@ describe("migration cli parity matrix", () => {
     const tableListWidget = report.matrix.find((row) => row.kind === "table-list-widget");
     const featureTemplatesWidget = report.matrix.find((row) => row.kind === "feature-templates-widget");
     const basemapLayerListWidget = report.matrix.find((row) => row.kind === "basemap-layer-list-widget");
-    const distanceMeasurement2dWidget = report.matrix.find(
-      (row) => row.kind === "distance-measurement-2d-widget",
-    );
-    const areaMeasurement2dWidget = report.matrix.find(
-      (row) => row.kind === "area-measurement-2d-widget",
-    );
+    const distanceMeasurement2dWidget = report.matrix.find((row) => row.kind === "distance-measurement-2d-widget");
+    const areaMeasurement2dWidget = report.matrix.find((row) => row.kind === "area-measurement-2d-widget");
     const query = report.matrix.find((row) => row.kind === "query");
     const oauthInfo = report.matrix.find((row) => row.kind === "oauth-info");
     const identityManager = report.matrix.find((row) => row.kind === "identity-manager");

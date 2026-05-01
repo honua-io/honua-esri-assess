@@ -1,7 +1,7 @@
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -83,9 +83,7 @@ afterEach(() => {
 
 describe("feature-table demo runtime", () => {
   it("migrates and executes primary related-records fixture with table/map and legend flows", async () => {
-    const { codemodResult, report, output } = await migrateAndRunFixture(
-      "esri-demo-feature-table-relates-app",
-    );
+    const { codemodResult, report, output } = await migrateAndRunFixture("esri-demo-feature-table-relates-app");
 
     expect(codemodResult.filesChanged).toBe(1);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
@@ -119,12 +117,7 @@ describe("feature-table demo runtime", () => {
     expect(output.layerListCount).toBeGreaterThanOrEqual(2);
     expect(output.legendLayerCount).toBeGreaterThanOrEqual(1);
     expect(output.legendEntryCount).toBeGreaterThanOrEqual(1);
-    expect(output.widgetCtors).toEqual([
-      "FeatureTableCompat",
-      "PopupCompat",
-      "LayerListCompat",
-      "LegendCompat",
-    ]);
+    expect(output.widgetCtors).toEqual(["FeatureTableCompat", "PopupCompat", "LayerListCompat", "LegendCompat"]);
   }, 60_000);
 
   it("migrates and executes fallback popup-interaction fixture", async () => {

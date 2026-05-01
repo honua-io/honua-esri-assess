@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { parseWebMap } from "../webmap/parse.js";
 import type { WebMapJson } from "../webmap/types.js";
-import { runGeoservicesImportJob, type GeoservicesImportJobReport } from "./demo.js";
+import { type GeoservicesImportJobReport, runGeoservicesImportJob } from "./demo.js";
 
 const DEFAULT_PORTAL_PAGE_SIZE = 100;
 const DEFAULT_LAYER_QUERY_PAGE_SIZE = 2_000;
@@ -963,14 +963,8 @@ function redactSensitiveUrl(url: string): string {
 
 function redactSensitiveText(value: string): string {
   return value
-    .replace(
-      /([?&](?:token|api[_-]?key|access[_-]?token|auth[_-]?token)=)[^&#\s]*/gi,
-      `$1${REDACTED_SECRET}`,
-    )
-    .replace(
-      /("(?:token|api[_-]?key|access[_-]?token|auth[_-]?token)"\s*:\s*")([^"]*)(")/gi,
-      `$1${REDACTED_SECRET}$3`,
-    )
+    .replace(/([?&](?:token|api[_-]?key|access[_-]?token|auth[_-]?token)=)[^&#\s]*/gi, `$1${REDACTED_SECRET}`)
+    .replace(/("(?:token|api[_-]?key|access[_-]?token|auth[_-]?token)"\s*:\s*")([^"]*)(")/gi, `$1${REDACTED_SECRET}$3`)
     .replace(/((?:token|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[=:]\s*)([^,\s]+)/gi, `$1${REDACTED_SECRET}`);
 }
 

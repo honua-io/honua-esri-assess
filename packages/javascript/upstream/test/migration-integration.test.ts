@@ -200,22 +200,16 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain(
       'const simple = new FeatureLayerCompat({ url: "https://example.test/rest/services/default/FeatureServer/0" });',
     );
-    expect(migratedMain).toContain(
-      'const map = new MapCompat({ basemap: "streets-vector", layers: [simple] });',
-    );
+    expect(migratedMain).toContain('const map = new MapCompat({ basemap: "streets-vector", layers: [simple] });');
     expect(migratedMain).toContain("const mapView = new MapViewCompat({");
-    expect(migratedMain).toContain(
-      'const complex = new FeatureLayerCompat({ url: layerUrl, outFields: ["*"] });',
-    );
+    expect(migratedMain).toContain('const complex = new FeatureLayerCompat({ url: layerUrl, outFields: ["*"] });');
     expect(migratedMain).not.toContain('import FeatureLayer from "@arcgis/core/layers/FeatureLayer";');
     expect(migratedMain).not.toContain('import WebMap from "@arcgis/core/WebMap";');
     expect(migratedMain).not.toContain('import Map from "@arcgis/core/Map";');
     expect(migratedMain).not.toContain('import MapView from "@arcgis/core/views/MapView";');
 
     const migratedLazy = fs.readFileSync(path.join(workingCopy, "src", "lazy.ts"), "utf8");
-    expect(migratedLazy).toContain(
-      'import("@honua/sdk-esri-compat").then((m) => ({ default: m.SceneViewCompat }))',
-    );
+    expect(migratedLazy).toContain('import("@honua/sdk-esri-compat").then((m) => ({ default: m.SceneViewCompat }))');
     expect(migratedLazy).not.toContain("@arcgis/core/views/SceneView");
   });
 
@@ -272,9 +266,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates a hit-test sample app with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-hit-test-sample-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-hit-test-sample-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -328,9 +320,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates map image layer app flow with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-map-image-layer-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-map-image-layer-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -375,9 +365,7 @@ describe("arcgis migration integration", () => {
     ]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
-    expect(migratedMain).toContain(
-      'import { MapCompat, MapImageLayerCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(migratedMain).toContain('import { MapCompat, MapImageLayerCompat } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const parcels = new MapImageLayerCompat({");
     expect(migratedMain).toContain("const map = new MapCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/layers/MapImageLayer");
@@ -385,9 +373,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates tile layer app flow with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-tile-layer-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-tile-layer-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -402,9 +388,7 @@ describe("arcgis migration integration", () => {
     expect(report.readiness).toBe("ready");
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
-    expect(migratedMain).toContain(
-      'import { MapCompat, TileLayerCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(migratedMain).toContain('import { MapCompat, TileLayerCompat } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const tiled = new TileLayerCompat({");
     expect(migratedMain).toContain("const map = new MapCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/layers/TileLayer");
@@ -412,9 +396,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates basemap constructor fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-basemap-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-basemap-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -440,9 +422,7 @@ describe("arcgis migration integration", () => {
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
-    expect(migratedMain).toContain(
-      'import { BasemapCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(migratedMain).toContain('import { BasemapCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const basemap = new BasemapCompat({");
     expect(migratedMain).toContain("const map = new MapCompat({");
     expect(migratedMain).toContain("const view = new MapViewCompat({");
@@ -450,9 +430,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates route task fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-route-task-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-route-task-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -474,9 +452,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates reactive-utils fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-reactive-utils-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-reactive-utils-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -492,9 +468,7 @@ describe("arcgis migration integration", () => {
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
-    expect(migratedMain).toContain(
-      'import { reactiveUtils } from "@honua/sdk-esri-compat";',
-    );
+    expect(migratedMain).toContain('import { reactiveUtils } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("reactiveUtils.whenOnce(() => ready);");
     expect(migratedMain).not.toContain("@arcgis/core/core/reactiveUtils");
   });
@@ -543,18 +517,14 @@ describe("arcgis migration integration", () => {
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
-    expect(migratedMain).toContain(
-      'import { FeatureLayerCompat, QueryCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(migratedMain).toContain('import { FeatureLayerCompat, QueryCompat } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const parcels = new FeatureLayerCompat({");
     expect(migratedMain).toContain("const query = new QueryCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/rest/support/Query");
   });
 
   it("migrates geometry/symbol fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-graphic-symbols-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-graphic-symbols-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -596,9 +566,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates geometry primitives fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-geometry-primitives-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-geometry-primitives-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -837,9 +805,7 @@ describe("arcgis migration integration", () => {
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
     expect(migratedMain).toContain('import { esriConfig, OAuthInfoCompat } from "@honua/sdk-esri-compat";');
-    expect(migratedMain).toContain(
-      'import { identityManager as IdentityManager } from "@honua/sdk-esri-compat";',
-    );
+    expect(migratedMain).toContain('import { identityManager as IdentityManager } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const info = new OAuthInfoCompat({");
     expect(migratedMain).toContain("IdentityManager.registerOAuthInfos([info]);");
     expect(migratedMain).not.toContain("@arcgis/core/identity/OAuthInfo");
@@ -848,9 +814,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates feature table fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-feature-table-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-feature-table-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -871,9 +835,7 @@ describe("arcgis migration integration", () => {
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
-    expect(migratedMain).toContain(
-      'import { FeatureLayerCompat, FeatureTableCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(migratedMain).toContain('import { FeatureLayerCompat, FeatureTableCompat } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const parcels = new FeatureLayerCompat({");
     expect(migratedMain).toContain("const table = new FeatureTableCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/layers/FeatureLayer");
@@ -881,9 +843,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates advanced feature table fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-feature-table-relates-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-feature-table-relates-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -921,14 +881,12 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("relatedRecordsEnabled: true");
     expect(migratedMain).toContain("attachmentsEnabled: true");
     expect(migratedMain).toContain("table.highlightIds.push(1);");
-    expect(migratedMain).toContain("table.highlightIds.on(\"change\", (event) => {");
+    expect(migratedMain).toContain('table.highlightIds.on("change", (event) => {');
     expect(migratedMain).not.toContain("@arcgis/core/widgets/FeatureTable");
   });
 
   it("migrates feature widget fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-feature-widget-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-feature-widget-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -954,17 +912,13 @@ describe("arcgis migration integration", () => {
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
-    expect(migratedMain).toContain(
-      'import { FeatureCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(migratedMain).toContain('import { FeatureCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const featureWidget = new FeatureCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Feature");
   });
 
   it("migrates feature form fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-feature-form-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-feature-form-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -985,17 +939,13 @@ describe("arcgis migration integration", () => {
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
-    expect(migratedMain).toContain(
-      'import { FeatureFormCompat, FeatureLayerCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(migratedMain).toContain('import { FeatureFormCompat, FeatureLayerCompat } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const form = new FeatureFormCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/FeatureForm");
   });
 
   it("migrates table list fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-table-list-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-table-list-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -1029,9 +979,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates feature templates fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-feature-templates-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-feature-templates-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -1060,9 +1008,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates basemap layer list fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-basemap-layer-list-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-basemap-layer-list-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -1096,9 +1042,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates print widget fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-print-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-print-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -1124,17 +1068,13 @@ describe("arcgis migration integration", () => {
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
-    expect(migratedMain).toContain(
-      'import { MapCompat, MapViewCompat, PrintCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(migratedMain).toContain('import { MapCompat, MapViewCompat, PrintCompat } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const printer = new PrintCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Print");
   });
 
   it("migrates swipe widget fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-swipe-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-swipe-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -1160,17 +1100,13 @@ describe("arcgis migration integration", () => {
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
-    expect(migratedMain).toContain(
-      'import { MapCompat, MapViewCompat, SwipeCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(migratedMain).toContain('import { MapCompat, MapViewCompat, SwipeCompat } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const swipe = new SwipeCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Swipe");
   });
 
   it("migrates distance/area measurement 2d fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-measurement-2d-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-measurement-2d-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -1211,10 +1147,9 @@ describe("arcgis migration integration", () => {
   });
 
   it("supports esri-leaflet codemod target for deterministic subset", () => {
-    const { workingCopy, report, codemodResult } = runFixtureMigration(
-      "esri-map-image-layer-app",
-      { target: "esri-leaflet" },
-    );
+    const { workingCopy, report, codemodResult } = runFixtureMigration("esri-map-image-layer-app", {
+      target: "esri-leaflet",
+    });
 
     expect(codemodResult.filesChanged).toBe(1);
     expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(2);
@@ -1243,9 +1178,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates map + group-layer + graphics-layer fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-layer-tree-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-layer-tree-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -1283,9 +1216,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates layer-list actions fixture with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-layer-list-actions-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-layer-list-actions-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -1333,9 +1264,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates map widgets and controls with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-widget-controls-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-widget-controls-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -1479,11 +1408,17 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const popup = new PopupCompat({ view, dockEnabled: true });");
     expect(migratedMain).toContain("const home = new HomeCompat({");
     expect(migratedMain).toContain("viewpoint: { center: [0, 0], zoom: 3 },");
-    expect(migratedMain).toContain('const basemapToggle = new BasemapToggleCompat({ view, nextBasemap: "satellite" });');
+    expect(migratedMain).toContain(
+      'const basemapToggle = new BasemapToggleCompat({ view, nextBasemap: "satellite" });',
+    );
     expect(migratedMain).toContain("const locate = new LocateCompat({ view, zoom: 12 });");
     expect(migratedMain).toContain('const scaleBar = new ScaleBarCompat({ view, unit: "dual" });');
-    expect(migratedMain).toContain('const search = new SearchCompat({ view, container: "search-div", includeDefaultSources: false });');
-    expect(migratedMain).toContain('const basemapGallery = new BasemapGalleryCompat({ view, container: "gallery-div" });');
+    expect(migratedMain).toContain(
+      'const search = new SearchCompat({ view, container: "search-div", includeDefaultSources: false });',
+    );
+    expect(migratedMain).toContain(
+      'const basemapGallery = new BasemapGalleryCompat({ view, container: "gallery-div" });',
+    );
     expect(migratedMain).toContain("const compass = new CompassCompat({ view });");
     expect(migratedMain).toContain("const expand = new ExpandCompat({ view, content: legend, expanded: false });");
     expect(migratedMain).toContain("const bookmarks = new BookmarksCompat({");
@@ -1499,9 +1434,9 @@ describe("arcgis migration integration", () => {
       'const editor = new EditorCompat({ view, layerInfos: [], allowedWorkflows: ["create", "update"] });',
     );
     expect(migratedMain).toContain("const track = new TrackCompat({");
-    expect(migratedMain).toContain('goToLocationEnabled: true');
-    expect(migratedMain).toContain('useHeadingEnabled: true');
-    expect(migratedMain).toContain('rotationEnabled: true');
+    expect(migratedMain).toContain("goToLocationEnabled: true");
+    expect(migratedMain).toContain("useHeadingEnabled: true");
+    expect(migratedMain).toContain("rotationEnabled: true");
     expect(migratedMain).toContain("trackProvider: async () => ({");
     expect(migratedMain).toContain("latitude: 21.3069");
     expect(migratedMain).toContain("longitude: -157.8583");
@@ -1514,9 +1449,7 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain('areaUnit: "square-kilometers"');
     expect(migratedMain).toContain("const timeSlider = new TimeSliderCompat({");
     expect(migratedMain).toContain('mode: "instant"');
-    expect(migratedMain).toContain(
-      'values: ["2024-01-01T00:00:00.000Z", "2024-02-01T00:00:00.000Z"]',
-    );
+    expect(migratedMain).toContain('values: ["2024-01-01T00:00:00.000Z", "2024-02-01T00:00:00.000Z"]');
     expect(migratedMain).toContain('view.ui.add(layerList, "top-right");');
     expect(migratedMain).toContain('view.ui.add([legend, home], "top-left");');
     expect(migratedMain).toContain('view.ui.add(popup, { position: "manual", index: 0 });');
@@ -1562,9 +1495,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates supported dynamic import usage with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-dynamic-map-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-dynamic-map-app");
 
     expect(scanReport.flags).toContain("dynamic-import-detected");
     expect(codemodResult.filesChanged).toBe(1);
@@ -1604,11 +1535,9 @@ describe("arcgis migration integration", () => {
     ]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
-    expect(migratedMain).toContain(
-      'import("@honua/sdk-esri-compat").then((m) => ({ default: m.MapCompat }))',
-    );
+    expect(migratedMain).toContain('import("@honua/sdk-esri-compat").then((m) => ({ default: m.MapCompat }))');
     expect(migratedMain).toContain("return new MapCtor({");
-    expect(migratedMain).not.toContain('@arcgis/core/Map');
+    expect(migratedMain).not.toContain("@arcgis/core/Map");
   });
 
   it("migrates webmap constructor flow with ready gating", () => {
@@ -1652,9 +1581,7 @@ describe("arcgis migration integration", () => {
     ]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
-    expect(migratedMain).toContain(
-      'import { MapViewCompat, WebMapCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(migratedMain).toContain('import { MapViewCompat, WebMapCompat } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const map = new WebMapCompat({");
     expect(migratedMain).toContain("const view = new MapViewCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/WebMap");
@@ -1662,9 +1589,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("migrates await import default flow with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-await-import-default-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-await-import-default-app");
 
     expect(scanReport.flags).toContain("dynamic-import-detected");
     expect(codemodResult.filesChanged).toBe(1);
@@ -1708,13 +1633,11 @@ describe("arcgis migration integration", () => {
       '(await import("@honua/sdk-esri-compat").then((m) => ({ default: m.MapCompat }))).default',
     );
     expect(migratedMain).toContain("return new MapCtor({");
-    expect(migratedMain).not.toContain('@arcgis/core/Map');
+    expect(migratedMain).not.toContain("@arcgis/core/Map");
   });
 
   it("migrates related-feature query app flow with ready gating", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-related-features-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-related-features-app");
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
@@ -1761,9 +1684,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("reports assisted when .cjs require-style usage requires manual migration", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-assisted-require-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-assisted-require-app");
 
     expect(scanReport.flags).toEqual(["commonjs-detected"]);
     expect(codemodResult.filesChanged).toBe(0);
@@ -1813,9 +1734,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("reports assisted when .js CommonJS require usage requires manual migration", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-assisted-require-js-cjs-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-assisted-require-js-cjs-app");
 
     expect(scanReport.flags).toEqual(["commonjs-detected"]);
     expect(codemodResult.filesChanged).toBe(0);
@@ -1865,9 +1784,7 @@ describe("arcgis migration integration", () => {
   });
 
   it("reports assisted for side-effect ArcGIS imports outside codemod scope", () => {
-    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
-      "esri-assisted-side-effect-app",
-    );
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-assisted-side-effect-app");
 
     expect(scanReport.flags).toEqual(["auth-or-request-customization-detected"]);
     expect(scanReport.imports).toEqual([

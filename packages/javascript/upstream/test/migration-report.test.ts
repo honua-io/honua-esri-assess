@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { ArcGisScanReport } from "../src/migration/scanner.js";
-import { buildJsMigrationReport } from "../src/migration/report.js";
 import type { EsriCompatCodemodResult } from "../src/migration/codemod.js";
+import { buildJsMigrationReport } from "../src/migration/report.js";
+import type { ArcGisScanReport } from "../src/migration/scanner.js";
 
 function createCodemodResult(): EsriCompatCodemodResult {
   return {

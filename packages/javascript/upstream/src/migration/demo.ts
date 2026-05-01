@@ -327,9 +327,7 @@ async function fetchJson(fetchFn: typeof fetch, url: string, init: RequestInit):
 
   if (!response.ok) {
     const preview = text.length > 0 ? text.slice(0, 300) : `${response.status} ${response.statusText}`;
-    throw new Error(
-      `HTTP ${response.status} for ${redactSensitiveUrl(url)}: ${redactSensitiveText(preview)}`,
-    );
+    throw new Error(`HTTP ${response.status} for ${redactSensitiveUrl(url)}: ${redactSensitiveText(preview)}`);
   }
 
   return body;
@@ -405,14 +403,8 @@ function redactSensitiveUrl(url: string): string {
 
 function redactSensitiveText(value: string): string {
   return value
-    .replace(
-      /([?&](?:token|api[_-]?key|access[_-]?token|auth[_-]?token)=)[^&#\s]*/gi,
-      `$1${REDACTED_SECRET}`,
-    )
-    .replace(
-      /("(?:token|api[_-]?key|access[_-]?token|auth[_-]?token)"\s*:\s*")([^"]*)(")/gi,
-      `$1${REDACTED_SECRET}$3`,
-    )
+    .replace(/([?&](?:token|api[_-]?key|access[_-]?token|auth[_-]?token)=)[^&#\s]*/gi, `$1${REDACTED_SECRET}`)
+    .replace(/("(?:token|api[_-]?key|access[_-]?token|auth[_-]?token)"\s*:\s*")([^"]*)(")/gi, `$1${REDACTED_SECRET}$3`)
     .replace(/((?:token|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[=:]\s*)([^,\s]+)/gi, `$1${REDACTED_SECRET}`);
 }
 

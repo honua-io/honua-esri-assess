@@ -1,10 +1,11 @@
+import { execSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { execSync, spawn } from "node:child_process";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { getProjectRoot, withCliLockAsync } from "./migration-cli-lock.js";
 
 let server: http.Server | undefined;
 let portalUrl = "";
@@ -12,52 +13,20 @@ let builtOnce = false;
 
 const tempDirs: string[] = [];
 
-function projectRoot(): string {
-  return path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
-}
-
 function makeTempDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "honua-cli-content-"));
   tempDirs.push(dir);
   return dir;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-async function withCliLock<T>(work: () => Promise<T> | T): Promise<T> {
-  const lockDir = path.join(projectRoot(), ".tmp", "vitest-cli-lock");
-  fs.mkdirSync(path.dirname(lockDir), { recursive: true });
-  for (;;) {
-    try {
-      await fs.promises.mkdir(lockDir);
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-        throw error;
-      }
-      await sleep(25);
-    }
-  }
-
-  try {
-    return await work();
-  } finally {
-    await fs.promises.rm(lockDir, { recursive: true, force: true });
-  }
-}
-
 async function ensureBuiltCliArtifacts(): Promise<void> {
-  await withCliLock(() => {
+  await withCliLockAsync(() => {
     if (builtOnce) {
       return;
     }
 
     execSync("npm run build --silent", {
-      cwd: projectRoot(),
+      cwd: getProjectRoot(),
       stdio: "pipe",
     });
     builtOnce = true;
@@ -231,9 +200,9 @@ describe("migration cli content", () => {
 });
 
 async function runCli(args: readonly string[]): Promise<{ status: number | null; stdout: string; stderr: string }> {
-  return withCliLock(async () => {
+  return withCliLockAsync(async () => {
     const child = spawn("node", args, {
-      cwd: projectRoot(),
+      cwd: getProjectRoot(),
       stdio: ["ignore", "pipe", "pipe"],
     });
 

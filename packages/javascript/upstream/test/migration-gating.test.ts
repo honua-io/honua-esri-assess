@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { JsMigrationReport } from "../src/migration/report.js";
 import { evaluateMigrationGates } from "../src/migration/gating.js";
+import type { JsMigrationReport } from "../src/migration/report.js";
 
 function createReport(): JsMigrationReport {
   return {

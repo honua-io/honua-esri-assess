@@ -66,10 +66,7 @@ describe("scanArcGisUsage", () => {
     const root = makeTempProject();
     fs.writeFileSync(
       path.join(root, "side-effects.ts"),
-      [
-        "import '@arcgis/core/identity/IdentityManager';",
-        "export const ready = true;",
-      ].join("\n"),
+      ["import '@arcgis/core/identity/IdentityManager';", "export const ready = true;"].join("\n"),
       "utf8",
     );
 
@@ -237,10 +234,7 @@ describe("scanArcGisUsage", () => {
     const root = makeTempProject();
     fs.writeFileSync(
       path.join(root, "advanced.ts"),
-      [
-        "import Geoprocessor from '@arcgis/core/rest/geoprocessor/Geoprocessor';",
-        "void Geoprocessor;",
-      ].join("\n"),
+      ["import Geoprocessor from '@arcgis/core/rest/geoprocessor/Geoprocessor';", "void Geoprocessor;"].join("\n"),
       "utf8",
     );
 
@@ -252,11 +246,9 @@ describe("scanArcGisUsage", () => {
     const root = makeTempProject();
     fs.writeFileSync(
       path.join(root, "leaflet.ts"),
-      [
-        "import * as L from 'esri-leaflet';",
-        "const layer = L.featureLayer({ url: serviceUrl });",
-        "void layer;",
-      ].join("\n"),
+      ["import * as L from 'esri-leaflet';", "const layer = L.featureLayer({ url: serviceUrl });", "void layer;"].join(
+        "\n",
+      ),
       "utf8",
     );
 

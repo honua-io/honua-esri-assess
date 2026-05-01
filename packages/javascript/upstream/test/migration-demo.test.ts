@@ -5,11 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import {
-  parseGeoservicesServiceUrl,
-  runGeoservicesImportJob,
-  runMigrationDemo,
-} from "../src/migration/demo.js";
+import { parseGeoservicesServiceUrl, runGeoservicesImportJob, runMigrationDemo } from "../src/migration/demo.js";
 
 const tempDirs: string[] = [];
 
@@ -31,9 +27,7 @@ afterEach(() => {
 
 describe("migration demo helpers", () => {
   it("parses geoservices service URL details", () => {
-    const parsed = parseGeoservicesServiceUrl(
-      "https://example.test/gis/rest/services/incidents/FeatureServer/3",
-    );
+    const parsed = parseGeoservicesServiceUrl("https://example.test/gis/rest/services/incidents/FeatureServer/3");
 
     expect(parsed).toEqual({
       baseUrl: "https://example.test/gis",
@@ -53,12 +47,7 @@ describe("migration demo helpers", () => {
     let pollCount = 0;
 
     const fetchFn: typeof fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input.url;
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       const method = init?.method ?? "GET";
       const headers = normalizeHeaders(init?.headers);
       const body =
@@ -125,7 +114,7 @@ describe("migration demo helpers", () => {
     const startRequest = requests.find((request) => request.url.endsWith("/start"));
     expect(startRequest?.method).toBe("POST");
     expect(startRequest?.headers["x-api-key"]).toBe("demo-key");
-    expect(startRequest?.body).toContain("\"tableName\":\"incidents\"");
+    expect(startRequest?.body).toContain('"tableName":"incidents"');
   });
 
   it("redacts API keys from migration demo error messages", async () => {

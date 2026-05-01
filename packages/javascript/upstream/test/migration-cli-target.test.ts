@@ -1,10 +1,10 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { getProjectRoot, withCliLock } from "./migration-cli-lock.js";
 
 const tempDirs: string[] = [];
 let builtOnce = false;
@@ -13,36 +13,6 @@ function makeTempDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "honua-cli-target-"));
   tempDirs.push(dir);
   return dir;
-}
-
-function getProjectRoot(): string {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-}
-
-function sleep(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function withCliLock<T>(work: () => T): T {
-  const lockDir = path.join(getProjectRoot(), ".tmp", "vitest-cli-lock");
-  fs.mkdirSync(path.dirname(lockDir), { recursive: true });
-  for (;;) {
-    try {
-      fs.mkdirSync(lockDir);
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-        throw error;
-      }
-      sleep(25);
-    }
-  }
-
-  try {
-    return work();
-  } finally {
-    fs.rmSync(lockDir, { recursive: true, force: true });
-  }
 }
 
 function ensureBuiltCliArtifacts(): void {
@@ -94,18 +64,11 @@ describe("migration cli target selection", () => {
 
     fs.writeFileSync(
       appFile,
-      [
-        "import Map from '@arcgis/core/Map';",
-        "const map = new Map({ basemap: 'streets' });",
-        "void map;",
-      ].join("\n"),
+      ["import Map from '@arcgis/core/Map';", "const map = new Map({ basemap: 'streets' });", "void map;"].join("\n"),
       "utf8",
     );
 
-    const result = runCli(
-      ["codemod", root, "--target", "honua", "--write", "--report", reportPath],
-      getProjectRoot(),
-    );
+    const result = runCli(["codemod", root, "--target", "honua", "--write", "--report", reportPath], getProjectRoot());
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("target=honua-compat");
@@ -178,11 +141,9 @@ describe("migration cli target selection", () => {
 
     fs.writeFileSync(
       appFile,
-      [
-        "import * as L from 'esri-leaflet';",
-        "const layer = L.featureLayer({ url: serviceUrl });",
-        "void layer;",
-      ].join("\n"),
+      ["import * as L from 'esri-leaflet';", "const layer = L.featureLayer({ url: serviceUrl });", "void layer;"].join(
+        "\n",
+      ),
       "utf8",
     );
 

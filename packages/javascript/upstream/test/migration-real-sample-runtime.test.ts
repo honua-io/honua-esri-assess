@@ -1,7 +1,7 @@
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -83,9 +83,7 @@ afterEach(() => {
 
 describe("migration real sample runtime", () => {
   it("migrates and executes ops center sample", { timeout: 60_000 }, async () => {
-    const { codemodResult, report, output } = await migrateAndRunFixture(
-      "esri-real-sample-ops-center-app",
-    );
+    const { codemodResult, report, output } = await migrateAndRunFixture("esri-real-sample-ops-center-app");
 
     expect(codemodResult.filesChanged).toBe(1);
     expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(16);
@@ -139,9 +137,7 @@ describe("migration real sample runtime", () => {
   });
 
   it("migrates and executes editing workflow sample", { timeout: 60_000 }, async () => {
-    const { codemodResult, report, output } = await migrateAndRunFixture(
-      "esri-real-sample-editing-app",
-    );
+    const { codemodResult, report, output } = await migrateAndRunFixture("esri-real-sample-editing-app");
 
     expect(codemodResult.filesChanged).toBe(1);
     expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(13);
@@ -195,9 +191,7 @@ describe("migration real sample runtime", () => {
   });
 
   it("migrates and executes network workflow sample", { timeout: 60_000 }, async () => {
-    const { codemodResult, report, output } = await migrateAndRunFixture(
-      "esri-real-sample-network-app",
-    );
+    const { codemodResult, report, output } = await migrateAndRunFixture("esri-real-sample-network-app");
 
     expect(codemodResult.filesChanged).toBe(1);
     expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(10);
@@ -240,9 +234,7 @@ describe("migration real sample runtime", () => {
   });
 
   it("migrates and executes incident command sample", { timeout: 60_000 }, async () => {
-    const { codemodResult, report, output } = await migrateAndRunFixture(
-      "esri-real-sample-incident-command-app",
-    );
+    const { codemodResult, report, output } = await migrateAndRunFixture("esri-real-sample-incident-command-app");
 
     expect(codemodResult.filesChanged).toBe(1);
     expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(28);

@@ -1,65 +1,13 @@
+import { execSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
-import path from "node:path";
-import { execSync, spawn } from "node:child_process";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { getProjectRoot, withCliLock, withCliLockAsync } from "./migration-cli-lock.js";
 
 let server: http.Server | undefined;
 let baseUrl = "";
 let builtOnce = false;
-
-function projectRoot(): string {
-  return path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
-}
-
-function sleep(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function withCliLock<T>(work: () => T): T {
-  const lockDir = path.join(projectRoot(), ".tmp", "vitest-cli-lock");
-  fs.mkdirSync(path.dirname(lockDir), { recursive: true });
-  for (;;) {
-    try {
-      fs.mkdirSync(lockDir);
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-        throw error;
-      }
-      sleep(25);
-    }
-  }
-
-  try {
-    return work();
-  } finally {
-    fs.rmSync(lockDir, { recursive: true, force: true });
-  }
-}
-
-async function withCliLockAsync<T>(work: () => Promise<T>): Promise<T> {
-  const lockDir = path.join(projectRoot(), ".tmp", "vitest-cli-lock");
-  fs.mkdirSync(path.dirname(lockDir), { recursive: true });
-  for (;;) {
-    try {
-      fs.mkdirSync(lockDir);
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-        throw error;
-      }
-      await new Promise<void>((resolve) => setTimeout(resolve, 25));
-    }
-  }
-
-  try {
-    return await work();
-  } finally {
-    fs.rmSync(lockDir, { recursive: true, force: true });
-  }
-}
 
 function ensureBuiltCliArtifacts(): void {
   withCliLock(() => {
@@ -68,7 +16,7 @@ function ensureBuiltCliArtifacts(): void {
     }
 
     execSync("npm run build --silent", {
-      cwd: projectRoot(),
+      cwd: getProjectRoot(),
       stdio: "pipe",
     });
     builtOnce = true;
@@ -194,7 +142,7 @@ function runCli(
     () =>
       new Promise((resolve, reject) => {
         const child = spawn("node", args, {
-          cwd: projectRoot(),
+          cwd: getProjectRoot(),
           env: {
             ...process.env,
             ...envOverrides,

@@ -1,7 +1,7 @@
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -264,7 +264,7 @@ describe("migration runtime smoke", () => {
         "  directionsStopCount: directionsSummary?.stopCount ?? 0,",
         "  directionsDistanceMeters: directionsSummary?.distanceMeters ?? 0,",
         "  clickEventHits: clickEvents[0] ?? 0,",
-      "};",
+        "};",
       ].join("\n"),
       "utf8",
     );

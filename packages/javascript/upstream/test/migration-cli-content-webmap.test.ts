@@ -1,10 +1,10 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { getProjectRoot, withCliLock } from "./migration-cli-lock.js";
 
 const tempDirs: string[] = [];
 let builtOnce = false;
@@ -15,38 +15,38 @@ function makeTempDir(): string {
   return dir;
 }
 
-function getProjectRoot(): string {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-}
-
 function ensureBuiltCliArtifacts(): void {
-  const cliPath = path.join(getProjectRoot(), "dist", "src", "migration", "cli.js");
-  if (builtOnce && fs.existsSync(cliPath)) {
-    return;
-  }
+  withCliLock(() => {
+    const cliPath = path.join(getProjectRoot(), "dist", "src", "migration", "cli.js");
+    if (builtOnce && fs.existsSync(cliPath)) {
+      return;
+    }
 
-  const buildResult = spawnSync("npm", ["run", "build", "--silent"], {
-    cwd: getProjectRoot(),
-    encoding: "utf8",
+    const buildResult = spawnSync("npm", ["run", "build", "--silent"], {
+      cwd: getProjectRoot(),
+      encoding: "utf8",
+    });
+    if (buildResult.status !== 0) {
+      throw new Error(buildResult.stderr || buildResult.stdout || "failed to build migration CLI");
+    }
+    builtOnce = true;
   });
-  if (buildResult.status !== 0) {
-    throw new Error(buildResult.stderr || buildResult.stdout || "failed to build migration CLI");
-  }
-  builtOnce = true;
 }
 
 function runCli(args: readonly string[], cwd: string): { status: number | null; stdout: string; stderr: string } {
-  const cliPath = path.join(getProjectRoot(), "dist", "src", "migration", "cli.js");
-  const result = spawnSync("node", [cliPath, ...args], {
-    cwd,
-    encoding: "utf8",
-  });
+  return withCliLock(() => {
+    const cliPath = path.join(getProjectRoot(), "dist", "src", "migration", "cli.js");
+    const result = spawnSync("node", [cliPath, ...args], {
+      cwd,
+      encoding: "utf8",
+    });
 
-  return {
-    status: result.status,
-    stdout: result.stdout,
-    stderr: result.stderr,
-  };
+    return {
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    };
+  });
 }
 
 afterEach(() => {

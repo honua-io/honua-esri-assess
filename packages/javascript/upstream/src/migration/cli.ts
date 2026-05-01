@@ -2,15 +2,15 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { type CodemodMetricsByKind, type CodemodTarget, runEsriCompatCodemod } from "./codemod.js";
 import { parseWebMap } from "../webmap/parse.js";
 import type { WebMapJson } from "../webmap/types.js";
+import { type CodemodMetricsByKind, type CodemodTarget, runEsriCompatCodemod } from "./codemod.js";
 import {
+  type ContentImportReport,
   runContentExport,
   runContentImport,
   runContentReconcile,
   runContentScan,
-  type ContentImportReport,
 } from "./content.js";
 import { MIGRATION_DEMO_PRIMARY_TARGET } from "./demo-targets.js";
 import { parseGeoservicesServiceUrl, runMigrationDemo } from "./demo.js";

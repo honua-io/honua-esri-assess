@@ -1,10 +1,10 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { getProjectRoot, withCliLock } from "./migration-cli-lock.js";
 
 const tempDirs: string[] = [];
 let builtOnce = false;
@@ -13,36 +13,6 @@ function makeTempDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "honua-cli-fixtures-"));
   tempDirs.push(dir);
   return dir;
-}
-
-function getProjectRoot(): string {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-}
-
-function sleep(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function withCliLock<T>(work: () => T): T {
-  const lockDir = path.join(getProjectRoot(), ".tmp", "vitest-cli-lock");
-  fs.mkdirSync(path.dirname(lockDir), { recursive: true });
-  for (;;) {
-    try {
-      fs.mkdirSync(lockDir);
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-        throw error;
-      }
-      sleep(25);
-    }
-  }
-
-  try {
-    return work();
-  } finally {
-    fs.rmSync(lockDir, { recursive: true, force: true });
-  }
 }
 
 function ensureBuiltCliArtifacts(): void {
@@ -147,15 +117,7 @@ describe("migration cli fixtures metrics", () => {
     const reportPath = path.join(root, "subset-metrics.json");
 
     const result = runCli(
-      [
-        "fixtures",
-        "--target",
-        "esri-leaflet",
-        "--fixtures",
-        "esri-real-sample-network-app",
-        "--report",
-        reportPath,
-      ],
+      ["fixtures", "--target", "esri-leaflet", "--fixtures", "esri-real-sample-network-app", "--report", reportPath],
       getProjectRoot(),
     );
 
@@ -178,9 +140,7 @@ describe("migration cli fixtures metrics", () => {
     expect(report.codemodTarget).toBe("esri-leaflet");
     expect(report.summary.fixtureCount).toBe(1);
     expect(report.fixtureNames).toEqual(["esri-real-sample-network-app"]);
-    expect(report.fixtures).toEqual([
-      expect.objectContaining({ fixture: "esri-real-sample-network-app" }),
-    ]);
+    expect(report.fixtures).toEqual([expect.objectContaining({ fixture: "esri-real-sample-network-app" })]);
   }, 60_000);
 
   it("passes strict fixture gates for honua-compat target", () => {

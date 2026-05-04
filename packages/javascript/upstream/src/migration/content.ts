@@ -789,6 +789,22 @@ interface GeoJsonFeatureCollection {
   features: GeoJsonFeature[];
 }
 
+type GeoJsonPosition = [number, number];
+type GeoJsonPolygon = {
+  type: "Polygon";
+  coordinates: GeoJsonPosition[][];
+};
+type GeoJsonMultiPolygon = {
+  type: "MultiPolygon";
+  coordinates: GeoJsonPosition[][][];
+};
+interface PolygonRingNode {
+  positions: GeoJsonPosition[];
+  absoluteArea: number;
+  parentIndex: number;
+  depth?: number;
+}
+
 function convertEsriFeatureSetToGeoJson(featureSet: ArcGisFeatureSet): GeoJsonFeatureCollection | undefined {
   const geometryType = featureSet.geometryType;
   if (!geometryType) {
@@ -846,10 +862,221 @@ function convertEsriGeometryToGeoJson(
     const rings = asArray(geometry.rings)
       .map((value) => asCoordinateArray(value))
       .filter((value): value is number[][] => value.length > 0);
-    return { type: "Polygon", coordinates: rings };
+    return convertPolygonRings(rings);
   }
 
   return null;
+}
+
+function computeRingSignedArea(ring: readonly number[][]): number {
+  if (ring.length < 3) {
+    return 0;
+  }
+
+  let area = 0;
+  for (let index = 0; index < ring.length; index += 1) {
+    const current = ring[index];
+    const next = ring[(index + 1) % ring.length];
+    if (!current || !next) {
+      continue;
+    }
+    area += current[0] * next[1] - next[0] * current[1];
+  }
+
+  return area / 2;
+}
+
+function isPointOnSegment(point: GeoJsonPosition, segmentStart: GeoJsonPosition, segmentEnd: GeoJsonPosition): boolean {
+  const epsilon = 1e-9;
+  const crossProduct =
+    (point[0] - segmentStart[0]) * (segmentEnd[1] - segmentStart[1]) -
+    (point[1] - segmentStart[1]) * (segmentEnd[0] - segmentStart[0]);
+
+  if (Math.abs(crossProduct) > epsilon) {
+    return false;
+  }
+
+  const dotProduct =
+    (point[0] - segmentStart[0]) * (segmentEnd[0] - segmentStart[0]) +
+    (point[1] - segmentStart[1]) * (segmentEnd[1] - segmentStart[1]);
+  if (dotProduct < -epsilon) {
+    return false;
+  }
+
+  const segmentLengthSquared =
+    (segmentEnd[0] - segmentStart[0]) * (segmentEnd[0] - segmentStart[0]) +
+    (segmentEnd[1] - segmentStart[1]) * (segmentEnd[1] - segmentStart[1]);
+
+  return dotProduct - segmentLengthSquared <= epsilon;
+}
+
+function isPointInsideRing(point: GeoJsonPosition, ring: readonly number[][]): boolean {
+  if (ring.length < 3) {
+    return false;
+  }
+
+  let isInside = false;
+  for (let index = 0, previousIndex = ring.length - 1; index < ring.length; previousIndex = index, index += 1) {
+    const current = ring[index] as GeoJsonPosition | undefined;
+    const previous = ring[previousIndex] as GeoJsonPosition | undefined;
+    if (!current || !previous) {
+      continue;
+    }
+
+    if (isPointOnSegment(point, previous, current)) {
+      return true;
+    }
+
+    const intersects =
+      current[1] > point[1] !== previous[1] > point[1] &&
+      point[0] < ((previous[0] - current[0]) * (point[1] - current[1])) / (previous[1] - current[1]) + current[0];
+    if (intersects) {
+      isInside = !isInside;
+    }
+  }
+
+  return isInside;
+}
+
+function findContainingRingIndex(nodes: readonly PolygonRingNode[], currentIndex: number): number {
+  const current = nodes[currentIndex];
+  const samplePoint = current?.positions[0];
+  if (!samplePoint) {
+    return -1;
+  }
+
+  let containingRingIndex = -1;
+  let smallestContainingArea = Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < nodes.length; index += 1) {
+    if (index === currentIndex) {
+      continue;
+    }
+
+    const candidate = nodes[index];
+    if (
+      !candidate ||
+      candidate.absoluteArea <= current.absoluteArea ||
+      !isPointInsideRing(samplePoint, candidate.positions)
+    ) {
+      continue;
+    }
+
+    if (candidate.absoluteArea < smallestContainingArea) {
+      smallestContainingArea = candidate.absoluteArea;
+      containingRingIndex = index;
+    }
+  }
+
+  return containingRingIndex;
+}
+
+function createPolygonRingNodes(rings: readonly number[][][]): PolygonRingNode[] {
+  const nodes = rings.map((ring): PolygonRingNode => {
+    const positions = ring as GeoJsonPosition[];
+    const area = computeRingSignedArea(positions);
+    return {
+      positions,
+      absoluteArea: Math.abs(area),
+      parentIndex: -1,
+    };
+  });
+
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index];
+    if (!node || node.positions.length < 3) {
+      continue;
+    }
+
+    node.parentIndex = findContainingRingIndex(nodes, index);
+  }
+
+  return nodes;
+}
+
+function getRingDepth(nodes: PolygonRingNode[], index: number): number {
+  const node = nodes[index];
+  if (!node) {
+    return 0;
+  }
+  if (node.depth !== undefined) {
+    return node.depth;
+  }
+
+  node.depth = node.parentIndex < 0 ? 0 : getRingDepth(nodes, node.parentIndex) + 1;
+  return node.depth;
+}
+
+function findExteriorAncestorIndex(nodes: PolygonRingNode[], index: number): number {
+  let currentIndex = nodes[index]?.parentIndex ?? -1;
+  while (currentIndex >= 0) {
+    if (getRingDepth(nodes, currentIndex) % 2 === 0) {
+      return currentIndex;
+    }
+    currentIndex = nodes[currentIndex]?.parentIndex ?? -1;
+  }
+
+  return -1;
+}
+
+function convertPolygonRings(rings: readonly number[][][]): GeoJsonPolygon | GeoJsonMultiPolygon {
+  const nodes = createPolygonRingNodes(rings);
+  const polygons: GeoJsonPosition[][][] = [];
+  const polygonByRingIndex = new Map<number, number>();
+
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index];
+    if (!node) {
+      continue;
+    }
+
+    if (getRingDepth(nodes, index) % 2 === 0) {
+      polygonByRingIndex.set(index, polygons.length);
+      polygons.push([node.positions]);
+    }
+  }
+
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index];
+    if (!node || getRingDepth(nodes, index) % 2 === 0) {
+      continue;
+    }
+
+    const exteriorAncestorIndex = findExteriorAncestorIndex(nodes, index);
+    const polygonIndex = polygonByRingIndex.get(exteriorAncestorIndex);
+    if (polygonIndex === undefined) {
+      polygonByRingIndex.set(index, polygons.length);
+      polygons.push([node.positions]);
+      continue;
+    }
+
+    polygons[polygonIndex]?.push(node.positions);
+  }
+
+  return polygons.length === 1
+    ? {
+        type: "Polygon",
+        coordinates: toGeoJsonPolygonCoordinates(polygons[0] ?? []),
+      }
+    : {
+        type: "MultiPolygon",
+        coordinates: polygons.map(toGeoJsonPolygonCoordinates),
+      };
+}
+
+function toGeoJsonPolygonCoordinates(polygon: readonly GeoJsonPosition[][]): GeoJsonPosition[][] {
+  return polygon.map((ring, index) => rewindRingForGeoJson(ring, index === 0));
+}
+
+function rewindRingForGeoJson(ring: readonly GeoJsonPosition[], exterior: boolean): GeoJsonPosition[] {
+  const coordinates = ring.map((coordinate): GeoJsonPosition => [coordinate[0], coordinate[1]]);
+  const area = computeRingSignedArea(coordinates);
+  if (area === 0) {
+    return coordinates;
+  }
+
+  const hasExpectedWinding = exterior ? area > 0 : area < 0;
+  return hasExpectedWinding ? coordinates : coordinates.reverse();
 }
 
 function asCoordinatePair(value: unknown): [number, number] | undefined {

@@ -117,6 +117,130 @@ describe("migration demo helpers", () => {
     expect(startRequest?.body).toContain('"tableName":"incidents"');
   });
 
+  it("rejects cross-origin geoservices import status URLs before polling with the admin key", async () => {
+    const requests: Array<{ url: string; headers: Record<string, string> }> = [];
+
+    const fetchFn: typeof fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const headers = normalizeHeaders(init?.headers);
+      requests.push({ url, headers });
+
+      if (url.endsWith("/api/v1/admin/import/geoservices/start")) {
+        return new Response(
+          JSON.stringify({
+            jobId: "job-123",
+            statusUrl: "https://attacker.example/jobs/job-123",
+          }),
+          {
+            status: 202,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ error: "unexpected poll" }), { status: 500 });
+    }) as typeof fetch;
+
+    await expect(
+      runGeoservicesImportJob({
+        adminBaseUrl: "http://127.0.0.1:5050",
+        adminApiKey: "demo-key",
+        sourceServiceUrl: "https://arcgis.example/rest/services/incidents/FeatureServer",
+        layerId: 0,
+        tableName: "incidents",
+        pollIntervalMs: 1,
+        timeoutMs: 5_000,
+        fetchFn,
+      }),
+    ).rejects.toThrow("Import job status URL must stay on http://127.0.0.1:5050");
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.headers["x-api-key"]).toBe("demo-key");
+    expect(requests.some((request) => request.url.startsWith("https://attacker.example"))).toBe(false);
+  });
+
+  it("rejects same-origin geoservices import status URLs outside the import API path", async () => {
+    const requests: Array<{ url: string; headers: Record<string, string> }> = [];
+
+    const fetchFn: typeof fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const headers = normalizeHeaders(init?.headers);
+      requests.push({ url, headers });
+
+      if (url.endsWith("/api/v1/admin/import/geoservices/start")) {
+        return new Response(
+          JSON.stringify({
+            jobId: "job-123",
+            statusUrl: "/api/v1/admin/import/geoservices-other/jobs/job-123",
+          }),
+          {
+            status: 202,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ error: "unexpected poll" }), { status: 500 });
+    }) as typeof fetch;
+
+    await expect(
+      runGeoservicesImportJob({
+        adminBaseUrl: "http://127.0.0.1:5050",
+        adminApiKey: "demo-key",
+        sourceServiceUrl: "https://arcgis.example/rest/services/incidents/FeatureServer",
+        layerId: 0,
+        tableName: "incidents",
+        pollIntervalMs: 1,
+        timeoutMs: 5_000,
+        fetchFn,
+      }),
+    ).rejects.toThrow("Import job status URL must stay under /api/v1/admin/import/geoservices/");
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.headers["x-api-key"]).toBe("demo-key");
+  });
+
+  it("rejects geoservices import status URLs with encoded path separators", async () => {
+    const requests: Array<{ url: string; headers: Record<string, string> }> = [];
+
+    const fetchFn: typeof fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const headers = normalizeHeaders(init?.headers);
+      requests.push({ url, headers });
+
+      if (url.endsWith("/api/v1/admin/import/geoservices/start")) {
+        return new Response(
+          JSON.stringify({
+            jobId: "job-123",
+            statusUrl: "/api/v1/admin/import/geoservices/%2F..%2Fgeoservices-other/jobs/job-123",
+          }),
+          {
+            status: 202,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ error: "unexpected poll" }), { status: 500 });
+    }) as typeof fetch;
+
+    await expect(
+      runGeoservicesImportJob({
+        adminBaseUrl: "http://127.0.0.1:5050",
+        adminApiKey: "demo-key",
+        sourceServiceUrl: "https://arcgis.example/rest/services/incidents/FeatureServer",
+        layerId: 0,
+        tableName: "incidents",
+        pollIntervalMs: 1,
+        timeoutMs: 5_000,
+        fetchFn,
+      }),
+    ).rejects.toThrow("Import job status URL must stay under /api/v1/admin/import/geoservices/");
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.headers["x-api-key"]).toBe("demo-key");
+  });
+
   it("redacts API keys from migration demo error messages", async () => {
     const apiKey = "demo-key-secret";
     const fetchFn: typeof fetch = (async () =>

@@ -414,10 +414,30 @@ function isSensitiveKey(key: string): boolean {
 
 function resolveJobStatusUrl(importApiBase: string, providedStatusUrl: string | undefined, jobId: string): string {
   const statusPath = providedStatusUrl && providedStatusUrl.length > 0 ? providedStatusUrl : `jobs/${jobId}`;
-  if (/^https?:\/\//i.test(statusPath)) {
-    return statusPath;
+  const importBase = new URL(`${normalizeBaseUrl(importApiBase)}/`);
+  const resolved = new URL(statusPath, importBase);
+
+  if (resolved.origin !== importBase.origin) {
+    throw new Error(
+      `Import job status URL must stay on ${importBase.origin}, received ${redactSensitiveUrl(resolved.toString())}`,
+    );
   }
-  return `${normalizeBaseUrl(importApiBase)}/${statusPath.replace(/^\/+/, "")}`;
+
+  if (!isPathUnderBase(resolved.pathname, importBase.pathname)) {
+    throw new Error(
+      `Import job status URL must stay under ${importBase.pathname}, received ${redactSensitiveUrl(resolved.toString())}`,
+    );
+  }
+
+  return resolved.toString();
+}
+
+function isPathUnderBase(pathname: string, basePathname: string): boolean {
+  const basePath = basePathname.endsWith("/") ? basePathname : `${basePathname}/`;
+  if (/%2f|%5c/i.test(pathname)) {
+    return false;
+  }
+  return pathname === basePathname || pathname.startsWith(basePath);
 }
 
 function delay(ms: number): Promise<void> {

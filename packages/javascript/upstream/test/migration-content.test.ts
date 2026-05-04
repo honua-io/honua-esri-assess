@@ -7,11 +7,40 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runContentExport, runContentImport, runContentReconcile, runContentScan } from "../src/migration/content.js";
 
 const tempDirs: string[] = [];
+const OUTER_RING_A = [
+  [0, 4],
+  [4, 4],
+  [4, 0],
+  [0, 0],
+  [0, 4],
+];
+const HOLE_RING_A = [
+  [1, 1],
+  [3, 1],
+  [3, 3],
+  [1, 3],
+  [1, 1],
+];
+const OUTER_RING_B = [
+  [10, 4],
+  [14, 4],
+  [14, 0],
+  [10, 0],
+  [10, 4],
+];
+const GEOJSON_OUTER_RING_A = reverseRing(OUTER_RING_A);
+const GEOJSON_HOLE_RING_A = reverseRing(HOLE_RING_A);
+const GEOJSON_OUTER_RING_B = reverseRing(OUTER_RING_B);
+const NONCANONICAL_HOLE_RING_A = reverseRing(HOLE_RING_A);
 
 function makeTempDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "honua-migration-content-"));
   tempDirs.push(dir);
   return dir;
+}
+
+function reverseRing(ring: number[][]): number[][] {
+  return [...ring].reverse();
 }
 
 afterEach(() => {
@@ -59,7 +88,7 @@ describe("migration content workflow", () => {
     expect(manifest.hostedFeatureServices[0].layers).toHaveLength(1);
 
     const layer = manifest.hostedFeatureServices[0].layers[0];
-    expect(layer.featureCount).toBe(2);
+    expect(layer.featureCount).toBe(3);
     expect(layer.featureSetPath).toBeDefined();
     expect(layer.geoJsonPath).toBeDefined();
 
@@ -67,7 +96,23 @@ describe("migration content workflow", () => {
       expect(fs.existsSync(path.join(outputDir, layer.featureSetPath))).toBe(true);
     }
     if (layer.geoJsonPath) {
-      expect(fs.existsSync(path.join(outputDir, layer.geoJsonPath))).toBe(true);
+      const geoJsonFilePath = path.join(outputDir, layer.geoJsonPath);
+      expect(fs.existsSync(geoJsonFilePath)).toBe(true);
+      const geoJson = JSON.parse(fs.readFileSync(geoJsonFilePath, "utf8")) as {
+        features: Array<{ geometry: unknown }>;
+      };
+      expect(geoJson.features[0]?.geometry).toEqual({
+        type: "MultiPolygon",
+        coordinates: [[GEOJSON_OUTER_RING_A, GEOJSON_HOLE_RING_A], [GEOJSON_OUTER_RING_B]],
+      });
+      expect(geoJson.features[1]?.geometry).toEqual({
+        type: "Polygon",
+        coordinates: [GEOJSON_OUTER_RING_A, GEOJSON_HOLE_RING_A],
+      });
+      expect(geoJson.features[2]?.geometry).toEqual({
+        type: "Polygon",
+        coordinates: [GEOJSON_OUTER_RING_A, GEOJSON_HOLE_RING_A],
+      });
     }
   });
 
@@ -219,21 +264,31 @@ function createPortalFetch(portalUrl: string): typeof fetch {
       return jsonResponse({
         id: 0,
         name: "Parcels",
-        geometryType: "esriGeometryPoint",
+        geometryType: "esriGeometryPolygon",
       });
     }
 
     if (url.pathname.endsWith("/arcgis/rest/services/Parcels/FeatureServer/0/query")) {
       return jsonResponse({
-        geometryType: "esriGeometryPoint",
+        geometryType: "esriGeometryPolygon",
         features: [
           {
-            attributes: { OBJECTID: 1, NAME: "A" },
-            geometry: { x: -122.4, y: 37.78 },
+            attributes: { OBJECTID: 1, NAME: "Multipart" },
+            geometry: {
+              rings: [OUTER_RING_A, HOLE_RING_A, OUTER_RING_B],
+            },
           },
           {
-            attributes: { OBJECTID: 2, NAME: "B" },
-            geometry: { x: -122.41, y: 37.79 },
+            attributes: { OBJECTID: 2, NAME: "Hole first" },
+            geometry: {
+              rings: [HOLE_RING_A, OUTER_RING_A],
+            },
+          },
+          {
+            attributes: { OBJECTID: 3, NAME: "Noncanonical hole winding" },
+            geometry: {
+              rings: [OUTER_RING_A, NONCANONICAL_HOLE_RING_A],
+            },
           },
         ],
       });
@@ -277,8 +332,8 @@ function createImportFetch(): typeof fetch {
         jobId: "job-1",
         status: "Completed",
         currentPhase: "Done",
-        featuresProcessed: 2,
-        estimatedTotalFeatures: 2,
+        featuresProcessed: 3,
+        estimatedTotalFeatures: 3,
       });
     }
 

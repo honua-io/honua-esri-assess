@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Honua ArcGIS Migration Workbench</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="workflow-rail" aria-label="Migration workflow">
+        <header class="rail-header">
+          <p class="eyebrow">Honua Migration</p>
+          <h1>ArcGIS Workbench</h1>
+          <strong id="mode-badge" class="mode-badge">Demo</strong>
+        </header>
+
+        <nav id="stage-list" class="stage-list" aria-label="Stages"></nav>
+
+        <section class="source-panel" aria-label="Source summary">
+          <div class="section-heading">
+            <p class="eyebrow">Source</p>
+            <h2 id="source-title">-</h2>
+          </div>
+          <dl class="fact-list">
+            <div><dt>Fixture</dt><dd id="source-fixture">-</dd></div>
+            <div><dt>Portal</dt><dd id="source-portal">-</dd></div>
+            <div><dt>Profile</dt><dd id="source-profile">-</dd></div>
+          </dl>
+        </section>
+      </aside>
+
+      <section class="workspace" aria-label="Migration workbench">
+        <header class="workspace-header">
+          <div>
+            <p class="eyebrow">Migration preview</p>
+            <h2 id="workflow-title">Fixture workflow</h2>
+          </div>
+          <div class="header-actions">
+            <a id="json-export" class="export-link" href="#workbench-report-json">JSON</a>
+            <a id="markdown-export" class="export-link" href="#workbench-report-markdown">Markdown</a>
+          </div>
+        </header>
+
+        <section class="summary-band" aria-label="Workflow summary">
+          <article><span>Readiness</span><strong id="summary-readiness">-</strong></article>
+          <article><span>Manual</span><strong id="summary-manual">0</strong></article>
+          <article><span>Blocked</span><strong id="summary-blocked">0</strong></article>
+          <article><span>Recon</span><strong id="summary-reconciliation">-</strong></article>
+        </section>
+
+        <section class="focus-grid">
+          <div class="map-preview" aria-label="Migration content preview">
+            <div class="map-band band-a"></div>
+            <div class="map-band band-b"></div>
+            <div class="route-line"></div>
+            <span class="map-point point-a"></span>
+            <span class="map-point point-b"></span>
+            <span class="map-point point-c"></span>
+            <span class="map-label label-a">ArcGIS</span>
+            <span class="map-label label-b">Honua</span>
+          </div>
+
+          <section id="stage-detail" class="stage-detail" aria-live="polite"></section>
+        </section>
+
+        <section class="workbench-grid">
+          <section class="panel" aria-label="Content conversion">
+            <div class="section-heading">
+              <p class="eyebrow">Content</p>
+              <h2>Conversion</h2>
+            </div>
+            <div id="content-list" class="item-list"></div>
+          </section>
+
+          <section class="panel" aria-label="Import jobs">
+            <div class="section-heading split">
+              <div>
+                <p class="eyebrow">Import</p>
+                <h2>Jobs</h2>
+              </div>
+              <button id="start-live-import" type="button">Start Live</button>
+            </div>
+            <div id="import-list" class="item-list"></div>
+          </section>
+
+          <section class="panel action-panel" aria-label="Manual and blocked items">
+            <div class="section-heading">
+              <p class="eyebrow">Review</p>
+              <h2>Action Items</h2>
+            </div>
+            <div id="action-list" class="action-list"></div>
+          </section>
+
+          <section class="panel report-panel" aria-label="Report preview">
+            <div class="section-heading">
+              <p class="eyebrow">Report</p>
+              <h2>Artifacts</h2>
+            </div>
+            <div id="artifact-list" class="artifact-list"></div>
+            <pre id="report-preview"></pre>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

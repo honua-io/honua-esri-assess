@@ -1,5 +1,44 @@
 export { scanArcGisUsage, summarizeArcGisScan } from "./migration/scanner.js";
 export type { ArcGisImportHit, ArcGisScanReport } from "./migration/scanner.js";
+export {
+  MIGRATION_EVIDENCE_STATES,
+  MIGRATION_MANIFEST_ARTIFACT_KIND,
+  MIGRATION_MANIFEST_ARTIFACT_VERSION,
+  MIGRATION_PARITY_EVIDENCE_ARTIFACT_KIND,
+  MIGRATION_PARITY_EVIDENCE_ARTIFACT_VERSION,
+  MIGRATION_SOURCE_INVENTORY_ARTIFACT_KIND,
+  MIGRATION_SOURCE_INVENTORY_ARTIFACT_VERSION,
+} from "./core/types.js";
+export type {
+  MigrationCompatibilityAssessment,
+  MigrationCutoverReadinessItem,
+  MigrationCutoverReadinessSummary,
+  MigrationEvidenceState,
+  MigrationExternalDependency,
+  MigrationInventoryAuthPosture,
+  MigrationInventoryCodedValue,
+  MigrationInventoryCompleteness,
+  MigrationInventoryContainer,
+  MigrationInventoryField,
+  MigrationInventoryResource,
+  MigrationInventoryScanRequest,
+  MigrationInventorySourceKind,
+  MigrationInventoryStyle,
+  MigrationInventorySummary,
+  MigrationManifestArtifact,
+  MigrationManifestReviewItem,
+  MigrationManifestStyleAction,
+  MigrationManifestSummary,
+  MigrationManifestTargetResource,
+  MigrationParityEvidenceArtifact,
+  MigrationParityEvidenceItem,
+  MigrationParityEvidenceSection,
+  MigrationReadinessAttestation,
+  MigrationReadinessAttestationItem,
+  MigrationSourceIdentity,
+  MigrationSourceInventoryArtifact,
+  MigrationSpatialReferenceInfo,
+} from "./core/types.js";
 export { runEsriCompatCodemod } from "./migration/codemod.js";
 export type {
   CodemodConstructorKind,

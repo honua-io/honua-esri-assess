@@ -63,6 +63,7 @@ describe("JS parity matrix", () => {
 
     expect(featureLayer).toMatchObject({
       honuaCompat: "compat",
+      honuaMapLibre: "native",
       esriLeaflet: "compat",
     });
     expect(graphic).toMatchObject({
@@ -135,14 +136,17 @@ describe("JS parity matrix", () => {
     });
     expect(map).toMatchObject({
       honuaCompat: "compat",
+      honuaMapLibre: "native",
       esriLeaflet: "compat",
     });
     expect(mapView).toMatchObject({
       honuaCompat: "compat",
+      honuaMapLibre: "native",
       esriLeaflet: "compat",
     });
     expect(sceneView).toMatchObject({
       honuaCompat: "compat",
+      honuaMapLibre: "assisted",
       esriLeaflet: "compat",
     });
     expect(homeWidget).toMatchObject({
@@ -243,11 +247,15 @@ describe("JS parity matrix", () => {
     const matrix = getJsParityMatrix();
     const summary = summarizeJsParityMatrix(matrix);
     const totalHonua = Object.values(summary.honuaCompat).reduce((acc, value) => acc + value, 0);
+    const totalHonuaMapLibre = Object.values(summary.honuaMapLibre).reduce((acc, value) => acc + value, 0);
     const totalEsriLeaflet = Object.values(summary.esriLeaflet).reduce((acc, value) => acc + value, 0);
 
     expect(totalHonua).toBe(matrix.length);
+    expect(totalHonuaMapLibre).toBe(matrix.length);
     expect(totalEsriLeaflet).toBe(matrix.length);
     expect(summary.honuaCompat.compat).toBeGreaterThan(0);
+    expect(summary.honuaMapLibre.native).toBe(5);
+    expect(summary.honuaMapLibre.assisted).toBeGreaterThan(0);
     expect(summary.esriLeaflet.compat).toBeGreaterThan(0);
     expect(summary.esriLeaflet.assisted).toBe(0);
   });

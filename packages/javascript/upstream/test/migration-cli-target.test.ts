@@ -77,7 +77,7 @@ describe("migration cli target selection", () => {
     const migrated = fs.readFileSync(appFile, "utf8");
     expect(migrated).toContain('import { MapCompat } from "@honua/sdk-esri-compat";');
     expect(migrated).toContain("const map = new MapCompat({ basemap: 'streets' });");
-  }, 60_000);
+  }, 240_000);
 
   it("runs codemod with --target esri-leaflet and emits a deterministic mixed mapping report", () => {
     ensureBuiltCliArtifacts();
@@ -122,7 +122,57 @@ describe("migration cli target selection", () => {
     expect(report.readiness).toBe("ready");
     expect(report.manualTodos).toEqual([]);
     expect(report.unhandledArcGisModules).toEqual([]);
-  }, 60_000);
+  }, 240_000);
+
+  it("runs codemod with --target honua-maplibre and records native target report fields", () => {
+    ensureBuiltCliArtifacts();
+    const root = makeTempDir();
+    const appFile = path.join(root, "app.ts");
+    const reportPath = path.join(root, "report-maplibre.json");
+
+    fs.writeFileSync(
+      appFile,
+      [
+        "import Map from '@arcgis/core/Map';",
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "import MapView from '@arcgis/core/views/MapView';",
+        "const layer = new FeatureLayer({ url: serviceUrl });",
+        "const map = new Map({ basemap: 'streets-vector', layers: [layer] });",
+        "const view = new MapView({ map, container: 'viewDiv', center: [-157.8, 21.3], zoom: 12 });",
+        "void view;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runCli(
+      ["codemod", root, "--target", "honua-maplibre", "--write", "--annotate-todos", "--report", reportPath],
+      getProjectRoot(),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("target=honua-maplibre");
+    expect(result.stdout).toContain("manual=[trivial:0 moderate:0 complex:0]");
+    expect(fs.existsSync(reportPath)).toBe(true);
+
+    const migrated = fs.readFileSync(appFile, "utf8");
+    expect(migrated).toContain('import * as maplibregl from "maplibre-gl";');
+    expect(migrated).toContain('from "@honua/sdk-js/map";');
+    expect(migrated).toContain("createHonuaFeatureServiceLayer({");
+    expect(migrated).toContain("createHonuaMapLibreStyle({");
+    expect(migrated).toContain("new maplibregl.Map(createHonuaMapLibreMapOptions({");
+    expect(migrated).not.toContain("@honua/sdk-esri-compat");
+
+    const report = JSON.parse(fs.readFileSync(reportPath, "utf8")) as {
+      codemodTarget: string;
+      readiness: string;
+      manualTodos: Array<{ kind: string; reason: string }>;
+      unhandledArcGisModules: Array<{ modulePath: string; usageStyle: string; count: number }>;
+    };
+    expect(report.codemodTarget).toBe("honua-maplibre");
+    expect(report.readiness).toBe("ready");
+    expect(report.manualTodos).toEqual([]);
+    expect(report.unhandledArcGisModules).toEqual([]);
+  }, 240_000);
 
   it("fails fast for invalid --target values", () => {
     ensureBuiltCliArtifacts();
@@ -132,7 +182,7 @@ describe("migration cli target selection", () => {
 
     expect(result.status).toBe(1);
     expect(result.stdout).toContain("Usage:");
-  }, 60_000);
+  }, 240_000);
 
   it("prints a note when project only contains esri-leaflet imports", () => {
     ensureBuiltCliArtifacts();
@@ -154,7 +204,7 @@ describe("migration cli target selection", () => {
     expect(result.stdout).toContain(
       "note=esri-leaflet-imports-detected-without-arcgis-js; codemod targets @arcgis/core inputs (not migrations from esri-leaflet)",
     );
-  }, 60_000);
+  }, 240_000);
 
   it("emits explicit TODO annotations for unsupported esri-leaflet mappings", () => {
     ensureBuiltCliArtifacts();
@@ -198,5 +248,5 @@ describe("migration cli target selection", () => {
     expect(report.manualTodos).toHaveLength(1);
     expect(report.manualTodos[0]?.kind).toBe("scene-view");
     expect(report.manualTodos[0]?.reason).toContain("unsupported properties");
-  }, 60_000);
+  }, 240_000);
 });

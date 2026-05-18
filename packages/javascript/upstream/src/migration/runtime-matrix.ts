@@ -7,16 +7,20 @@ export interface JsRuntimeParityEntry {
   capability: string;
   arcGisJsApi: string;
   honuaCompat: JsRuntimeParityStatus;
+  honuaMapLibre: JsRuntimeParityStatus;
   esriLeaflet: JsRuntimeParityStatus;
   notes: string;
 }
 
 export interface JsRuntimeParitySummary {
   honuaCompat: Record<JsRuntimeParityStatus, number>;
+  honuaMapLibre: Record<JsRuntimeParityStatus, number>;
   esriLeaflet: Record<JsRuntimeParityStatus, number>;
 }
 
-const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
+type BaseRuntimeParityEntry = Omit<JsRuntimeParityEntry, "honuaMapLibre">;
+
+const BASE_RUNTIME_MATRIX: readonly BaseRuntimeParityEntry[] = Object.freeze([
   {
     surface: "feature-layer",
     capability: "query-features",
@@ -327,7 +331,12 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
   },
 ]);
 
-export const JS_RUNTIME_PARITY_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([...BASE_RUNTIME_MATRIX]);
+export const JS_RUNTIME_PARITY_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze(
+  BASE_RUNTIME_MATRIX.map((entry) => ({
+    ...entry,
+    honuaMapLibre: inferHonuaMapLibreRuntimeStatus(entry),
+  })),
+);
 
 export function getJsRuntimeParityMatrix(): readonly JsRuntimeParityEntry[] {
   return JS_RUNTIME_PARITY_MATRIX;
@@ -343,6 +352,12 @@ export function summarizeJsRuntimeParity(
       assisted: 0,
       unsupported: 0,
     },
+    honuaMapLibre: {
+      native: 0,
+      compat: 0,
+      assisted: 0,
+      unsupported: 0,
+    },
     esriLeaflet: {
       native: 0,
       compat: 0,
@@ -353,8 +368,19 @@ export function summarizeJsRuntimeParity(
 
   for (const row of matrix) {
     summary.honuaCompat[row.honuaCompat] += 1;
+    summary.honuaMapLibre[row.honuaMapLibre] += 1;
     summary.esriLeaflet[row.esriLeaflet] += 1;
   }
 
   return summary;
+}
+
+function inferHonuaMapLibreRuntimeStatus(entry: BaseRuntimeParityEntry): JsRuntimeParityStatus {
+  if (entry.surface === "feature-layer" || entry.surface === "map-image-layer") {
+    return "native";
+  }
+  if (entry.surface === "map-view" && entry.capability === "navigation-go-to") {
+    return "native";
+  }
+  return "assisted";
 }

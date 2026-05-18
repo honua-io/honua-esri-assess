@@ -193,6 +193,9 @@ function runMatrix(reportPath?: string): void {
       `honuaCompat=${summary.honuaCompat.compat}`,
       `honuaAssisted=${summary.honuaCompat.assisted}`,
       `honuaUnsupported=${summary.honuaCompat.unsupported}`,
+      `honuaMapLibreNative=${summary.honuaMapLibre.native}`,
+      `honuaMapLibreAssisted=${summary.honuaMapLibre.assisted}`,
+      `honuaMapLibreUnsupported=${summary.honuaMapLibre.unsupported}`,
       `esriLeafletCompat=${summary.esriLeaflet.compat}`,
       `esriLeafletAssisted=${summary.esriLeaflet.assisted}`,
       `esriLeafletUnsupported=${summary.esriLeaflet.unsupported}`,
@@ -217,6 +220,9 @@ function runRuntimeMatrix(reportPath?: string): void {
       `honuaCompat=${summary.honuaCompat.compat}`,
       `honuaAssisted=${summary.honuaCompat.assisted}`,
       `honuaUnsupported=${summary.honuaCompat.unsupported}`,
+      `honuaMapLibreNative=${summary.honuaMapLibre.native}`,
+      `honuaMapLibreAssisted=${summary.honuaMapLibre.assisted}`,
+      `honuaMapLibreUnsupported=${summary.honuaMapLibre.unsupported}`,
       `esriLeafletCompat=${summary.esriLeaflet.compat}`,
       `esriLeafletAssisted=${summary.esriLeaflet.assisted}`,
       `esriLeafletUnsupported=${summary.esriLeaflet.unsupported}`,
@@ -1199,7 +1205,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
         i += 1;
         continue;
       }
-      if (next !== "honua" && next !== "honua-compat" && next !== "esri-leaflet") {
+      if (next !== "honua" && next !== "honua-compat" && next !== "esri-leaflet" && next !== "honua-maplibre") {
         return undefined;
       }
       codemodTarget = next === "honua" ? "honua-compat" : next;
@@ -1641,12 +1647,12 @@ function printUsage(): void {
     [
       "Usage:",
       "  honua-migrate [scan] <path> [--report <file>]",
-      "  honua-migrate codemod <path> [--target <honua|honua-compat|esri-leaflet>] [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
+      "  honua-migrate codemod <path> [--target <honua|honua-compat|honua-maplibre|esri-leaflet>] [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-migrate matrix [--report <file>]",
       "  honua-migrate runtime-matrix [--report <file>]",
-      "  honua-migrate fixtures [<fixtures-root>] [--target <honua|honua-compat|esri-leaflet>] [--fixtures <name1,name2,...>] [--report <file>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
+      "  honua-migrate fixtures [<fixtures-root>] [--target <honua|honua-compat|honua-maplibre|esri-leaflet>] [--fixtures <name1,name2,...>] [--report <file>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-migrate reconcile --source-base-url <url> --source-service-id <id> --target-base-url <url> --target-service-id <id> --layer-id <n> [--sample-size <n>] [--report <file>]",
-      "  honua-migrate demo [<fixture-name>] [--fixtures-root <dir>] [--output-dir <dir>] [--target <honua|honua-compat|esri-leaflet>] [--admin-base-url <url>] [--admin-api-key <key>] [--source-service-url <url>] [--layer-id <n>] [--table-name <name>] [--source-base-url <url>] [--source-service-id <id>] [--target-base-url <url>] [--target-service-id <id>] [--sample-size <n>] [--poll-interval-ms <n>] [--timeout-seconds <n>] [--skip-import] [--skip-reconcile] [--report <file>]",
+      "  honua-migrate demo [<fixture-name>] [--fixtures-root <dir>] [--output-dir <dir>] [--target <honua|honua-compat|honua-maplibre|esri-leaflet>] [--admin-base-url <url>] [--admin-api-key <key>] [--source-service-url <url>] [--layer-id <n>] [--table-name <name>] [--source-base-url <url>] [--source-service-id <id>] [--target-base-url <url>] [--target-service-id <id>] [--sample-size <n>] [--poll-interval-ms <n>] [--timeout-seconds <n>] [--skip-import] [--skip-reconcile] [--report <file>]",
       "  honua-migrate content scan --portal <url> [--token <token>] [--report <file>]",
       "  honua-migrate content export --portal <url> --output-dir <dir> [--token <token>] [--exclude-features] [--exclude-webmaps] [--exclude-hosted-layers] [--report <file>]",
       "  honua-migrate content import --source <dir> --target <url> [--admin-api-key <key>] [--output-dir <dir>] [--table-prefix <prefix>] [--source-url-prefix <url>] [--target-url-prefix <url>] [--exclude-webmaps] [--exclude-hosted-layers] [--report <file>]",
@@ -1656,6 +1662,7 @@ function printUsage(): void {
       "Examples:",
       "  node dist/src/migration/cli.js scan ./src",
       "  node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json",
+      "  node dist/src/migration/cli.js codemod ./src --target honua-maplibre --write --report migration-report.json",
       "  node dist/src/migration/cli.js codemod ./src --target esri-leaflet --write --report migration-report.json",
       "  node dist/src/migration/cli.js matrix --report parity-matrix.json",
       "  node dist/src/migration/cli.js runtime-matrix --report runtime-parity-matrix.json",
@@ -1673,6 +1680,7 @@ function printUsage(): void {
       "Target semantics:",
       "  honua: alias of honua-compat.",
       "  honua-compat: migrate ArcGIS JS (@arcgis/core) to @honua/sdk-esri-compat.",
+      "  honua-maplibre: migrate supported ArcGIS JS (@arcgis/core) constructs to @honua/sdk-js/map plus maplibre-gl helpers.",
       "  esri-leaflet: migrate ArcGIS JS (@arcgis/core) to a mixed esri-leaflet + compat output.",
       "  Existing esri-leaflet apps generally do not need this codemod.",
     ].join("\n"),

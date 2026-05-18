@@ -36,6 +36,7 @@ describe("JS runtime parity matrix", () => {
     expect(featureLayerQuery).toMatchObject({
       arcGisJsApi: "FeatureLayer.queryFeatures",
       honuaCompat: "compat",
+      honuaMapLibre: "native",
     });
     expect(mapImageFind).toMatchObject({
       arcGisJsApi: "MapImageLayer.find",
@@ -70,11 +71,13 @@ describe("JS runtime parity matrix", () => {
     expect(mapViewGoTo).toMatchObject({
       arcGisJsApi: "MapView.goTo",
       honuaCompat: "compat",
+      honuaMapLibre: "native",
       esriLeaflet: "compat",
     });
     expect(navigationWidgets).toMatchObject({
       arcGisJsApi: "BasemapGallery/Bookmarks/Expand",
       honuaCompat: "compat",
+      honuaMapLibre: "assisted",
       esriLeaflet: "compat",
     });
     expect(commonControls).toMatchObject({
@@ -89,11 +92,15 @@ describe("JS runtime parity matrix", () => {
     const summary = summarizeJsRuntimeParity(matrix);
 
     const totalHonua = Object.values(summary.honuaCompat).reduce((acc, value) => acc + value, 0);
+    const totalHonuaMapLibre = Object.values(summary.honuaMapLibre).reduce((acc, value) => acc + value, 0);
     const totalEsriLeaflet = Object.values(summary.esriLeaflet).reduce((acc, value) => acc + value, 0);
 
     expect(totalHonua).toBe(matrix.length);
+    expect(totalHonuaMapLibre).toBe(matrix.length);
     expect(totalEsriLeaflet).toBe(matrix.length);
     expect(summary.honuaCompat.compat).toBeGreaterThan(0);
+    expect(summary.honuaMapLibre.native).toBeGreaterThan(0);
+    expect(summary.honuaMapLibre.assisted).toBeGreaterThan(0);
     expect(summary.esriLeaflet.assisted).toBe(0);
   });
 });

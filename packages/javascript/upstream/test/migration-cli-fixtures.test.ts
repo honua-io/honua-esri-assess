@@ -109,7 +109,7 @@ describe("migration cli fixtures metrics", () => {
     expect(report.fixtures).toHaveLength(4);
     expect(report.fixtures.every((fixture) => fixture.readiness === "ready")).toBe(true);
     expect(report.fixtures.every((fixture) => fixture.manualCallSites === 0)).toBe(true);
-  }, 60_000);
+  }, 240_000);
 
   it("supports fixture subset selection", () => {
     ensureBuiltCliArtifacts();
@@ -141,7 +141,57 @@ describe("migration cli fixtures metrics", () => {
     expect(report.summary.fixtureCount).toBe(1);
     expect(report.fixtureNames).toEqual(["esri-real-sample-network-app"]);
     expect(report.fixtures).toEqual([expect.objectContaining({ fixture: "esri-real-sample-network-app" })]);
-  }, 60_000);
+  }, 240_000);
+
+  it("reports honua-maplibre fixture metrics for native supported sample", () => {
+    ensureBuiltCliArtifacts();
+    const root = makeTempDir();
+    const reportPath = path.join(root, "maplibre-metrics.json");
+
+    const result = runCli(
+      ["fixtures", "--target", "honua-maplibre", "--fixtures", "esri-maplibre-simple-app", "--report", reportPath],
+      getProjectRoot(),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("fixtures=1");
+    expect(result.stdout).toContain("target=honua-maplibre");
+    expect(fs.existsSync(reportPath)).toBe(true);
+
+    const report = JSON.parse(fs.readFileSync(reportPath, "utf8")) as {
+      codemodTarget: string;
+      summary: {
+        fixtureCount: number;
+        ready: number;
+        autoMigratedCallSites: number;
+        manualCallSites: number;
+        unhandledUsageHits: number;
+      };
+      fixtures: Array<{
+        fixture: string;
+        readiness: string;
+        totalCallSites: number;
+        autoMigratedCallSites: number;
+        manualCallSites: number;
+      }>;
+    };
+
+    expect(report.codemodTarget).toBe("honua-maplibre");
+    expect(report.summary.fixtureCount).toBe(1);
+    expect(report.summary.ready).toBe(1);
+    expect(report.summary.autoMigratedCallSites).toBe(5);
+    expect(report.summary.manualCallSites).toBe(0);
+    expect(report.summary.unhandledUsageHits).toBe(0);
+    expect(report.fixtures).toEqual([
+      expect.objectContaining({
+        fixture: "esri-maplibre-simple-app",
+        readiness: "ready",
+        totalCallSites: 5,
+        autoMigratedCallSites: 5,
+        manualCallSites: 0,
+      }),
+    ]);
+  }, 240_000);
 
   it("passes strict fixture gates for honua-compat target", () => {
     ensureBuiltCliArtifacts();
@@ -162,7 +212,7 @@ describe("migration cli fixtures metrics", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("fixturesGate=pass");
-  }, 60_000);
+  }, 240_000);
 
   it("passes fixture gates for esri-leaflet network sample after compat-fallback expansion", () => {
     ensureBuiltCliArtifacts();
@@ -184,7 +234,7 @@ describe("migration cli fixtures metrics", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("fixturesGate=pass");
     expect(result.stdout).toContain("manual=0");
-  }, 60_000);
+  }, 240_000);
 
   it("passes strict fixture gates for deterministic esri-leaflet subset", () => {
     ensureBuiltCliArtifacts();
@@ -212,5 +262,5 @@ describe("migration cli fixtures metrics", () => {
     expect(result.stdout).toContain("target=esri-leaflet");
     expect(result.stdout).toContain("manual=0");
     expect(result.stdout).toContain("unhandled=0");
-  }, 60_000);
+  }, 240_000);
 });

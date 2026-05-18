@@ -7,6 +7,9 @@ const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 const DEFAULT_COMPAT_IMPORT_PATH = "@honua/sdk-esri-compat";
 const ESRI_LEAFLET_IMPORT_PATH = "esri-leaflet";
 const ESRI_LEAFLET_NAMESPACE = "HonuaEsriLeaflet";
+const HONUA_MAP_IMPORT_PATH = "@honua/sdk-js/map";
+const MAPLIBRE_IMPORT_PATH = "maplibre-gl";
+const MAPLIBRE_NAMESPACE = "maplibregl";
 const TODO_MARKER = "TODO(honua-migrate)";
 const CJS_REQUIRE_MANUAL_REASON =
   "CommonJS require constructors are not auto-migrated; convert the module to ESM and rerun.";
@@ -14,6 +17,12 @@ const ESRI_LEAFLET_UNSUPPORTED_CONSTRUCTOR_REASON =
   "No deterministic esri-leaflet mapping for this constructor; requires manual migration.";
 const ESRI_LEAFLET_UNSUPPORTED_DYNAMIC_IMPORT_REASON =
   "Dynamic import has no deterministic esri-leaflet mapping; requires manual migration.";
+const HONUA_MAPLIBRE_UNSUPPORTED_CONSTRUCTOR_REASON =
+  "No deterministic Honua MapLibre mapping for this constructor; requires manual migration.";
+const HONUA_MAPLIBRE_UNSUPPORTED_DYNAMIC_IMPORT_REASON =
+  "Dynamic import has no deterministic Honua MapLibre mapping; requires manual migration.";
+const HONUA_MAPLIBRE_UNSUPPORTED_IMPORT_REASON =
+  "No deterministic Honua MapLibre mapping for this import; requires manual migration.";
 const REACTIVE_UTILS_IMPORT_UNSUPPORTED_REASON = "ReactiveUtils import shape is unsupported for automatic migration.";
 const ESRI_CONFIG_IMPORT_UNSUPPORTED_REASON = "esriConfig import shape is unsupported for automatic migration.";
 const IDENTITY_MANAGER_IMPORT_UNSUPPORTED_REASON =
@@ -23,6 +32,13 @@ const SHADOWED_IMPORT_CONSTRUCTOR_REASON =
   "Constructor identifier is shadowed by a local declaration; requires manual migration.";
 
 const ESRI_LEAFLET_NATIVE_KINDS = new Set<CodemodConstructorKind>(["feature-layer", "map-image-layer", "tile-layer"]);
+const HONUA_MAPLIBRE_NATIVE_KINDS = new Set<CodemodConstructorKind>([
+  "feature-layer",
+  "map-image-layer",
+  "tile-layer",
+  "map",
+  "map-view",
+]);
 const ESRI_LEAFLET_COMPAT_FALLBACK_KINDS = new Set<CodemodConstructorKind>([
   "graphic",
   "point-geometry",
@@ -91,7 +107,7 @@ const ESRI_LEAFLET_COMPAT_FALLBACK_KINDS = new Set<CodemodConstructorKind>([
   "reactive-utils",
 ]);
 
-export type CodemodTarget = "honua-compat" | "esri-leaflet";
+export type CodemodTarget = "honua-compat" | "esri-leaflet" | "honua-maplibre";
 
 export type CodemodConstructorKind =
   | "feature-layer"
@@ -527,6 +543,7 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
 const TARGET_SUPPORTED_KINDS: Readonly<Record<CodemodTarget, ReadonlySet<CodemodConstructorKind>>> = Object.freeze({
   "honua-compat": new Set(REWRITE_SPECS.map((spec) => spec.kind)),
   "esri-leaflet": new Set([...ESRI_LEAFLET_NATIVE_KINDS, ...ESRI_LEAFLET_COMPAT_FALLBACK_KINDS]),
+  "honua-maplibre": HONUA_MAPLIBRE_NATIVE_KINDS,
 });
 
 export const SUPPORTED_ARCGIS_MODULES: readonly string[] = REWRITE_SPECS.flatMap((spec) =>
@@ -828,9 +845,12 @@ function codemodFile(
   const manualTodos: MigrationTodo[] = [];
   const todoCommentEdits: TextEdit[] = [];
   const requiredCompatSymbols = new Set<string>();
+  const requiredHonuaMapLibreSymbols = new Set<string>();
   const requiresEsriLeafletImport = { value: false };
+  const requiresMapLibreImport = { value: false };
   const esriLeafletNamespaceAlias =
     findNamespaceImportAlias(sourceFile, ESRI_LEAFLET_IMPORT_PATH) ?? ESRI_LEAFLET_NAMESPACE;
+  const mapLibreNamespaceAlias = findNamespaceImportAlias(sourceFile, MAPLIBRE_IMPORT_PATH) ?? MAPLIBRE_NAMESPACE;
   const fileExtension = path.extname(file).toLowerCase();
   const isCommonJsModule = fileExtension === ".cjs" || hasCommonJsExportMarkers(source);
 
@@ -840,6 +860,7 @@ function codemodFile(
     file,
     compatImportPath,
     annotateTodos,
+    target,
   });
   importEdits.push(...esriRequestImportRewrite.edits);
   rewrittenKinds.push(...esriRequestImportRewrite.rewrittenKinds);
@@ -852,6 +873,7 @@ function codemodFile(
     file,
     compatImportPath,
     annotateTodos,
+    target,
   });
   importEdits.push(...identityManagerImportRewrite.edits);
   rewrittenKinds.push(...identityManagerImportRewrite.rewrittenKinds);
@@ -864,6 +886,7 @@ function codemodFile(
     file,
     compatImportPath,
     annotateTodos,
+    target,
   });
   importEdits.push(...esriConfigImportRewrite.edits);
   rewrittenKinds.push(...esriConfigImportRewrite.rewrittenKinds);
@@ -876,6 +899,7 @@ function codemodFile(
     file,
     compatImportPath,
     annotateTodos,
+    target,
   });
   importEdits.push(...reactiveUtilsImportRewrite.edits);
   rewrittenKinds.push(...reactiveUtilsImportRewrite.rewrittenKinds);
@@ -899,6 +923,30 @@ function codemodFile(
             text: buildCompatDynamicImportExpression(compatImportPath, spec.compatSymbol),
           });
           rewrittenKinds.push(spec.kind);
+          return;
+        }
+
+        if (target === "honua-maplibre") {
+          const nodeStart = node.getStart(sourceFile);
+          const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+          manualTodos.push({
+            kind: spec.kind,
+            file,
+            line: location.line + 1,
+            column: location.character + 1,
+            reason: HONUA_MAPLIBRE_UNSUPPORTED_DYNAMIC_IMPORT_REASON,
+            difficulty: "complex",
+          });
+          if (annotateTodos) {
+            const lineStart = findLineStartOffset(source, nodeStart);
+            if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+              todoCommentEdits.push({
+                start: lineStart,
+                end: lineStart,
+                text: `// ${TODO_MARKER}[${spec.kind}]: ${HONUA_MAPLIBRE_UNSUPPORTED_DYNAMIC_IMPORT_REASON}\n`,
+              });
+            }
+          }
           return;
         }
 
@@ -1019,6 +1067,52 @@ function codemodFile(
           text: spec.compatSymbol,
         });
         rewrittenKinds.push(importBinding.kind);
+        return;
+      }
+
+      if (target === "honua-maplibre") {
+        const replacement = buildHonuaMapLibreConstructorExpression(
+          importBinding.kind,
+          node,
+          sourceFile,
+          mapLibreNamespaceAlias,
+        );
+        if (replacement) {
+          constructorEdits.push({
+            start: node.getStart(sourceFile),
+            end: node.getEnd(),
+            text: replacement.text,
+          });
+          for (const symbol of replacement.helperSymbols) {
+            requiredHonuaMapLibreSymbols.add(symbol);
+          }
+          if (replacement.requiresMapLibreImport) {
+            requiresMapLibreImport.value = true;
+          }
+          rewrittenKinds.push(importBinding.kind);
+          return;
+        }
+
+        const nodeStart = node.getStart(sourceFile);
+        const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+        manualTodos.push({
+          kind: importBinding.kind,
+          file,
+          line: location.line + 1,
+          column: location.character + 1,
+          reason: HONUA_MAPLIBRE_UNSUPPORTED_CONSTRUCTOR_REASON,
+          difficulty: "complex",
+        });
+        if (annotateTodos) {
+          const lineStart = findLineStartOffset(source, nodeStart);
+          if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+            todoCommentEdits.push({
+              start: lineStart,
+              end: lineStart,
+              text: `// ${TODO_MARKER}[${importBinding.kind}]: ${HONUA_MAPLIBRE_UNSUPPORTED_CONSTRUCTOR_REASON}\n`,
+            });
+          }
+        }
         return;
       }
 
@@ -1143,6 +1237,17 @@ function codemodFile(
     transformed = compatImportResult.nextSource;
     addedCompatImport = compatImportResult.changed;
   }
+  const honuaMapLibreSymbols = Array.from(requiredHonuaMapLibreSymbols).sort();
+  if (honuaMapLibreSymbols.length > 0) {
+    const honuaImportResult = ensureCompatNamedImports(file, transformed, honuaMapLibreSymbols, HONUA_MAP_IMPORT_PATH);
+    transformed = honuaImportResult.nextSource;
+    addedCompatImport = addedCompatImport || honuaImportResult.changed;
+  }
+  if (target === "honua-maplibre" && requiresMapLibreImport.value) {
+    const mapLibreImportResult = ensureNamespaceImport(file, transformed, MAPLIBRE_IMPORT_PATH, mapLibreNamespaceAlias);
+    transformed = mapLibreImportResult.nextSource;
+    addedCompatImport = addedCompatImport || mapLibreImportResult.changed;
+  }
   if (target === "esri-leaflet" && requiresEsriLeafletImport.value) {
     const esriLeafletImportResult = ensureNamespaceImport(
       file,
@@ -1167,12 +1272,51 @@ function codemodFile(
   };
 }
 
+function pushImportManualTodo(
+  options: {
+    source: string;
+    sourceFile: ts.SourceFile;
+    file: string;
+    annotateTodos: boolean;
+  },
+  statement: ts.ImportDeclaration,
+  kind: CodemodConstructorKind,
+  reason: string,
+  manualTodos: MigrationTodo[],
+  todoCommentEdits: TextEdit[],
+): void {
+  const nodeStart = statement.getStart(options.sourceFile);
+  const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
+  manualTodos.push({
+    kind,
+    file: options.file,
+    line: location.line + 1,
+    column: location.character + 1,
+    reason,
+    difficulty: "complex",
+  });
+
+  if (!options.annotateTodos) {
+    return;
+  }
+
+  const lineStart = findLineStartOffset(options.source, nodeStart);
+  if (shouldInsertTodoComment(options.source, lineStart, nodeStart)) {
+    todoCommentEdits.push({
+      start: lineStart,
+      end: lineStart,
+      text: `// ${TODO_MARKER}[${kind}]: ${reason}\n`,
+    });
+  }
+}
+
 function rewriteReactiveUtilsImports(options: {
   source: string;
   sourceFile: ts.SourceFile;
   file: string;
   compatImportPath: string;
   annotateTodos: boolean;
+  target: CodemodTarget;
 }): {
   edits: TextEdit[];
   rewrittenKinds: CodemodConstructorKind[];
@@ -1189,6 +1333,18 @@ function rewriteReactiveUtilsImports(options: {
       continue;
     }
     if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "reactive-utils") {
+      continue;
+    }
+
+    if (options.target === "honua-maplibre") {
+      pushImportManualTodo(
+        options,
+        statement,
+        "reactive-utils",
+        HONUA_MAPLIBRE_UNSUPPORTED_IMPORT_REASON,
+        manualTodos,
+        todoCommentEdits,
+      );
       continue;
     }
 
@@ -1240,6 +1396,7 @@ function rewriteEsriRequestImports(options: {
   file: string;
   compatImportPath: string;
   annotateTodos: boolean;
+  target: CodemodTarget;
 }): {
   edits: TextEdit[];
   rewrittenKinds: CodemodConstructorKind[];
@@ -1259,6 +1416,18 @@ function rewriteEsriRequestImports(options: {
       continue;
     }
     if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "esri-request") {
+      continue;
+    }
+
+    if (options.target === "honua-maplibre") {
+      pushImportManualTodo(
+        options,
+        statement,
+        "esri-request",
+        HONUA_MAPLIBRE_UNSUPPORTED_IMPORT_REASON,
+        manualTodos,
+        todoCommentEdits,
+      );
       continue;
     }
 
@@ -1348,6 +1517,7 @@ function rewriteIdentityManagerImports(options: {
   file: string;
   compatImportPath: string;
   annotateTodos: boolean;
+  target: CodemodTarget;
 }): {
   edits: TextEdit[];
   rewrittenKinds: CodemodConstructorKind[];
@@ -1367,6 +1537,18 @@ function rewriteIdentityManagerImports(options: {
       continue;
     }
     if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "identity-manager") {
+      continue;
+    }
+
+    if (options.target === "honua-maplibre") {
+      pushImportManualTodo(
+        options,
+        statement,
+        "identity-manager",
+        HONUA_MAPLIBRE_UNSUPPORTED_IMPORT_REASON,
+        manualTodos,
+        todoCommentEdits,
+      );
       continue;
     }
 
@@ -1456,6 +1638,7 @@ function rewriteEsriConfigImports(options: {
   file: string;
   compatImportPath: string;
   annotateTodos: boolean;
+  target: CodemodTarget;
 }): {
   edits: TextEdit[];
   rewrittenKinds: CodemodConstructorKind[];
@@ -1475,6 +1658,18 @@ function rewriteEsriConfigImports(options: {
       continue;
     }
     if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "esri-config") {
+      continue;
+    }
+
+    if (options.target === "honua-maplibre") {
+      pushImportManualTodo(
+        options,
+        statement,
+        "esri-config",
+        HONUA_MAPLIBRE_UNSUPPORTED_IMPORT_REASON,
+        manualTodos,
+        todoCommentEdits,
+      );
       continue;
     }
 
@@ -2407,6 +2602,77 @@ function buildEsriLeafletDynamicImportExpression(
   return `Promise.resolve({ default: ${namespaceAlias}.${method} })`;
 }
 
+function buildHonuaMapLibreConstructorExpression(
+  kind: CodemodConstructorKind,
+  node: ts.NewExpression,
+  sourceFile: ts.SourceFile,
+  mapLibreNamespaceAlias: string,
+): { text: string; helperSymbols: string[]; requiresMapLibreImport: boolean } | undefined {
+  if (!HONUA_MAPLIBRE_NATIVE_KINDS.has(kind)) {
+    return undefined;
+  }
+
+  switch (kind) {
+    case "feature-layer":
+      return {
+        text: `createHonuaFeatureServiceLayer(${buildHonuaMapLibreLayerOptionsText(node, sourceFile)})`,
+        helperSymbols: ["createHonuaFeatureServiceLayer"],
+        requiresMapLibreImport: false,
+      };
+    case "map-image-layer":
+      return {
+        text: `createHonuaMapServiceLayer(${buildHonuaMapLibreLayerOptionsText(node, sourceFile)})`,
+        helperSymbols: ["createHonuaMapServiceLayer"],
+        requiresMapLibreImport: false,
+      };
+    case "tile-layer":
+      return {
+        text: `createHonuaTileServiceLayer(${buildHonuaMapLibreLayerOptionsText(node, sourceFile)})`,
+        helperSymbols: ["createHonuaTileServiceLayer"],
+        requiresMapLibreImport: false,
+      };
+    case "map":
+      return {
+        text: `createHonuaMapLibreStyle(${buildOptionalObjectOptionsText(node, sourceFile)})`,
+        helperSymbols: ["createHonuaMapLibreStyle"],
+        requiresMapLibreImport: false,
+      };
+    case "map-view":
+      return {
+        text: `new ${mapLibreNamespaceAlias}.Map(createHonuaMapLibreMapOptions(${buildOptionalObjectOptionsText(
+          node,
+          sourceFile,
+        )}))`,
+        helperSymbols: ["createHonuaMapLibreMapOptions"],
+        requiresMapLibreImport: true,
+      };
+    default:
+      return undefined;
+  }
+}
+
+function buildHonuaMapLibreLayerOptionsText(node: ts.NewExpression, sourceFile: ts.SourceFile): string {
+  const arg = node.arguments?.[0];
+  if (!arg || !ts.isObjectLiteralExpression(arg)) {
+    return "{}";
+  }
+
+  const assignedIdentifier = resolveAssignedIdentifierForNewExpression(node, sourceFile);
+  if (!assignedIdentifier || objectLiteralHasProperty(arg, "id")) {
+    return arg.getText(sourceFile);
+  }
+
+  return addObjectLiteralPropertyText(arg, sourceFile, "id", JSON.stringify(assignedIdentifier));
+}
+
+function buildOptionalObjectOptionsText(node: ts.NewExpression, sourceFile: ts.SourceFile): string {
+  const arg = node.arguments?.[0];
+  if (!arg) {
+    return "{}";
+  }
+  return arg.getText(sourceFile);
+}
+
 function esriLeafletMethodForKind(kind: CodemodConstructorKind): string | undefined {
   if (!ESRI_LEAFLET_NATIVE_KINDS.has(kind)) {
     return undefined;
@@ -2788,6 +3054,9 @@ function countIdentifierUsagesExcludingImports(sourceFile: ts.SourceFile, name: 
     if (isInImportContext(node)) {
       return;
     }
+    if (isPropertyAccessName(node)) {
+      return;
+    }
     count += 1;
   });
 
@@ -2805,6 +3074,9 @@ function countIdentifierUsagesExcludingImportsAndDefinitions(sourceFile: ts.Sour
       return;
     }
     if (isVariableDeclarationName(node)) {
+      return;
+    }
+    if (isPropertyAccessName(node)) {
       return;
     }
     count += 1;
@@ -2828,6 +3100,10 @@ function isInImportContext(node: ts.Identifier): boolean {
     current = current.parent;
   }
   return false;
+}
+
+function isPropertyAccessName(node: ts.Identifier): boolean {
+  return ts.isPropertyAccessExpression(node.parent) && node.parent.name === node;
 }
 
 function isVariableDeclarationName(node: ts.Identifier): boolean {
@@ -2911,11 +3187,38 @@ function collectUnsupportedPropertyNames(arg: ts.ObjectLiteralExpression, allowe
   return unsupported;
 }
 
+function objectLiteralHasProperty(arg: ts.ObjectLiteralExpression, propertyName: string): boolean {
+  return arg.properties.some(
+    (property) => isAssignableObjectProperty(property) && getObjectPropertyName(property) === propertyName,
+  );
+}
+
+function addObjectLiteralPropertyText(
+  arg: ts.ObjectLiteralExpression,
+  sourceFile: ts.SourceFile,
+  propertyName: string,
+  valueText: string,
+): string {
+  const text = arg.getText(sourceFile);
+  const inner = text.slice(1, -1).trim();
+  if (!inner) {
+    return `{ ${propertyName}: ${valueText} }`;
+  }
+  return `{ ${propertyName}: ${valueText}, ${inner} }`;
+}
+
 function isSafeConstructorCall(
   kind: CodemodConstructorKind,
   node: ts.NewExpression,
   target: CodemodTarget,
 ): { ok: true } | { ok: false; reason: string } {
+  if (target === "honua-maplibre" && !HONUA_MAPLIBRE_NATIVE_KINDS.has(kind)) {
+    return {
+      ok: false,
+      reason: HONUA_MAPLIBRE_UNSUPPORTED_CONSTRUCTOR_REASON,
+    };
+  }
+
   switch (kind) {
     case "feature-layer":
       return isSafeFeatureLayerCompatCall(node, target);
@@ -2966,9 +3269,9 @@ function isSafeConstructorCall(
     case "basemap":
       return isSafeBasemapCompatCall(node);
     case "map":
-      return isSafeMapCompatCall(node);
+      return isSafeMapCompatCall(node, target);
     case "map-view":
-      return isSafeMapViewCompatCall(node);
+      return isSafeMapViewCompatCall(node, target);
     case "scene-view":
       return isSafeSceneViewCompatCall(node);
     case "web-map":
@@ -3248,7 +3551,25 @@ function isSafeFeatureLayerCompatCall(
           "client",
           "maxAttachmentBytes",
         ])
-      : new Set(["url", "outFields", "definitionExpression"]);
+      : target === "honua-maplibre"
+        ? new Set([
+            "url",
+            "id",
+            "title",
+            "outFields",
+            "definitionExpression",
+            "returnGeometry",
+            "outSR",
+            "opacity",
+            "visible",
+            "minScale",
+            "maxScale",
+            "attribution",
+            "paint",
+            "layout",
+            "layerType",
+          ])
+        : new Set(["url", "outFields", "definitionExpression"]);
 
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
@@ -3970,7 +4291,25 @@ function isSafeMapImageLayerCompatCall(
           "legendEnabled",
           "client",
         ])
-      : new Set(["url", "sublayers", "opacity", "visible"]);
+      : target === "honua-maplibre"
+        ? new Set([
+            "url",
+            "id",
+            "title",
+            "sublayers",
+            "layers",
+            "dpi",
+            "format",
+            "transparent",
+            "opacity",
+            "visible",
+            "minScale",
+            "maxScale",
+            "attribution",
+            "paint",
+            "layout",
+          ])
+        : new Set(["url", "sublayers", "opacity", "visible"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -4027,7 +4366,21 @@ function isSafeTileLayerCompatCall(
   const allowed =
     target === "honua-compat"
       ? new Set(["url", "id", "title", "opacity", "visible", "minScale", "maxScale", "listMode", "client"])
-      : new Set(["url", "opacity", "visible"]);
+      : target === "honua-maplibre"
+        ? new Set([
+            "url",
+            "id",
+            "title",
+            "opacity",
+            "visible",
+            "minScale",
+            "maxScale",
+            "attribution",
+            "paint",
+            "layout",
+            "tileSize",
+          ])
+        : new Set(["url", "opacity", "visible"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -4142,7 +4495,10 @@ function isSafeGroupLayerCompatCall(node: ts.NewExpression): { ok: true } | { ok
   return { ok: true };
 }
 
-function isSafeMapCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+function isSafeMapCompatCall(
+  node: ts.NewExpression,
+  target: CodemodTarget,
+): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4162,7 +4518,10 @@ function isSafeMapCompatCall(node: ts.NewExpression): { ok: true } | { ok: false
     };
   }
 
-  const allowed = new Set(["basemap", "layers", "ground", "tables", "portalItem", "spatialReference"]);
+  const allowed =
+    target === "honua-maplibre"
+      ? new Set(["basemap", "layers", "name", "center", "zoom"])
+      : new Set(["basemap", "layers", "ground", "tables", "portalItem", "spatialReference"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -4183,7 +4542,10 @@ function isSafeMapCompatCall(node: ts.NewExpression): { ok: true } | { ok: false
   return { ok: true };
 }
 
-function isSafeMapViewCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+function isSafeMapViewCompatCall(
+  node: ts.NewExpression,
+  target: CodemodTarget,
+): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4203,20 +4565,23 @@ function isSafeMapViewCompatCall(node: ts.NewExpression): { ok: true } | { ok: f
     };
   }
 
-  const allowed = new Set([
-    "map",
-    "container",
-    "center",
-    "zoom",
-    "scale",
-    "rotation",
-    "extent",
-    "constraints",
-    "padding",
-    "highlightOptions",
-    "spatialReference",
-    "popup",
-  ]);
+  const allowed =
+    target === "honua-maplibre"
+      ? new Set(["map", "style", "container", "center", "zoom", "bearing", "pitch"])
+      : new Set([
+          "map",
+          "container",
+          "center",
+          "zoom",
+          "scale",
+          "rotation",
+          "extent",
+          "constraints",
+          "padding",
+          "highlightOptions",
+          "spatialReference",
+          "popup",
+        ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {

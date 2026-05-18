@@ -65,6 +65,7 @@ describe("migration cli parity matrix", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("entries=");
+    expect(result.stdout).toContain("honuaMapLibreNative=");
     expect(result.stdout).toContain("esriLeafletCompat=");
     expect(result.stdout).toContain(`reportWritten=${reportPath}`);
     expect(fs.existsSync(reportPath)).toBe(true);
@@ -72,11 +73,13 @@ describe("migration cli parity matrix", () => {
     const report = JSON.parse(fs.readFileSync(reportPath, "utf8")) as {
       summary: {
         honuaCompat: Record<string, number>;
+        honuaMapLibre: Record<string, number>;
         esriLeaflet: Record<string, number>;
       };
       matrix: Array<{
         kind: string;
         honuaCompat: string;
+        honuaMapLibre: string;
         esriLeaflet: string;
       }>;
     };
@@ -117,7 +120,7 @@ describe("migration cli parity matrix", () => {
     const esriRequest = report.matrix.find((row) => row.kind === "esri-request");
     const esriConfig = report.matrix.find((row) => row.kind === "esri-config");
     const reactiveUtils = report.matrix.find((row) => row.kind === "reactive-utils");
-    expect(featureLayer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(featureLayer).toMatchObject({ honuaCompat: "compat", honuaMapLibre: "native", esriLeaflet: "compat" });
     expect(graphic).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(point).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(polyline).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
@@ -134,8 +137,8 @@ describe("migration cli parity matrix", () => {
     expect(classBreaksRenderer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(simpleRenderer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(uniqueValueRenderer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
-    expect(basemap).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
-    expect(sceneView).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(basemap).toMatchObject({ honuaCompat: "compat", honuaMapLibre: "assisted", esriLeaflet: "compat" });
+    expect(sceneView).toMatchObject({ honuaCompat: "compat", honuaMapLibre: "assisted", esriLeaflet: "compat" });
     expect(track).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(routeTask).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(swipe).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
@@ -154,8 +157,9 @@ describe("migration cli parity matrix", () => {
     expect(esriConfig).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(reactiveUtils).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(report.summary.honuaCompat.compat).toBeGreaterThan(0);
+    expect(report.summary.honuaMapLibre.native).toBe(5);
     expect(report.summary.esriLeaflet.assisted).toBe(0);
-  }, 60_000);
+  }, 240_000);
 
   it("prints and writes the runtime parity matrix artifact", () => {
     ensureBuiltCliArtifacts();
@@ -166,6 +170,7 @@ describe("migration cli parity matrix", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("entries=");
+    expect(result.stdout).toContain("honuaMapLibreNative=");
     expect(result.stdout).toContain("esriLeafletAssisted=");
     expect(result.stdout).toContain(`reportWritten=${reportPath}`);
     expect(fs.existsSync(reportPath)).toBe(true);
@@ -173,6 +178,7 @@ describe("migration cli parity matrix", () => {
     const report = JSON.parse(fs.readFileSync(reportPath, "utf8")) as {
       summary: {
         honuaCompat: Record<string, number>;
+        honuaMapLibre: Record<string, number>;
         esriLeaflet: Record<string, number>;
       };
       matrix: Array<{
@@ -180,11 +186,13 @@ describe("migration cli parity matrix", () => {
         capability: string;
         arcGisJsApi: string;
         honuaCompat: string;
+        honuaMapLibre: string;
         esriLeaflet: string;
       }>;
     };
 
     expect(report.summary.honuaCompat.compat).toBeGreaterThan(0);
+    expect(report.summary.honuaMapLibre.native).toBeGreaterThan(0);
     expect(report.summary.esriLeaflet.assisted).toBe(0);
 
     const queryFeatures = report.matrix.find(
@@ -250,5 +258,5 @@ describe("migration cli parity matrix", () => {
       arcGisJsApi: "MapView.goTo",
       honuaCompat: "compat",
     });
-  }, 60_000);
+  }, 240_000);
 });

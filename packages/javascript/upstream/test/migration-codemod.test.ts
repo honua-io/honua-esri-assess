@@ -1782,6 +1782,103 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/layers/TileLayer");
   });
 
+  it("rewrites supported constructors for honua-maplibre target without compat imports", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "honua-maplibre.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Map from '@arcgis/core/Map';",
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "import MapImageLayer from '@arcgis/core/layers/MapImageLayer';",
+        "import TileLayer from '@arcgis/core/layers/TileLayer';",
+        "import MapView from '@arcgis/core/views/MapView';",
+        "const incidents = new FeatureLayer({ url: serviceUrl, outFields: ['*'] });",
+        "const districts = new MapImageLayer({ url: mapUrl, visible: true });",
+        "const tiles = new TileLayer({ url: tileUrl });",
+        "const map = new Map({ basemap: 'streets-vector', layers: [tiles, districts, incidents] });",
+        "const view = new MapView({ map, container: 'viewDiv', center: [-157.8, 21.3], zoom: 12 });",
+        "void view;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "honua-maplibre",
+      write: true,
+    });
+
+    expect(result.target).toBe("honua-maplibre");
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(5);
+    expect(result.metrics.autoMigratedCallSites).toBe(5);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["feature-layer"]).toMatchObject({ total: 1, autoMigrated: 1, manual: 0 });
+    expect(result.metrics.byKind["map-image-layer"]).toMatchObject({ total: 1, autoMigrated: 1, manual: 0 });
+    expect(result.metrics.byKind["tile-layer"]).toMatchObject({ total: 1, autoMigrated: 1, manual: 0 });
+    expect(result.metrics.byKind.map).toMatchObject({ total: 1, autoMigrated: 1, manual: 0 });
+    expect(result.metrics.byKind["map-view"]).toMatchObject({ total: 1, autoMigrated: 1, manual: 0 });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import * as maplibregl from "maplibre-gl";');
+    expect(nextSource).toContain(
+      'import { createHonuaFeatureServiceLayer, createHonuaMapLibreMapOptions, createHonuaMapLibreStyle, createHonuaMapServiceLayer, createHonuaTileServiceLayer } from "@honua/sdk-js/map";',
+    );
+    expect(nextSource).toContain(
+      "const incidents = createHonuaFeatureServiceLayer({ id: \"incidents\", url: serviceUrl, outFields: ['*'] });",
+    );
+    expect(nextSource).toContain(
+      'const districts = createHonuaMapServiceLayer({ id: "districts", url: mapUrl, visible: true });',
+    );
+    expect(nextSource).toContain('const tiles = createHonuaTileServiceLayer({ id: "tiles", url: tileUrl });');
+    expect(nextSource).toContain(
+      "const map = createHonuaMapLibreStyle({ basemap: 'streets-vector', layers: [tiles, districts, incidents] });",
+    );
+    expect(nextSource).toContain(
+      "const view = new maplibregl.Map(createHonuaMapLibreMapOptions({ map, container: 'viewDiv', center: [-157.8, 21.3], zoom: 12 }));",
+    );
+    expect(nextSource).not.toContain("@honua/sdk-esri-compat");
+    expect(nextSource).not.toContain("@arcgis/core/");
+  });
+
+  it("classifies unsupported honua-maplibre widgets as manual todos", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "honua-maplibre-widget.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Search from '@arcgis/core/widgets/Search';",
+        "const search = new Search({ view, includeDefaultSources: false });",
+        "void search;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "honua-maplibre",
+      write: true,
+      annotateTodos: true,
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(0);
+    expect(result.metrics.manualCallSites).toBe(1);
+    expect(result.manualTodos).toEqual([
+      expect.objectContaining({
+        kind: "search-widget",
+        reason: "No deterministic Honua MapLibre mapping for this constructor; requires manual migration.",
+      }),
+    ]);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("// TODO(honua-migrate)[search-widget]:");
+    expect(nextSource).toContain("new Search({ view, includeDefaultSources: false })");
+    expect(nextSource).not.toContain("@honua/sdk-esri-compat");
+  });
+
   it("rewrites map/view/widget constructors to compat fallbacks for esri-leaflet target", () => {
     const root = makeTempProject();
     const file = path.join(root, "esri-leaflet-compat-fallbacks.ts");

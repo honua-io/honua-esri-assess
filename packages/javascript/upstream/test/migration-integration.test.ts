@@ -1177,6 +1177,55 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("new MapCompat({");
   });
 
+  it("supports honua-maplibre codemod target for native MapLibre fixture", () => {
+    const { workingCopy, report, codemodResult } = runFixtureMigration("esri-maplibre-simple-app", {
+      target: "honua-maplibre",
+    });
+
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(5);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(5);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(report.codemodTarget).toBe("honua-maplibre");
+    expect(report.readiness).toBe("ready");
+    expect(report.manualTodos).toEqual([]);
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain('import * as maplibregl from "maplibre-gl";');
+    expect(migratedMain).toContain('from "@honua/sdk-js/map";');
+    expect(migratedMain).toContain("createHonuaFeatureServiceLayer({");
+    expect(migratedMain).toContain("createHonuaMapServiceLayer({");
+    expect(migratedMain).toContain("createHonuaTileServiceLayer({");
+    expect(migratedMain).toContain("createHonuaMapLibreStyle({");
+    expect(migratedMain).toContain("new maplibregl.Map(createHonuaMapLibreMapOptions({");
+    expect(migratedMain).not.toContain("@honua/sdk-esri-compat");
+    expect(migratedMain).not.toContain("@arcgis/core/");
+  });
+
+  it("reports unsupported widgets as manual for honua-maplibre target", () => {
+    const { report, codemodResult } = runFixtureMigration("esri-widget-controls-app", {
+      target: "honua-maplibre",
+      annotateTodos: true,
+    });
+
+    expect(codemodResult.metrics.autoMigratedCallSites).toBeGreaterThan(0);
+    expect(codemodResult.metrics.manualCallSites).toBeGreaterThan(0);
+    expect(report.codemodTarget).toBe("honua-maplibre");
+    expect(report.readiness).toBe("assisted");
+    expect(report.manualTodos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "home-widget" }),
+        expect.objectContaining({ kind: "basemap-toggle-widget" }),
+      ]),
+    );
+    expect(report.unhandledArcGisModules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ modulePath: "@arcgis/core/widgets/Home", usageStyle: "static-import" }),
+      ]),
+    );
+  });
+
   it("migrates map + group-layer + graphics-layer fixture with ready gating", () => {
     const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-layer-tree-app");
 

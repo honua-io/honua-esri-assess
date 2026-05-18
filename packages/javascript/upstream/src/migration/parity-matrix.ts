@@ -13,12 +13,14 @@ export interface JsParityMatrixEntry {
   category: JsParityCategory;
   arcGisModule: string;
   honuaCompat: JsParityStatus;
+  honuaMapLibre: JsParityStatus;
   esriLeaflet: JsParityStatus;
   notes: string;
 }
 
 export interface JsParitySummary {
   honuaCompat: Record<JsParityStatus, number>;
+  honuaMapLibre: Record<JsParityStatus, number>;
   esriLeaflet: Record<JsParityStatus, number>;
 }
 
@@ -51,16 +53,18 @@ const BASE_MATRIX_ROWS: JsParityMatrixEntry[] = (Object.keys(CANONICAL_MODULE_BY
   .sort()
   .map((kind) => {
     const honuaCompat: JsParityStatus = isKindSupportedForTarget(kind, "honua-compat") ? "compat" : "unsupported";
+    const honuaMapLibre: JsParityStatus = isKindSupportedForTarget(kind, "honua-maplibre") ? "native" : "assisted";
     const esriLeaflet: JsParityStatus = isKindSupportedForTarget(kind, "esri-leaflet") ? "compat" : "assisted";
     return {
       kind,
       category: classifyCategory(kind),
       arcGisModule: CANONICAL_MODULE_BY_KIND[kind],
       honuaCompat,
+      honuaMapLibre,
       esriLeaflet,
       notes:
-        esriLeaflet === "compat"
-          ? "deterministic codemod mapping available"
+        honuaMapLibre === "native"
+          ? "Honua MapLibre target emits native helper mappings"
           : "assisted migration with TODO/report gating",
     };
   });
@@ -79,6 +83,12 @@ export function summarizeJsParityMatrix(matrix: readonly JsParityMatrixEntry[] =
       assisted: 0,
       unsupported: 0,
     },
+    honuaMapLibre: {
+      native: 0,
+      compat: 0,
+      assisted: 0,
+      unsupported: 0,
+    },
     esriLeaflet: {
       native: 0,
       compat: 0,
@@ -89,6 +99,7 @@ export function summarizeJsParityMatrix(matrix: readonly JsParityMatrixEntry[] =
 
   for (const row of matrix) {
     summary.honuaCompat[row.honuaCompat] += 1;
+    summary.honuaMapLibre[row.honuaMapLibre] += 1;
     summary.esriLeaflet[row.esriLeaflet] += 1;
   }
 

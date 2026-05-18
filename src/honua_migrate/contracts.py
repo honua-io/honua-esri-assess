@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
@@ -81,9 +80,7 @@ class EngineReport:
         }
 
 
-def plan_digest(payload: Mapping[str, Any]) -> str:
-    """Return the canonical SHA-256 identity for an unsigned plan payload."""
-
+def _plan_digest(payload: dict[str, Any]) -> str:
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -106,7 +103,7 @@ class MigrationPlan:
             "contract_version": self.contract_version,
             "safety_mode": self.safety_mode.value,
         }
-        payload["plan_digest"] = plan_digest(payload)
+        payload["plan_digest"] = _plan_digest(payload)
         return payload
 
     def verify(self, payload: dict[str, Any]) -> bool:
@@ -114,7 +111,7 @@ class MigrationPlan:
 
         recorded = payload.get("plan_digest")
         unsigned = {key: value for key, value in payload.items() if key != "plan_digest"}
-        return isinstance(recorded, str) and recorded == plan_digest(unsigned)
+        return isinstance(recorded, str) and recorded == _plan_digest(unsigned)
 
 
 @dataclass(frozen=True)
@@ -221,5 +218,4 @@ __all__ = [
     "Readiness",
     "ReconciliationResult",
     "SafetyMode",
-    "plan_digest",
 ]

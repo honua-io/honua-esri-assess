@@ -1,0 +1,14 @@
+{
+  "name": "arcgis-source-app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Hand-written ArcGIS JS SDK sample app used by the migration e2e harness. Not part of the published @honua/sdk-js bundle.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@arcgis/core": "^4.30.0",
+    "typescript": "^5.4.0"
+  }
+}

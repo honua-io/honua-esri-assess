@@ -281,12 +281,21 @@ const BASE_RUNTIME_MATRIX: readonly BaseRuntimeParityEntry[] = Object.freeze([
   },
   {
     surface: "widget",
-    capability: "popup-and-search",
-    arcGisJsApi: "Popup/Search",
+    capability: "popup-widget",
+    arcGisJsApi: "Popup",
     honuaCompat: "compat",
     esriLeaflet: "compat",
     notes:
-      "Popup/Search are deterministic in esri-leaflet target via compat fallback wrappers and shared event bus integration.",
+      "Popup is deterministic in esri-leaflet target via compat fallback wrappers; MapLibre target maps via PopupCompat for the simple case, with Arcade expressions and arrow-function fieldInfos.format flagged as manual TODO.",
+  },
+  {
+    surface: "widget",
+    capability: "search-widget",
+    arcGisJsApi: "Search",
+    honuaCompat: "compat",
+    esriLeaflet: "compat",
+    notes:
+      "Search is deterministic in esri-leaflet target via compat fallback wrappers; MapLibre target is blocked on a Locator-equivalent (HonuaGeocodeService) per migration punch list Task C.",
   },
   {
     surface: "widget",
@@ -381,6 +390,15 @@ function inferHonuaMapLibreRuntimeStatus(entry: BaseRuntimeParityEntry): JsRunti
   }
   if (entry.surface === "map-view" && entry.capability === "navigation-go-to") {
     return "native";
+  }
+  // Search depends on a Locator-equivalent backend (HonuaGeocodeService) that is
+  // not yet shimmed; see docs/migration-punch-list.md "Locator + Geoprocessor
+  // compat (Task C)".
+  if (entry.surface === "widget" && entry.capability === "search-widget") {
+    return "unsupported";
+  }
+  if (entry.surface === "widget" && entry.capability === "search-expanded-options") {
+    return "unsupported";
   }
   return "assisted";
 }

@@ -54,11 +54,37 @@ const LAYER_KINDS = new Set<CodemodConstructorKind>([
 
 const CANONICAL_MODULE_BY_KIND = buildCanonicalModuleMap();
 
+// Per-kind overrides for the Honua MapLibre target. The codemod's
+// HONUA_MAPLIBRE_NATIVE_KINDS only enumerates kinds with a deterministic
+// native mapping; the entries here narrow the remaining "assisted" default
+// for kinds whose verdict is grounded in docs/migration-punch-list.md or
+// concrete codemod behavior (rather than guesswork).
+const HONUA_MAPLIBRE_STATUS_OVERRIDES: Readonly<Partial<Record<CodemodConstructorKind, JsParityStatus>>> =
+  Object.freeze({
+    // Search depends on a Locator-equivalent surface (HonuaGeocodeService),
+    // which is tracked as a blocking item in the migration punch list
+    // ("Locator + Geoprocessor compat (Task C)") ? no compat path exists yet.
+    "search-widget": "unsupported",
+  });
+
+const HONUA_MAPLIBRE_NOTE_OVERRIDES: Readonly<Partial<Record<CodemodConstructorKind, string>>> = Object.freeze({
+  "layer-list": "LayerListCompat renders through the Honua widget host; MapLibre apps must wire it manually.",
+  "legend-widget": "LegendCompat renders through the Honua widget host; MapLibre apps must wire it manually.",
+  "popup-widget":
+    "PopupCompat covers the simple template case; Arcade expressions and arrow-function fieldInfos.format fall through to manual TODO.",
+  "search-widget":
+    "Search requires a Locator-equivalent backend (HonuaGeocodeService); blocked on migration-punch-list Task C.",
+  "feature-table-widget":
+    "FeatureTableCompat renders through the Honua widget host; MapLibre apps must wire layout/columns manually.",
+});
+
 const BASE_MATRIX_ROWS: JsParityMatrixEntry[] = (Object.keys(CANONICAL_MODULE_BY_KIND) as CodemodConstructorKind[])
   .sort()
   .map((kind) => {
     const honuaCompat: JsParityStatus = isKindSupportedForTarget(kind, "honua-compat") ? "compat" : "unsupported";
-    const honuaMapLibre: JsParityStatus = isKindSupportedForTarget(kind, "honua-maplibre") ? "native" : "assisted";
+    const honuaMapLibre: JsParityStatus =
+      HONUA_MAPLIBRE_STATUS_OVERRIDES[kind] ??
+      (isKindSupportedForTarget(kind, "honua-maplibre") ? "native" : "assisted");
     const esriLeaflet: JsParityStatus = isKindSupportedForTarget(kind, "esri-leaflet") ? "compat" : "assisted";
     return {
       kind,
@@ -68,9 +94,10 @@ const BASE_MATRIX_ROWS: JsParityMatrixEntry[] = (Object.keys(CANONICAL_MODULE_BY
       honuaMapLibre,
       esriLeaflet,
       notes:
-        honuaMapLibre === "native"
+        HONUA_MAPLIBRE_NOTE_OVERRIDES[kind] ??
+        (honuaMapLibre === "native"
           ? "Honua MapLibre target emits native helper mappings"
-          : "assisted migration with TODO/report gating",
+          : "assisted migration with TODO/report gating"),
     };
   });
 

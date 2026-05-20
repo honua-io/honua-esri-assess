@@ -87,6 +87,64 @@ describe("JS runtime parity matrix", () => {
     });
   });
 
+  it("classifies MapLibre widget capabilities (LayerList/Legend/Popup/Search/FeatureTable)", () => {
+    const matrix = getJsRuntimeParityMatrix();
+    const layerListLegend = matrix.find(
+      (entry) => entry.surface === "widget" && entry.capability === "layer-list-and-legend",
+    );
+    const popup = matrix.find((entry) => entry.surface === "widget" && entry.capability === "popup-widget");
+    const search = matrix.find((entry) => entry.surface === "widget" && entry.capability === "search-widget");
+    const searchOptions = matrix.find(
+      (entry) => entry.surface === "widget" && entry.capability === "search-expanded-options",
+    );
+    const featureTableOptions = matrix.find(
+      (entry) => entry.surface === "widget" && entry.capability === "feature-table-expanded-options",
+    );
+
+    expect(layerListLegend).toMatchObject({
+      honuaCompat: "compat",
+      honuaMapLibre: "assisted",
+      esriLeaflet: "compat",
+    });
+    expect(popup).toMatchObject({
+      arcGisJsApi: "Popup",
+      honuaCompat: "compat",
+      honuaMapLibre: "assisted",
+      esriLeaflet: "compat",
+    });
+    expect(search).toMatchObject({
+      arcGisJsApi: "Search",
+      honuaCompat: "compat",
+      honuaMapLibre: "unsupported",
+      esriLeaflet: "compat",
+    });
+    expect(searchOptions).toMatchObject({
+      honuaCompat: "compat",
+      honuaMapLibre: "unsupported",
+      esriLeaflet: "compat",
+    });
+    expect(featureTableOptions).toMatchObject({
+      honuaCompat: "compat",
+      honuaMapLibre: "assisted",
+      esriLeaflet: "compat",
+    });
+  });
+
+  it("keeps MapLibre data-layer/view runtime verdicts as native (no regression)", () => {
+    const matrix = getJsRuntimeParityMatrix();
+    const featureLayerQuery = matrix.find(
+      (entry) => entry.surface === "feature-layer" && entry.capability === "query-features",
+    );
+    const mapImageQuery = matrix.find(
+      (entry) => entry.surface === "map-image-layer" && entry.capability === "query-features",
+    );
+    const mapViewGoTo = matrix.find((entry) => entry.surface === "map-view" && entry.capability === "navigation-go-to");
+
+    expect(featureLayerQuery).toMatchObject({ honuaMapLibre: "native" });
+    expect(mapImageQuery).toMatchObject({ honuaMapLibre: "native" });
+    expect(mapViewGoTo).toMatchObject({ honuaMapLibre: "native" });
+  });
+
   it("summarizes runtime parity counts for both targets", () => {
     const matrix = getJsRuntimeParityMatrix();
     const summary = summarizeJsRuntimeParity(matrix);
@@ -101,6 +159,7 @@ describe("JS runtime parity matrix", () => {
     expect(summary.honuaCompat.compat).toBeGreaterThan(0);
     expect(summary.honuaMapLibre.native).toBeGreaterThan(0);
     expect(summary.honuaMapLibre.assisted).toBeGreaterThan(0);
+    expect(summary.honuaMapLibre.unsupported).toBeGreaterThanOrEqual(1);
     expect(summary.esriLeaflet.assisted).toBe(0);
   });
 });

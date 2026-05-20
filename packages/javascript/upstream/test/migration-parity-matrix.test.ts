@@ -243,6 +243,36 @@ describe("JS parity matrix", () => {
     });
   });
 
+  it("classifies MapLibre widget kinds (LayerList/Legend/Popup/Search/FeatureTable)", () => {
+    const matrix = getJsParityMatrix();
+    const layerList = matrix.find((row) => row.kind === "layer-list");
+    const legend = matrix.find((row) => row.kind === "legend-widget");
+    const popup = matrix.find((row) => row.kind === "popup-widget");
+    const search = matrix.find((row) => row.kind === "search-widget");
+    const featureTable = matrix.find((row) => row.kind === "feature-table-widget");
+
+    expect(layerList).toMatchObject({ honuaMapLibre: "assisted" });
+    expect(legend).toMatchObject({ honuaMapLibre: "assisted" });
+    expect(popup).toMatchObject({ honuaMapLibre: "assisted" });
+    expect(search).toMatchObject({ honuaMapLibre: "unsupported" });
+    expect(featureTable).toMatchObject({ honuaMapLibre: "assisted" });
+  });
+
+  it("keeps MapLibre data-layer/view verdicts as native (no regression)", () => {
+    const matrix = getJsParityMatrix();
+    const featureLayer = matrix.find((row) => row.kind === "feature-layer");
+    const mapImageLayer = matrix.find((row) => row.kind === "map-image-layer");
+    const tileLayer = matrix.find((row) => row.kind === "tile-layer");
+    const map = matrix.find((row) => row.kind === "map");
+    const mapView = matrix.find((row) => row.kind === "map-view");
+
+    expect(featureLayer).toMatchObject({ honuaMapLibre: "native" });
+    expect(mapImageLayer).toMatchObject({ honuaMapLibre: "native" });
+    expect(tileLayer).toMatchObject({ honuaMapLibre: "native" });
+    expect(map).toMatchObject({ honuaMapLibre: "native" });
+    expect(mapView).toMatchObject({ honuaMapLibre: "native" });
+  });
+
   it("summarizes tier counts for both targets", () => {
     const matrix = getJsParityMatrix();
     const summary = summarizeJsParityMatrix(matrix);
@@ -256,6 +286,7 @@ describe("JS parity matrix", () => {
     expect(summary.honuaCompat.compat).toBeGreaterThan(0);
     expect(summary.honuaMapLibre.native).toBe(5);
     expect(summary.honuaMapLibre.assisted).toBeGreaterThan(0);
+    expect(summary.honuaMapLibre.unsupported).toBeGreaterThanOrEqual(1);
     expect(summary.esriLeaflet.compat).toBeGreaterThan(0);
     expect(summary.esriLeaflet.assisted).toBe(0);
   });

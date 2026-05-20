@@ -31,6 +31,30 @@ const ESRI_REQUEST_IMPORT_UNSUPPORTED_REASON = "esriRequest import shape is unsu
 const SHADOWED_IMPORT_CONSTRUCTOR_REASON =
   "Constructor identifier is shadowed by a local declaration; requires manual migration.";
 
+const ARCGIS_TO_COMPAT_EVENT_REMAP: Readonly<Record<string, string>> = Object.freeze({
+  "layerview-create": "layer-view-created",
+  "layerview-create-error": "layer-view-create-error",
+  "layerview-destroy": "layer-view-removed",
+  "visibility-change": "visibility-changed",
+  "extent-change": "extent-changed",
+  "rotation-change": "rotation-changed",
+  "scale-change": "scale-changed",
+  "zoom-change": "zoom-changed",
+  "center-change": "center-changed",
+  "spatial-reference-change": "spatial-reference-changed",
+  "padding-change": "padding-changed",
+  "constraints-change": "constraints-changed",
+  "highlight-options-change": "highlight-options-changed",
+  "basemap-change": "basemap-changed",
+  "ground-change": "ground-changed",
+  "portal-item-change": "portal-item-changed",
+  "active-basemap-change": "active-basemap-changed",
+  "camera-change": "camera-changed",
+  "quality-profile-change": "quality-profile-changed",
+  "viewing-mode-change": "viewing-mode-changed",
+  refresh: "refreshed",
+});
+
 const ESRI_LEAFLET_NATIVE_KINDS = new Set<CodemodConstructorKind>(["feature-layer", "map-image-layer", "tile-layer"]);
 const HONUA_MAPLIBRE_NATIVE_KINDS = new Set<CodemodConstructorKind>([
   "feature-layer",
@@ -105,6 +129,12 @@ const ESRI_LEAFLET_COMPAT_FALLBACK_KINDS = new Set<CodemodConstructorKind>([
   "esri-request",
   "esri-config",
   "reactive-utils",
+  "feature-filter",
+  "vector-tile-layer",
+  "geojson-layer",
+  "wms-layer",
+  "wfs-layer",
+  "imagery-layer",
 ]);
 
 export type CodemodTarget = "honua-compat" | "esri-leaflet" | "honua-maplibre";
@@ -177,7 +207,13 @@ export type CodemodConstructorKind =
   | "identity-manager"
   | "esri-request"
   | "esri-config"
-  | "reactive-utils";
+  | "reactive-utils"
+  | "feature-filter"
+  | "vector-tile-layer"
+  | "geojson-layer"
+  | "wms-layer"
+  | "wfs-layer"
+  | "imagery-layer";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -538,6 +574,39 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     compatSymbol: "reactiveUtils",
     arcGisModules: new Set(["@arcgis/core/core/reactiveUtils", "@arcgis/core/core/reactiveUtils.js"]),
   },
+  {
+    kind: "feature-filter",
+    compatSymbol: "FeatureFilterCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/layers/support/FeatureFilter",
+      "@arcgis/core/layers/support/FeatureFilter.js",
+    ]),
+  },
+  {
+    kind: "vector-tile-layer",
+    compatSymbol: "VectorTileLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/VectorTileLayer", "@arcgis/core/layers/VectorTileLayer.js"]),
+  },
+  {
+    kind: "geojson-layer",
+    compatSymbol: "GeoJSONLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/GeoJSONLayer", "@arcgis/core/layers/GeoJSONLayer.js"]),
+  },
+  {
+    kind: "wms-layer",
+    compatSymbol: "WMSLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/WMSLayer", "@arcgis/core/layers/WMSLayer.js"]),
+  },
+  {
+    kind: "wfs-layer",
+    compatSymbol: "WFSLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/WFSLayer", "@arcgis/core/layers/WFSLayer.js"]),
+  },
+  {
+    kind: "imagery-layer",
+    compatSymbol: "ImageryLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/ImageryLayer", "@arcgis/core/layers/ImageryLayer.js"]),
+  },
 ];
 
 const TARGET_SUPPORTED_KINDS: Readonly<Record<CodemodTarget, ReadonlySet<CodemodConstructorKind>>> = Object.freeze({
@@ -625,6 +694,7 @@ export interface CodemodFileResult {
   rewrittenImports: number;
   rewrittenConstructors: number;
   rewrittenDynamicImports: number;
+  rewrittenEventNames: number;
   addedCompatImport: boolean;
   removedArcGisImports: number;
   annotatedTodoComments: number;
@@ -726,6 +796,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
       fileResult.rewrittenImports > 0 ||
       fileResult.rewrittenConstructors > 0 ||
       fileResult.rewrittenDynamicImports > 0 ||
+      fileResult.rewrittenEventNames > 0 ||
       fileResult.addedCompatImport ||
       fileResult.removedArcGisImports > 0 ||
       fileResult.annotatedTodoComments > 0;
@@ -747,6 +818,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
         rewrittenImports: fileResult.rewrittenImports,
         rewrittenConstructors: fileResult.rewrittenConstructors,
         rewrittenDynamicImports: fileResult.rewrittenDynamicImports,
+        rewrittenEventNames: fileResult.rewrittenEventNames,
         addedCompatImport: fileResult.addedCompatImport,
         removedArcGisImports: fileResult.removedArcGisImports,
         annotatedTodoComments: fileResult.annotatedTodoComments,
@@ -758,6 +830,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
         rewrittenImports: 0,
         rewrittenConstructors: 0,
         rewrittenDynamicImports: 0,
+        rewrittenEventNames: 0,
         addedCompatImport: false,
         removedArcGisImports: 0,
         annotatedTodoComments: 0,
@@ -775,6 +848,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
         item.rewrittenConstructors > 0 ||
         item.rewrittenImports > 0 ||
         item.rewrittenDynamicImports > 0 ||
+        item.rewrittenEventNames > 0 ||
         item.addedCompatImport ||
         item.removedArcGisImports > 0 ||
         item.annotatedTodoComments > 0,
@@ -819,6 +893,7 @@ function codemodFile(
   rewrittenImports: number;
   rewrittenConstructors: number;
   rewrittenDynamicImports: number;
+  rewrittenEventNames: number;
   rewrittenKinds: CodemodConstructorKind[];
   addedCompatImport: boolean;
   removedArcGisImports: number;
@@ -840,6 +915,7 @@ function codemodFile(
 
   const constructorEdits: TextEdit[] = [];
   const dynamicImportEdits: TextEdit[] = [];
+  const eventNameEdits: TextEdit[] = [];
   const importEdits: TextEdit[] = [];
   const rewrittenKinds: CodemodConstructorKind[] = [];
   const manualTodos: MigrationTodo[] = [];
@@ -998,6 +1074,26 @@ function codemodFile(
       return;
     }
 
+    if (
+      imports.length > 0 &&
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      (node.expression.name.text === "on" || node.expression.name.text === "watch") &&
+      node.arguments.length >= 1 &&
+      ts.isStringLiteral(node.arguments[0])
+    ) {
+      const literal = node.arguments[0];
+      const remapped = ARCGIS_TO_COMPAT_EVENT_REMAP[literal.text];
+      if (remapped) {
+        eventNameEdits.push({
+          start: literal.getStart(sourceFile),
+          end: literal.getEnd(),
+          text: `"${remapped}"`,
+        });
+      }
+      return;
+    }
+
     if (!ts.isNewExpression(node)) {
       return;
     }
@@ -1033,27 +1129,29 @@ function codemodFile(
     }
 
     if (isCommonJsModule && importBinding.sourceKind === "require") {
-      const nodeStart = node.getStart(sourceFile);
-      const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
-      manualTodos.push({
-        kind: importBinding.kind,
-        file,
-        line: location.line + 1,
-        column: location.character + 1,
-        reason: CJS_REQUIRE_MANUAL_REASON,
-        difficulty: "moderate",
-      });
-      if (annotateTodos) {
-        const lineStart = findLineStartOffset(source, nodeStart);
-        if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
-          todoCommentEdits.push({
-            start: lineStart,
-            end: lineStart,
-            text: `// ${TODO_MARKER}[${importBinding.kind}]: ${CJS_REQUIRE_MANUAL_REASON}\n`,
-          });
+      if (target !== "honua-compat") {
+        const nodeStart = node.getStart(sourceFile);
+        const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+        manualTodos.push({
+          kind: importBinding.kind,
+          file,
+          line: location.line + 1,
+          column: location.character + 1,
+          reason: CJS_REQUIRE_MANUAL_REASON,
+          difficulty: "moderate",
+        });
+        if (annotateTodos) {
+          const lineStart = findLineStartOffset(source, nodeStart);
+          if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+            todoCommentEdits.push({
+              start: lineStart,
+              end: lineStart,
+              text: `// ${TODO_MARKER}[${importBinding.kind}]: ${CJS_REQUIRE_MANUAL_REASON}\n`,
+            });
+          }
         }
+        return;
       }
-      return;
     }
 
     const safeCheck = isSafeConstructorCall(importBinding.kind, node, target);
@@ -1207,12 +1305,18 @@ function codemodFile(
     }
   });
 
-  if (constructorEdits.length === 0 && dynamicImportEdits.length === 0 && importEdits.length === 0) {
+  if (
+    constructorEdits.length === 0 &&
+    dynamicImportEdits.length === 0 &&
+    eventNameEdits.length === 0 &&
+    importEdits.length === 0
+  ) {
     return {
       nextSource: applyTextEdits(source, todoCommentEdits),
       rewrittenImports: 0,
       rewrittenConstructors: 0,
       rewrittenDynamicImports: 0,
+      rewrittenEventNames: 0,
       rewrittenKinds: [],
       addedCompatImport: false,
       removedArcGisImports: 0,
@@ -1225,6 +1329,7 @@ function codemodFile(
     ...importEdits,
     ...constructorEdits,
     ...dynamicImportEdits,
+    ...eventNameEdits,
     ...todoCommentEdits,
   ]);
   const removedArcGisImports = removeUnusedArcGisImports(file, transformed);
@@ -1233,7 +1338,9 @@ function codemodFile(
   let addedCompatImport = false;
   const compatSymbols = Array.from(requiredCompatSymbols).sort();
   if (compatSymbols.length > 0) {
-    const compatImportResult = ensureCompatNamedImports(file, transformed, compatSymbols, compatImportPath);
+    const compatImportResult = isCommonJsModule
+      ? ensureCompatNamedRequire(file, transformed, compatSymbols, compatImportPath)
+      : ensureCompatNamedImports(file, transformed, compatSymbols, compatImportPath);
     transformed = compatImportResult.nextSource;
     addedCompatImport = compatImportResult.changed;
   }
@@ -1264,6 +1371,7 @@ function codemodFile(
     rewrittenImports: importEdits.length,
     rewrittenConstructors: constructorEdits.length,
     rewrittenDynamicImports: dynamicImportEdits.length,
+    rewrittenEventNames: eventNameEdits.length,
     rewrittenKinds,
     addedCompatImport,
     removedArcGisImports: removedArcGisImports.removedCount,
@@ -2165,6 +2273,12 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "esri-request": { total: 0, autoMigrated: 0, manual: 0 },
     "esri-config": { total: 0, autoMigrated: 0, manual: 0 },
     "reactive-utils": { total: 0, autoMigrated: 0, manual: 0 },
+    "feature-filter": { total: 0, autoMigrated: 0, manual: 0 },
+    "vector-tile-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "geojson-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "wms-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "wfs-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "imagery-layer": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -2473,6 +2587,89 @@ function ensureCompatNamedImports(
     nextSource: `${prefix}${leading}${importLine}${trailing}${suffix}`,
     changed: true,
   };
+}
+
+function ensureCompatNamedRequire(
+  file: string,
+  source: string,
+  symbols: readonly string[],
+  importPath: string,
+): { nextSource: string; changed: boolean } {
+  if (symbols.length === 0) {
+    return { nextSource: source, changed: false };
+  }
+
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) {
+      continue;
+    }
+    for (const declaration of statement.declarationList.declarations) {
+      const modulePath = declaration.initializer
+        ? extractModulePathFromRequireInitializer(declaration.initializer)
+        : undefined;
+      if (modulePath !== importPath) {
+        continue;
+      }
+      if (!ts.isObjectBindingPattern(declaration.name)) {
+        continue;
+      }
+      const existingLocalNames = new Set<string>();
+      for (const element of declaration.name.elements) {
+        if (ts.isIdentifier(element.name)) {
+          existingLocalNames.add(element.name.text);
+        }
+      }
+      const missing = symbols.filter((symbol) => !existingLocalNames.has(symbol));
+      if (missing.length === 0) {
+        return { nextSource: source, changed: false };
+      }
+      const mergedNames = [...existingLocalNames, ...missing].sort();
+      const replacement = `const { ${mergedNames.join(", ")} } = require("${importPath}");`;
+      const nextSource = applyTextEdits(source, [
+        {
+          start: statement.getStart(sourceFile),
+          end: statement.getEnd(),
+          text: replacement,
+        },
+      ]);
+      return { nextSource, changed: true };
+    }
+  }
+
+  const requireLine = `const { ${[...symbols].sort().join(", ")} } = require("${importPath}");`;
+  const insertionIndex = findRequireInsertionIndexAfterDirectives(sourceFile, source);
+  const prefix = source.slice(0, insertionIndex);
+  const suffix = source.slice(insertionIndex);
+  const needsLeadingNewline = prefix.length > 0 && !prefix.endsWith("\n");
+  const leading = needsLeadingNewline ? "\n" : "";
+  const needsTrailingNewline = suffix.length > 0 && !suffix.startsWith("\n");
+  const trailing = needsTrailingNewline ? "\n" : "";
+  return {
+    nextSource: `${prefix}${leading}${requireLine}${trailing}${suffix}`,
+    changed: true,
+  };
+}
+
+function findRequireInsertionIndexAfterDirectives(sourceFile: ts.SourceFile, source: string): number {
+  let lastDirectiveEnd = -1;
+  for (const statement of sourceFile.statements) {
+    if (!ts.isExpressionStatement(statement) || !ts.isStringLiteral(statement.expression)) {
+      break;
+    }
+    lastDirectiveEnd = statement.getEnd();
+  }
+  if (lastDirectiveEnd < 0) {
+    return findImportInsertionIndex(sourceFile);
+  }
+  let cursor = lastDirectiveEnd;
+  while (cursor < source.length && (source[cursor] === " " || source[cursor] === "\t")) {
+    cursor += 1;
+  }
+  if (cursor < source.length && source[cursor] === "\n") {
+    cursor += 1;
+  }
+  return cursor;
 }
 
 function findNamespaceImportAlias(sourceFile: ts.SourceFile, importPath: string): string | undefined {
@@ -3368,9 +3565,135 @@ function isSafeConstructorCall(
         ok: false,
         reason: "ReactiveUtils is not a constructor and requires import-based migration.",
       };
+    case "feature-filter":
+      return isSafeAllowedPropertiesCall(node, "FeatureFilter", FEATURE_FILTER_ALLOWED_PROPS);
+    case "vector-tile-layer":
+      return isSafeAllowedPropertiesCall(node, "VectorTileLayer", VECTOR_TILE_LAYER_ALLOWED_PROPS);
+    case "geojson-layer":
+      return isSafeAllowedPropertiesCall(node, "GeoJSONLayer", GEOJSON_LAYER_ALLOWED_PROPS);
+    case "wms-layer":
+      return isSafeAllowedPropertiesCall(node, "WMSLayer", WMS_LAYER_ALLOWED_PROPS);
+    case "wfs-layer":
+      return isSafeAllowedPropertiesCall(node, "WFSLayer", WFS_LAYER_ALLOWED_PROPS);
+    case "imagery-layer":
+      return isSafeAllowedPropertiesCall(node, "ImageryLayer", IMAGERY_LAYER_ALLOWED_PROPS);
     default:
       return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
   }
+}
+
+const FEATURE_FILTER_ALLOWED_PROPS = new Set([
+  "where",
+  "objectIds",
+  "geometry",
+  "spatialRelationship",
+  "distance",
+  "units",
+  "timeExtent",
+]);
+const VECTOR_TILE_LAYER_ALLOWED_PROPS = new Set([
+  "url",
+  "style",
+  "id",
+  "title",
+  "opacity",
+  "visible",
+  "minScale",
+  "maxScale",
+  "listMode",
+]);
+const GEOJSON_LAYER_ALLOWED_PROPS = new Set([
+  "url",
+  "data",
+  "id",
+  "title",
+  "opacity",
+  "visible",
+  "minScale",
+  "maxScale",
+  "listMode",
+  "renderer",
+  "popupTemplate",
+  "outFields",
+  "objectIdField",
+  "fields",
+  "geometryType",
+  "spatialReference",
+]);
+const WMS_LAYER_ALLOWED_PROPS = new Set([
+  "url",
+  "sublayers",
+  "version",
+  "spatialReference",
+  "imageFormat",
+  "id",
+  "title",
+  "opacity",
+  "visible",
+  "customLayerParameters",
+  "customParameters",
+  "listMode",
+]);
+const WFS_LAYER_ALLOWED_PROPS = new Set([
+  "url",
+  "name",
+  "version",
+  "id",
+  "title",
+  "opacity",
+  "visible",
+  "listMode",
+  "outFields",
+  "customParameters",
+  "spatialReference",
+]);
+const IMAGERY_LAYER_ALLOWED_PROPS = new Set([
+  "url",
+  "id",
+  "title",
+  "opacity",
+  "visible",
+  "listMode",
+  "format",
+  "pixelType",
+  "bandIds",
+  "renderingRule",
+  "mosaicRule",
+]);
+
+function isSafeAllowedPropertiesCall(
+  node: ts.NewExpression,
+  displayName: string,
+  allowed: ReadonlySet<string>,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) return { ok: true };
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: `${displayName} constructor has more than one argument; requires manual migration.`,
+    };
+  }
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return { ok: false, reason: `${displayName} constructor argument is not an object literal.` };
+  }
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: `${displayName} options contain spread/method/computed property syntax; requires manual migration.`,
+      };
+    }
+  }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `${displayName} options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+  return { ok: true };
 }
 
 function isSafeRouteLayerCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {

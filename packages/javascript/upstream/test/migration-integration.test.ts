@@ -171,6 +171,12 @@ describe("arcgis migration integration", () => {
       "esri-request": 0,
       "esri-config": 0,
       "reactive-utils": 0,
+      "feature-filter": 0,
+      "vector-tile-layer": 0,
+      "geojson-layer": 0,
+      "wms-layer": 0,
+      "wfs-layer": 0,
+      "imagery-layer": 0,
     });
     expect(report.manualTodoReasons).toHaveLength(0);
     expect(report.unhandledArcGisModules).toHaveLength(0);
@@ -1732,104 +1738,40 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/layers/FeatureLayer");
   });
 
-  it("reports assisted when .cjs require-style usage requires manual migration", () => {
+  it("auto-migrates safe .cjs require-style usage to compat destructure", () => {
     const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-assisted-require-app");
 
     expect(scanReport.flags).toEqual(["commonjs-detected"]);
-    expect(codemodResult.filesChanged).toBe(0);
+    expect(codemodResult.filesChanged).toBe(1);
     expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(0);
-    expect(codemodResult.metrics.manualCallSites).toBe(1);
-    expect(report.manualRewriteMetric).toMatchObject({
-      numerator: 1,
-      denominator: 1,
-      ratio: 1,
-    });
-    expect(report.manualInterventionMetric).toMatchObject({
-      numerator: 1,
-      denominator: 1,
-      ratio: 1,
-      manualCodemodCallSites: 1,
-      unhandledUsageHits: 0,
-    });
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
     expect(report.unhandledArcGisModules).toEqual([]);
-    expect(report.readiness).toBe("assisted");
-    expect(report.manualTodos).toHaveLength(1);
-    expect(report.manualTodos[0]?.reason).toContain("CommonJS require constructors");
-    expect(report.gates).toEqual([
-      {
-        gate: "no-manual-todos",
-        passed: false,
-        detail: "1 manual codemod-scoped call sites remain",
-      },
-      {
-        gate: "no-unhandled-modules",
-        passed: true,
-        detail: "all discovered ArcGIS modules are in codemod scope",
-      },
-      {
-        gate: "no-blocking-flags",
-        passed: true,
-        detail: "no blocking migration flags detected",
-      },
-    ]);
+    expect(report.readiness).toBe("ready");
+    expect(report.manualTodos).toHaveLength(0);
 
     const source = fs.readFileSync(path.join(workingCopy, "src", "main.cjs"), "utf8");
-    expect(source).toContain('require("@arcgis/core/Map")');
-    expect(source).toContain("new Map({");
+    expect(source).toContain('const { MapCompat } = require("@honua/sdk-esri-compat");');
+    expect(source).toContain("new MapCompat({");
     expect(source).toContain('basemap: "streets"');
     expect(source).toContain("module.exports = { map };");
-    expect(source).not.toContain("@honua/sdk-esri-compat");
   });
 
-  it("reports assisted when .js CommonJS require usage requires manual migration", () => {
+  it("auto-migrates safe .js CommonJS require usage to compat destructure", () => {
     const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-assisted-require-js-cjs-app");
 
     expect(scanReport.flags).toEqual(["commonjs-detected"]);
-    expect(codemodResult.filesChanged).toBe(0);
+    expect(codemodResult.filesChanged).toBe(1);
     expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(0);
-    expect(codemodResult.metrics.manualCallSites).toBe(1);
-    expect(report.manualRewriteMetric).toMatchObject({
-      numerator: 1,
-      denominator: 1,
-      ratio: 1,
-    });
-    expect(report.manualInterventionMetric).toMatchObject({
-      numerator: 1,
-      denominator: 1,
-      ratio: 1,
-      manualCodemodCallSites: 1,
-      unhandledUsageHits: 0,
-    });
-    expect(report.unhandledArcGisModules).toEqual([]);
-    expect(report.readiness).toBe("assisted");
-    expect(report.manualTodos).toHaveLength(1);
-    expect(report.manualTodos[0]?.reason).toContain("CommonJS require constructors");
-    expect(report.gates).toEqual([
-      {
-        gate: "no-manual-todos",
-        passed: false,
-        detail: "1 manual codemod-scoped call sites remain",
-      },
-      {
-        gate: "no-unhandled-modules",
-        passed: true,
-        detail: "all discovered ArcGIS modules are in codemod scope",
-      },
-      {
-        gate: "no-blocking-flags",
-        passed: true,
-        detail: "no blocking migration flags detected",
-      },
-    ]);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(report.readiness).toBe("ready");
 
     const source = fs.readFileSync(path.join(workingCopy, "src", "main.js"), "utf8");
-    expect(source).toContain('require("@arcgis/core/Map")');
-    expect(source).toContain("new Map({");
+    expect(source).toContain('const { MapCompat } = require("@honua/sdk-esri-compat");');
+    expect(source).toContain("new MapCompat({");
     expect(source).toContain('basemap: "streets"');
     expect(source).toContain("module.exports = { map };");
-    expect(source).not.toContain("@honua/sdk-esri-compat");
   });
 
   it("reports assisted for side-effect ArcGIS imports outside codemod scope", () => {

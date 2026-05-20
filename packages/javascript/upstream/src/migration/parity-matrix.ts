@@ -45,6 +45,11 @@ const LAYER_KINDS = new Set<CodemodConstructorKind>([
   "tile-layer",
   "route-layer",
   "basemap",
+  "vector-tile-layer",
+  "geojson-layer",
+  "wms-layer",
+  "wfs-layer",
+  "imagery-layer",
 ]);
 
 const CANONICAL_MODULE_BY_KIND = buildCanonicalModuleMap();

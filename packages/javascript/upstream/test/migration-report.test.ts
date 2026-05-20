@@ -83,6 +83,12 @@ function createCodemodResult(): EsriCompatCodemodResult {
         "esri-request": { total: 0, autoMigrated: 0, manual: 0 },
         "esri-config": { total: 0, autoMigrated: 0, manual: 0 },
         "reactive-utils": { total: 0, autoMigrated: 0, manual: 0 },
+        "feature-filter": { total: 0, autoMigrated: 0, manual: 0 },
+        "vector-tile-layer": { total: 0, autoMigrated: 0, manual: 0 },
+        "geojson-layer": { total: 0, autoMigrated: 0, manual: 0 },
+        "wms-layer": { total: 0, autoMigrated: 0, manual: 0 },
+        "wfs-layer": { total: 0, autoMigrated: 0, manual: 0 },
+        "imagery-layer": { total: 0, autoMigrated: 0, manual: 0 },
       },
     },
     fileResults: [
@@ -91,6 +97,7 @@ function createCodemodResult(): EsriCompatCodemodResult {
         rewrittenImports: 0,
         rewrittenConstructors: 3,
         rewrittenDynamicImports: 0,
+        rewrittenEventNames: 0,
         addedCompatImport: true,
         removedArcGisImports: 2,
         annotatedTodoComments: 1,
@@ -252,6 +259,12 @@ describe("buildJsMigrationReport", () => {
       "esri-request": 0,
       "esri-config": 0,
       "reactive-utils": 0,
+      "feature-filter": 0,
+      "vector-tile-layer": 0,
+      "geojson-layer": 0,
+      "wms-layer": 0,
+      "wfs-layer": 0,
+      "imagery-layer": 0,
     });
     expect(report.manualTodoReasons).toEqual([
       {

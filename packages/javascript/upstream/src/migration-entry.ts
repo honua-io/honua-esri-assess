@@ -134,6 +134,23 @@ export type {
   PortalItemReference,
 } from "./migration/sample-corpus.js";
 export {
+  buildEsriSampleCorpusEvidence,
+  emitEsriSampleCorpusEvidence,
+} from "./migration/sample-corpus-evidence.js";
+export type {
+  BuildEsriSampleCorpusEvidenceOptions,
+  EmitEsriSampleCorpusEvidenceOptions,
+  EsriSampleCorpusEvidence,
+  EsriSampleEvidenceAggregate,
+  EsriSampleEvidenceClassification,
+  EsriSampleEvidenceManualTodoReason,
+  EsriSampleEvidenceManualTodos,
+  EsriSampleEvidenceRecord,
+  EsriSampleEvidenceStatus,
+  EsriSampleEvidenceStatusCounts,
+  EsriSampleEvidenceUrlRewriteSummary,
+} from "./migration/sample-corpus-evidence.js";
+export {
   MIGRATION_DEMO_FALLBACK_TARGET,
   MIGRATION_DEMO_ISSUE_NUMBER,
   MIGRATION_DEMO_PRIMARY_TARGET,

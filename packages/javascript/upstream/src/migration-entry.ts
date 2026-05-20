@@ -105,6 +105,35 @@ export type {
   ContentReconcileReport,
 } from "./migration/content.js";
 export {
+  analyzeEsriSampleFixture,
+  classifyArcGisServiceUrl,
+  extractEsriSampleReferences,
+  loadEsriSampleCorpusManifest,
+  parseEsriSampleCorpusManifest,
+  summarizeEsriSampleCorpus,
+} from "./migration/sample-corpus.js";
+export type {
+  ArcGisServiceKind,
+  ArcGisServiceReference,
+  EsriSampleCorpusGuardrails,
+  EsriSampleCorpusLane,
+  EsriSampleCorpusManifest,
+  EsriSampleCorpusSample,
+  EsriSampleCorpusSampleStatus,
+  EsriSampleCorpusSchemaVersion,
+  EsriSampleCorpusSummary,
+  EsriSampleExpectedReferences,
+  EsriSampleFixtureAnalysis,
+  EsriSampleFixtureReference,
+  EsriSampleGuardrailFlag,
+  EsriSampleLicenseMetadata,
+  EsriSampleReferenceExtraction,
+  EsriSampleSkipReason,
+  EsriSampleSourceReference,
+  EsriSampleTermsMetadata,
+  PortalItemReference,
+} from "./migration/sample-corpus.js";
+export {
   MIGRATION_DEMO_FALLBACK_TARGET,
   MIGRATION_DEMO_ISSUE_NUMBER,
   MIGRATION_DEMO_PRIMARY_TARGET,

@@ -1221,6 +1221,15 @@ function codemodFile(
           end: rewriteTarget.end,
           text: spec.compatSymbol,
         });
+        if (importBinding.kind === "query") {
+          // Deep-transform Query options into the Honua QueryFeaturesRequest
+          // shape (renames + geometry split + outStatistics normalization).
+          // Validation already guaranteed every rewrite below is safe.
+          const argEdits = buildQueryArgumentRewrite(node, sourceFile, source);
+          for (const edit of argEdits) {
+            constructorEdits.push(edit);
+          }
+        }
         rewrittenKinds.push(importBinding.kind);
         return;
       }
@@ -6909,6 +6918,66 @@ function isSafeCoordinateConversionWidgetCompatCall(
   return { ok: true };
 }
 
+/**
+ * ArcGIS-side `Query` property names that map to Honua-side
+ * `QueryFeaturesRequest` field names via straightforward rename.
+ *
+ * The values are the Honua-side names. Used by both the codemod
+ * argument rewrite and the QueryCompat constructor (which accepts
+ * either spelling).
+ */
+const QUERY_ARG_RENAME_MAP: Readonly<Record<string, string>> = {
+  start: "resultOffset",
+  num: "resultRecordCount",
+  outSpatialReference: "outSr",
+  spatialRelationship: "spatialRel",
+};
+
+/** Known ArcGIS `Query.outStatistics[i].statisticType` enum values. */
+const QUERY_STATISTIC_TYPES: ReadonlySet<string> = new Set(["count", "sum", "min", "max", "avg", "stddev", "var"]);
+
+/**
+ * Maps an ArcGIS `geometry.type` discriminator to the Honua-side
+ * `EsriGeometryType` field value (which mirrors the Esri REST API).
+ */
+const QUERY_GEOMETRY_TYPE_MAP: Readonly<Record<string, string>> = {
+  point: "esriGeometryPoint",
+  multipoint: "esriGeometryMultipoint",
+  polyline: "esriGeometryPolyline",
+  polygon: "esriGeometryPolygon",
+  extent: "esriGeometryEnvelope",
+  envelope: "esriGeometryEnvelope",
+};
+
+/**
+ * Properties allowed at the top of a `new Query({ ... })` literal.
+ * Some are pass-through; some are renamed; some are split; some are
+ * always manual-TODO (kept in the allowlist so we can give a precise
+ * reason instead of a generic "unsupported properties" message).
+ */
+const QUERY_ALLOWED_PROPS: ReadonlySet<string> = new Set([
+  // pass-through (same name on both sides)
+  "where",
+  "outFields",
+  "returnGeometry",
+  "orderByFields",
+  "objectIds",
+  "groupByFieldsForStatistics",
+  "distance",
+  "units",
+  "returnDistinctValues",
+  // renamed
+  ...Object.keys(QUERY_ARG_RENAME_MAP),
+  // split into geometry + geometryType
+  "geometry",
+  // normalized inner shape
+  "outStatistics",
+  // explicitly handled (manual TODO with reason)
+  "timeExtent",
+  "quantizationParameters",
+  "relationParam",
+]);
+
 function isSafeQueryCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
@@ -6929,21 +6998,6 @@ function isSafeQueryCompatCall(node: ts.NewExpression): { ok: true } | { ok: fal
     };
   }
 
-  const allowed = new Set([
-    "where",
-    "outFields",
-    "returnGeometry",
-    "orderByFields",
-    "objectIds",
-    "geometry",
-    "spatialRelationship",
-    "outSpatialReference",
-    "num",
-    "start",
-    "timeExtent",
-    "groupByFieldsForStatistics",
-    "outStatistics",
-  ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -6953,7 +7007,7 @@ function isSafeQueryCompatCall(node: ts.NewExpression): { ok: true } | { ok: fal
     }
   }
 
-  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  const unsupported = collectUnsupportedPropertyNames(arg, QUERY_ALLOWED_PROPS);
   if (unsupported.length > 0) {
     return {
       ok: false,
@@ -6961,7 +7015,249 @@ function isSafeQueryCompatCall(node: ts.NewExpression): { ok: true } | { ok: fal
     };
   }
 
+  // Reject divergent options up front so the caller gets a precise reason.
+  for (const property of arg.properties) {
+    const name = getObjectPropertyName(property);
+    if (name === "timeExtent") {
+      return {
+        ok: false,
+        reason:
+          "Query.timeExtent has no direct Honua QueryFeaturesRequest field; pass via `extraParams.time` and migrate manually.",
+      };
+    }
+    if (name === "quantizationParameters") {
+      return {
+        ok: false,
+        reason:
+          "Query.quantizationParameters is an ArcGIS server-side optimization hint with no Honua equivalent; remove or migrate manually.",
+      };
+    }
+    if (name === "relationParam") {
+      return {
+        ok: false,
+        reason:
+          "Query.relationParam (used with `spatialRelationship: 'relation'`) is not supported by Honua; migrate manually.",
+      };
+    }
+  }
+
+  // Validate inner shape of complex sub-objects.
+  for (const property of arg.properties) {
+    if (!ts.isPropertyAssignment(property)) continue;
+    const name = getPropertyNameText(property.name);
+    if (name === "geometry") {
+      const reason = validateQueryGeometryShape(property.initializer);
+      if (reason) return { ok: false, reason };
+    }
+    if (name === "outStatistics") {
+      const reason = validateQueryOutStatisticsShape(property.initializer);
+      if (reason) return { ok: false, reason };
+    }
+  }
+
   return { ok: true };
+}
+
+function validateQueryGeometryShape(expr: ts.Expression): string | undefined {
+  if (!ts.isObjectLiteralExpression(expr)) {
+    return "Query.geometry is not an object literal; cannot split into Honua `geometry` + `geometryType`. Migrate manually.";
+  }
+  let typeProp: ts.PropertyAssignment | undefined;
+  for (const property of expr.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return "Query.geometry contains spread/method/computed property syntax; migrate manually.";
+    }
+    if (ts.isPropertyAssignment(property) && getPropertyNameText(property.name) === "type") {
+      typeProp = property;
+    }
+  }
+  if (!typeProp) {
+    return "Query.geometry is missing a `type` discriminator; Honua requires a separate `geometryType` field. Migrate manually.";
+  }
+  const typeValue = typeProp.initializer;
+  if (!ts.isStringLiteral(typeValue) && !ts.isNoSubstitutionTemplateLiteral(typeValue)) {
+    return "Query.geometry.type is not a string literal; cannot resolve Honua `geometryType` statically. Migrate manually.";
+  }
+  if (!QUERY_GEOMETRY_TYPE_MAP[typeValue.text]) {
+    return `Query.geometry.type "${typeValue.text}" is not a recognized ArcGIS geometry kind (point/polyline/polygon/extent/multipoint); migrate manually.`;
+  }
+  return undefined;
+}
+
+function validateQueryOutStatisticsShape(expr: ts.Expression): string | undefined {
+  if (!ts.isArrayLiteralExpression(expr)) {
+    return "Query.outStatistics is not an array literal; cannot validate statisticType values. Migrate manually.";
+  }
+  for (let index = 0; index < expr.elements.length; index++) {
+    const element = expr.elements[index];
+    if (!ts.isObjectLiteralExpression(element)) {
+      return `Query.outStatistics[${index}] is not an object literal; migrate manually.`;
+    }
+    let statisticTypeProp: ts.PropertyAssignment | undefined;
+    let onFieldProp: ts.PropertyAssignment | undefined;
+    for (const property of element.properties) {
+      if (!isAssignableObjectProperty(property)) {
+        return `Query.outStatistics[${index}] contains spread/method/computed property syntax; migrate manually.`;
+      }
+      if (ts.isPropertyAssignment(property)) {
+        const name = getPropertyNameText(property.name);
+        if (name === "statisticType") statisticTypeProp = property;
+        if (name === "onStatisticField") onFieldProp = property;
+      }
+    }
+    if (!statisticTypeProp) {
+      return `Query.outStatistics[${index}] is missing \`statisticType\`; migrate manually.`;
+    }
+    if (!onFieldProp) {
+      return `Query.outStatistics[${index}] is missing \`onStatisticField\`; migrate manually.`;
+    }
+    const typeExpr = statisticTypeProp.initializer;
+    if (!ts.isStringLiteral(typeExpr) && !ts.isNoSubstitutionTemplateLiteral(typeExpr)) {
+      return `Query.outStatistics[${index}].statisticType is a dynamic expression; the Honua adapter requires a known enum string. Migrate manually.`;
+    }
+    if (!QUERY_STATISTIC_TYPES.has(typeExpr.text.toLowerCase())) {
+      return `Query.outStatistics[${index}].statisticType "${typeExpr.text}" is not in Honua's STATISTIC_TYPE_MAP (count/sum/min/max/avg/stddev/var); migrate manually.`;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Build a text edit that rewrites the Query constructor argument from
+ * the ArcGIS shape into the Honua QueryFeaturesRequest shape:
+ *   - rename `start`/`num`/`outSpatialReference`/`spatialRelationship`
+ *   - split `geometry: { type, ...rest }` into `geometry: { ...rest }`
+ *     plus a sibling `geometryType: "esriGeometry?"`
+ *   - lowercase `outStatistics[i].statisticType`
+ *
+ * Callers must have already passed `isSafeQueryCompatCall`. Returns
+ * `null` when no rewrites are needed (pure pass-through).
+ */
+function buildQueryArgumentRewrite(node: ts.NewExpression, sourceFile: ts.SourceFile, source: string): TextEdit[] {
+  const edits: TextEdit[] = [];
+  const args = node.arguments;
+  if (!args || args.length === 0) return edits;
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) return edits;
+
+  for (const property of arg.properties) {
+    if (!ts.isPropertyAssignment(property)) continue;
+    const name = getPropertyNameText(property.name);
+    if (!name) continue;
+
+    // Rename of top-level property key.
+    const renamed = QUERY_ARG_RENAME_MAP[name];
+    if (renamed) {
+      edits.push({
+        start: property.name.getStart(sourceFile),
+        end: property.name.getEnd(),
+        text: renamed,
+      });
+      continue;
+    }
+
+    if (name === "geometry" && ts.isObjectLiteralExpression(property.initializer)) {
+      const geometryEdits = buildGeometrySplitEdits(property, sourceFile, source);
+      edits.push(...geometryEdits);
+      continue;
+    }
+
+    if (name === "outStatistics" && ts.isArrayLiteralExpression(property.initializer)) {
+      edits.push(...buildOutStatisticsNormalizationEdits(property.initializer, sourceFile));
+    }
+  }
+
+  return edits;
+}
+
+function buildGeometrySplitEdits(
+  property: ts.PropertyAssignment,
+  sourceFile: ts.SourceFile,
+  source: string,
+): TextEdit[] {
+  const literal = property.initializer as ts.ObjectLiteralExpression;
+  let typeProp: ts.PropertyAssignment | undefined;
+  for (const prop of literal.properties) {
+    if (ts.isPropertyAssignment(prop) && getPropertyNameText(prop.name) === "type") {
+      typeProp = prop;
+      break;
+    }
+  }
+  if (!typeProp) return [];
+  const typeInit = typeProp.initializer;
+  if (!ts.isStringLiteral(typeInit) && !ts.isNoSubstitutionTemplateLiteral(typeInit)) {
+    return [];
+  }
+  const honuaType = QUERY_GEOMETRY_TYPE_MAP[typeInit.text];
+  if (!honuaType) return [];
+
+  const edits: TextEdit[] = [];
+
+  // Remove the `type: "..."` property from the geometry object literal,
+  // including its trailing comma + whitespace if present.
+  const removeStart = typeProp.getStart(sourceFile);
+  let removeEnd = typeProp.getEnd();
+  // Swallow a trailing comma immediately after the property.
+  while (removeEnd < source.length && /[\s]/.test(source.charAt(removeEnd))) {
+    removeEnd++;
+  }
+  if (source.charAt(removeEnd) === ",") {
+    removeEnd++;
+    // Eat one trailing space if it looks like single-line layout.
+    if (source.charAt(removeEnd) === " ") removeEnd++;
+  } else {
+    // If there's no trailing comma, also remove the leading comma+space
+    // before this property so we don't leave a dangling `,` from a
+    // preceding sibling.
+    let before = removeStart - 1;
+    while (before >= 0 && /[ \t]/.test(source.charAt(before))) before--;
+    if (before >= 0 && source.charAt(before) === ",") {
+      // Trim back the leading whitespace + comma.
+      removeEnd = typeProp.getEnd();
+      const preceding = before + 1;
+      // Reset removeStart to start at the leading comma's position.
+      edits.push({ start: before, end: removeStart, text: "" });
+      // Keep removeStart unchanged in the property-removal edit below.
+      // (We still need to drop the property itself.)
+      void preceding;
+    }
+  }
+  edits.push({ start: removeStart, end: removeEnd, text: "" });
+
+  // Append a sibling `geometryType: "..."` directly after the geometry
+  // property's closing token in the outer Query options literal.
+  const insertAt = property.getEnd();
+  edits.push({
+    start: insertAt,
+    end: insertAt,
+    text: `, geometryType: "${honuaType}"`,
+  });
+
+  return edits;
+}
+
+function buildOutStatisticsNormalizationEdits(
+  arrayLiteral: ts.ArrayLiteralExpression,
+  sourceFile: ts.SourceFile,
+): TextEdit[] {
+  const edits: TextEdit[] = [];
+  for (const element of arrayLiteral.elements) {
+    if (!ts.isObjectLiteralExpression(element)) continue;
+    for (const prop of element.properties) {
+      if (!ts.isPropertyAssignment(prop)) continue;
+      if (getPropertyNameText(prop.name) !== "statisticType") continue;
+      const init = prop.initializer;
+      if (!ts.isStringLiteral(init) && !ts.isNoSubstitutionTemplateLiteral(init)) continue;
+      const lower = init.text.toLowerCase();
+      if (lower === init.text) continue;
+      edits.push({
+        start: init.getStart(sourceFile),
+        end: init.getEnd(),
+        text: `"${lower}"`,
+      });
+    }
+  }
+  return edits;
 }
 
 function isSafeOAuthInfoCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {

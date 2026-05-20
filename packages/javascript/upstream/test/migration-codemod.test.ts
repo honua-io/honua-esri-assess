@@ -4008,4 +4008,204 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("new FeatureLayer({");
     expect(nextSource).not.toContain("new FeatureLayerCompat");
   });
+
+  it("renames Query property keys to their Honua QueryFeaturesRequest counterparts", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "query-rename.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Query from '@arcgis/core/rest/support/Query';",
+        "const q = new Query({",
+        "  where: \"status = 'active'\",",
+        "  start: 0,",
+        "  num: 50,",
+        "  outSpatialReference: { wkid: 3857 },",
+        "  spatialRelationship: 'intersects',",
+        "});",
+        "void q;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("resultOffset: 0");
+    expect(nextSource).toContain("resultRecordCount: 50");
+    expect(nextSource).toContain("outSr: { wkid: 3857 }");
+    expect(nextSource).toContain("spatialRel: 'intersects'");
+    expect(nextSource).not.toMatch(/\bstart:/);
+    expect(nextSource).not.toMatch(/\bnum:/);
+    expect(nextSource).not.toContain("outSpatialReference");
+    expect(nextSource).not.toContain("spatialRelationship");
+  });
+
+  it("auto-migrates Query.outStatistics with a known statisticType literal", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "query-stats.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Query from '@arcgis/core/rest/support/Query';",
+        "const q = new Query({",
+        "  outStatistics: [{ statisticType: 'Sum', onStatisticField: 'POP', outStatisticFieldName: 'totalPop' }],",
+        "});",
+        "void q;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('statisticType: "sum"');
+    expect(nextSource).not.toContain("statisticType: 'Sum'");
+  });
+
+  it("emits manual TODO for Query.outStatistics with a dynamic statisticType", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "query-stats-dynamic.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Query from '@arcgis/core/rest/support/Query';",
+        "const kind = 'sum';",
+        "const q = new Query({",
+        "  outStatistics: [{ statisticType: kind, onStatisticField: 'POP', outStatisticFieldName: 'totalPop' }],",
+        "});",
+        "void q;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: false,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.autoMigratedCallSites).toBe(0);
+    expect(result.metrics.manualCallSites).toBe(1);
+    expect(result.manualTodos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "query",
+          reason: expect.stringContaining("dynamic expression"),
+        }),
+      ]),
+    );
+  });
+
+  it("splits Query.geometry { type, ... } into geometry + geometryType", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "query-geometry.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Query from '@arcgis/core/rest/support/Query';",
+        "const q = new Query({",
+        "  geometry: { type: 'polygon', rings: [[[0, 0], [10, 0], [10, 10], [0, 0]]] },",
+        "});",
+        "void q;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('geometryType: "esriGeometryPolygon"');
+    expect(nextSource).toContain("rings: [[[0, 0], [10, 0], [10, 10], [0, 0]]]");
+    expect(nextSource).not.toContain("type: 'polygon'");
+  });
+
+  it("emits manual TODO for Query.timeExtent (no direct Honua field)", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "query-time.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Query from '@arcgis/core/rest/support/Query';",
+        "const q = new Query({",
+        "  where: '1=1',",
+        "  timeExtent: { start: new Date(2020, 0, 1), end: new Date(2020, 11, 31) },",
+        "});",
+        "void q;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: false,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.autoMigratedCallSites).toBe(0);
+    expect(result.metrics.manualCallSites).toBe(1);
+    expect(result.manualTodos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "query",
+          reason: expect.stringContaining("timeExtent"),
+        }),
+      ]),
+    );
+  });
+
+  it("emits manual TODO for Query.quantizationParameters", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "query-quant.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Query from '@arcgis/core/rest/support/Query';",
+        "const q = new Query({",
+        "  where: '1=1',",
+        "  quantizationParameters: { mode: 'view', originPosition: 'upperLeft' },",
+        "});",
+        "void q;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: false,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.autoMigratedCallSites).toBe(0);
+    expect(result.metrics.manualCallSites).toBe(1);
+    expect(result.manualTodos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "query",
+          reason: expect.stringContaining("quantizationParameters"),
+        }),
+      ]),
+    );
+  });
 });

@@ -19,6 +19,7 @@ import { getJsParityMatrix, summarizeJsParityMatrix } from "./parity-matrix.js";
 import { runLayerReconciliation, summarizeLayerReconciliation } from "./reconcile.js";
 import { buildJsMigrationReport } from "./report.js";
 import { getJsRuntimeParityMatrix, summarizeJsRuntimeParity } from "./runtime-matrix.js";
+import { emitEsriSampleCorpusEvidence } from "./sample-corpus-evidence.js";
 import { scanArcGisUsage, summarizeArcGisScan } from "./scanner.js";
 
 interface ParsedArgs {
@@ -31,7 +32,8 @@ interface ParsedArgs {
     | "fixtures"
     | "demo"
     | "content-webmap"
-    | "content";
+    | "content"
+    | "corpus-evidence";
   target: string;
   contentAction?: "scan" | "export" | "import" | "reconcile";
   codemodTarget: CodemodTarget;
@@ -76,6 +78,8 @@ interface ParsedArgs {
   contentIncludeFeatures: boolean;
   contentIncludeWebMaps: boolean;
   contentIncludeHostedLayers: boolean;
+  corpusPath?: string;
+  corpusOutputDir?: string;
 }
 
 interface FixtureMetricSnapshot {
@@ -179,6 +183,13 @@ if (!parsed) {
       process.stderr.write(`reconcileError=${error instanceof Error ? error.message : String(error)}\n`);
       process.exitCode = 1;
     });
+  } else if (parsed.command === "corpus-evidence") {
+    try {
+      runCorpusEvidence(parsed);
+    } catch (error) {
+      process.stderr.write(`corpusEvidenceError=${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    }
   } else {
     runCodemod(parsed);
   }
@@ -236,6 +247,51 @@ function runRuntimeMatrix(reportPath?: string): void {
     fs.writeFileSync(reportPath, `${JSON.stringify({ summary, matrix }, null, 2)}\n`, "utf8");
     process.stdout.write(`reportWritten=${reportPath}\n`);
   }
+}
+
+function runCorpusEvidence(args: ParsedArgs): void {
+  const corpusRoot = path.resolve(
+    args.corpusPath ?? path.join(process.cwd(), "test", "fixtures", "esri-sample-corpus"),
+  );
+  if (!args.corpusOutputDir) {
+    throw new Error("corpus-evidence requires --out <dir>");
+  }
+  const outputDir = path.resolve(args.corpusOutputDir);
+
+  const manifestPath = path.join(corpusRoot, "manifest.json");
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`corpus manifest not found at ${manifestPath}`);
+  }
+
+  const evidence = emitEsriSampleCorpusEvidence({
+    manifestPath,
+    codemodTarget: args.codemodTarget,
+  });
+
+  const samplesDir = path.join(outputDir, "samples");
+  fs.mkdirSync(samplesDir, { recursive: true });
+  for (const sample of evidence.samples) {
+    const samplePath = path.join(samplesDir, `${sample.sampleId}.json`);
+    fs.writeFileSync(samplePath, `${JSON.stringify(sample, null, 2)}\n`, "utf8");
+  }
+
+  const aggregatePath = path.join(outputDir, "corpus-evidence.json");
+  fs.writeFileSync(aggregatePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+
+  process.stdout.write(
+    [
+      "corpusEvidence",
+      `samples=${evidence.aggregate.sampleCount}`,
+      `migrated=${evidence.aggregate.statusCounts.migrated}`,
+      `skipped=${evidence.aggregate.statusCounts.skipped}`,
+      `error=${evidence.aggregate.statusCounts.error}`,
+      `target=${evidence.codemodTarget}`,
+      `out=${outputDir}`,
+    ].join(" "),
+  );
+  process.stdout.write("\n");
+  process.stdout.write(`aggregateWritten=${aggregatePath}\n`);
+  process.stdout.write(`samplesDir=${samplesDir}\n`);
 }
 
 function runScan(target: string, reportPath?: string): void {
@@ -1063,7 +1119,8 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     | "fixtures"
     | "demo"
     | "content-webmap"
-    | "content" =
+    | "content"
+    | "corpus-evidence" =
     maybeCommand === "scan" ||
     maybeCommand === "codemod" ||
     maybeCommand === "reconcile" ||
@@ -1072,7 +1129,8 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     maybeCommand === "fixtures" ||
     maybeCommand === "demo" ||
     maybeCommand === "content-webmap" ||
-    maybeCommand === "content"
+    maybeCommand === "content" ||
+    maybeCommand === "corpus-evidence"
       ? maybeCommand
       : "scan";
   const positional = command === maybeCommand ? argv.slice(1) : argv.slice(0);
@@ -1081,6 +1139,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   let fixtureNames: string[] | undefined;
   let reportPath: string | undefined;
   let codemodTarget: CodemodTarget = "honua-compat";
+  let codemodTargetExplicit = false;
   let write = false;
   let annotateTodos = false;
   let failOnManual = false;
@@ -1121,6 +1180,8 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   let contentIncludeFeatures = true;
   let contentIncludeWebMaps = true;
   let contentIncludeHostedLayers = true;
+  let corpusPath: string | undefined;
+  let corpusOutputDir: string | undefined;
 
   for (let i = 0; i < positional.length; i += 1) {
     const token = positional[i];
@@ -1209,6 +1270,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
         return undefined;
       }
       codemodTarget = next === "honua" ? "honua-compat" : next;
+      codemodTargetExplicit = true;
       i += 1;
       continue;
     }
@@ -1335,6 +1397,24 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
         return undefined;
       }
       contentInputPath = next;
+      i += 1;
+      continue;
+    }
+    if (token === "--corpus") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      corpusPath = next;
+      i += 1;
+      continue;
+    }
+    if (token === "--out") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      corpusOutputDir = next;
       i += 1;
       continue;
     }
@@ -1528,6 +1608,13 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       }
       return undefined;
     }
+    if (command === "corpus-evidence") {
+      if (!corpusPath) {
+        corpusPath = token;
+        continue;
+      }
+      return undefined;
+    }
     if (!target) {
       target = token;
       continue;
@@ -1562,6 +1649,9 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     }
   }
 
+  const resolvedCodemodTarget: CodemodTarget =
+    command === "corpus-evidence" && !codemodTargetExplicit ? "honua-maplibre" : codemodTarget;
+
   return {
     command,
     target:
@@ -1569,7 +1659,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       (command === "fixtures" || command === "demo" ? path.join(process.cwd(), "test", "fixtures") : process.cwd()),
     contentAction,
     write,
-    codemodTarget,
+    codemodTarget: resolvedCodemodTarget,
     annotateTodos,
     failOnManual,
     failOnUnhandled,
@@ -1610,6 +1700,8 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     contentIncludeFeatures,
     contentIncludeWebMaps,
     contentIncludeHostedLayers,
+    corpusPath,
+    corpusOutputDir,
   };
 }
 
@@ -1658,6 +1750,7 @@ function printUsage(): void {
       "  honua-migrate content import --source <dir> --target <url> [--admin-api-key <key>] [--output-dir <dir>] [--table-prefix <prefix>] [--source-url-prefix <url>] [--target-url-prefix <url>] [--exclude-webmaps] [--exclude-hosted-layers] [--report <file>]",
       "  honua-migrate content reconcile --source <dir> [--import-report <file>] [--output-dir <file>] [--report <file>]",
       "  honua-migrate content-webmap --input <webmap.json> [--output <file>] [--source-url-prefix <url>] [--target-url-prefix <url>] [--exclude-basemap] [--report <file>]",
+      "  honua-migrate corpus-evidence [--corpus <dir>] --out <dir> [--target <honua|honua-compat|honua-maplibre|esri-leaflet>]",
       "",
       "Examples:",
       "  node dist/src/migration/cli.js scan ./src",
@@ -1676,6 +1769,7 @@ function printUsage(): void {
       "  node dist/src/migration/cli.js content import --source ./export --target https://honua.example.com --admin-api-key $HONUA_ADMIN_API_KEY --report ./content/import.json",
       "  node dist/src/migration/cli.js content reconcile --source ./export --report ./content/reconcile.json",
       "  node dist/src/migration/cli.js content-webmap --input ./export/map.json --output ./export/map.honua.json --source-url-prefix https://org.maps.arcgis.com --target-url-prefix https://honua.example.com --report ./export/map.report.json",
+      "  node dist/src/migration/cli.js corpus-evidence --corpus test/fixtures/esri-sample-corpus --out ./corpus-evidence",
       "",
       "Target semantics:",
       "  honua: alias of honua-compat.",

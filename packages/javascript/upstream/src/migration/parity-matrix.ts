@@ -76,6 +76,8 @@ const HONUA_MAPLIBRE_NOTE_OVERRIDES: Readonly<Partial<Record<CodemodConstructorK
     "Search requires a Locator-equivalent backend (HonuaGeocodeService); blocked on migration-punch-list Task C.",
   "feature-table-widget":
     "FeatureTableCompat renders through the Honua widget host; MapLibre apps must wire layout/columns manually.",
+  "web-map":
+    "Static WebMap JSON literals are auto-rewritten to webmapJsonToMapLibreStyle({...}); dynamic / portal-loaded WebMaps still fall through to manual TODO.",
 });
 
 const BASE_MATRIX_ROWS: JsParityMatrixEntry[] = (Object.keys(CANONICAL_MODULE_BY_KIND) as CodemodConstructorKind[])

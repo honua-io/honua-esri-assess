@@ -1879,6 +1879,111 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@honua/sdk-esri-compat");
   });
 
+  it("rewrites safe WebMap JSON literal to webmapJsonToMapLibreStyle for honua-maplibre target", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "honua-maplibre-webmap.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import WebMap from '@arcgis/core/WebMap';",
+        "const webmap = new WebMap({ operationalLayers: [{ id: 'roads', title: 'Roads', url: 'https://services.example.com/Roads/FeatureServer/0', layerType: 'ArcGISFeatureLayer', layerDefinition: { drawingInfo: { renderer: { type: 'simple', symbol: { type: 'esriSLS', color: [0, 0, 0, 255], width: 1 } } } } }], baseMap: { baseMapLayers: [{ id: 'base', url: 'https://tiles.example.com/tile/{z}/{y}/{x}', layerType: 'ArcGISTiledMapServiceLayer' }] } });",
+        "void webmap;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "honua-maplibre",
+      write: true,
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.byKind["web-map"]).toMatchObject({ total: 1, autoMigrated: 1, manual: 0 });
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.manualTodos).toEqual([]);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { webmapJsonToMapLibreStyle } from "@honua/sdk-js/map";');
+    expect(nextSource).toContain("const webmap = webmapJsonToMapLibreStyle({ operationalLayers:");
+    expect(nextSource).not.toContain("@arcgis/core/WebMap");
+    expect(nextSource).not.toContain("@honua/sdk-esri-compat");
+  });
+
+  it("rewrites WebMap JSON literal with arcade expression and emits arcade-expression manual todo for honua-maplibre target", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "honua-maplibre-webmap-arcade.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import WebMap from '@arcgis/core/WebMap';",
+        "const webmap = new WebMap({ operationalLayers: [{ id: 'facilities', url: 'https://services.example.com/Facilities/FeatureServer/0', layerType: 'ArcGISFeatureLayer', layerDefinition: { drawingInfo: { renderer: { type: 'simple', symbol: { type: 'esriSFS', style: 'esriSFSSolid', color: [180, 180, 200, 255] } } } }, popupInfo: { title: '{NAME}', expressionInfos: [{ name: 'statusText', expression: \"IIF($feature.STATUS == 1, 'Open', 'Closed')\" }] } }] });",
+        "void webmap;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "honua-maplibre",
+      write: true,
+      annotateTodos: true,
+    });
+
+    expect(result.filesChanged).toBe(1);
+    // Auto-migrated AND manual TODO are independent: the rewrite still
+    // happens, but each manualGaps entry is also recorded in the report.
+    expect(result.metrics.byKind["web-map"].autoMigrated).toBe(1);
+    expect(result.metrics.byKind["web-map"].manual).toBeGreaterThan(0);
+    const arcadeTodos = result.manualTodos.filter(
+      (todo) => todo.kind === "web-map" && todo.reason.includes("arcade-expression"),
+    );
+    expect(arcadeTodos.length).toBeGreaterThan(0);
+    expect(arcadeTodos[0]?.reason).toContain("arcade-expression");
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("webmapJsonToMapLibreStyle(");
+    expect(nextSource).toContain("// TODO(honua-migrate)[web-map]:");
+    expect(nextSource).toContain("arcade-expression");
+    expect(nextSource).not.toContain("@arcgis/core/WebMap");
+  });
+
+  it("emits manual todo without rewrite for dynamic / portal-loaded WebMap under honua-maplibre target", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "honua-maplibre-webmap-portal.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import WebMap from '@arcgis/core/WebMap';",
+        "declare const someId: string;",
+        "const webmap = new WebMap({ portalItem: { id: someId } });",
+        "void webmap;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "honua-maplibre",
+      write: true,
+      annotateTodos: true,
+    });
+
+    expect(result.metrics.byKind["web-map"]).toMatchObject({ total: 1, autoMigrated: 0, manual: 1 });
+    expect(result.metrics.manualCallSites).toBe(1);
+    expect(result.manualTodos).toEqual([
+      expect.objectContaining({
+        kind: "web-map",
+        reason: expect.stringContaining("Dynamic / portal-loaded WebMap"),
+      }),
+    ]);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("new WebMap({ portalItem: { id: someId } })");
+    expect(nextSource).toContain("// TODO(honua-migrate)[web-map]:");
+    expect(nextSource).not.toContain("webmapJsonToMapLibreStyle");
+  });
+
   it("rewrites map/view/widget constructors to compat fallbacks for esri-leaflet target", () => {
     const root = makeTempProject();
     const file = path.join(root, "esri-leaflet-compat-fallbacks.ts");

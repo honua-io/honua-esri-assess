@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+import { type WebMapMapLibreManualGap, webmapJsonToMapLibreStyle } from "../map/webmap-maplibre.js";
+import type { WebMapJson } from "../webmap/types.js";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
@@ -23,6 +25,10 @@ const HONUA_MAPLIBRE_UNSUPPORTED_DYNAMIC_IMPORT_REASON =
   "Dynamic import has no deterministic Honua MapLibre mapping; requires manual migration.";
 const HONUA_MAPLIBRE_UNSUPPORTED_IMPORT_REASON =
   "No deterministic Honua MapLibre mapping for this import; requires manual migration.";
+const HONUA_MAPLIBRE_WEBMAP_DYNAMIC_REASON =
+  "Dynamic / portal-loaded WebMap has no deterministic Honua MapLibre style derivation; requires manual migration.";
+const HONUA_MAPLIBRE_WEBMAP_UNSUPPORTED_SHAPE_REASON =
+  "WebMap constructor argument is not a static WebMap JSON literal; requires manual migration.";
 const REACTIVE_UTILS_IMPORT_UNSUPPORTED_REASON = "ReactiveUtils import shape is unsupported for automatic migration.";
 const ESRI_CONFIG_IMPORT_UNSUPPORTED_REASON = "esriConfig import shape is unsupported for automatic migration.";
 const IDENTITY_MANAGER_IMPORT_UNSUPPORTED_REASON =
@@ -1209,6 +1215,65 @@ function codemodFile(
         }
         return;
       }
+    }
+
+    if (target === "honua-maplibre" && importBinding.kind === "web-map") {
+      const webmapOutcome = handleHonuaMapLibreWebMapNewExpression(node, sourceFile);
+      if (webmapOutcome.kind === "rewrite") {
+        constructorEdits.push({
+          start: node.getStart(sourceFile),
+          end: node.getEnd(),
+          text: webmapOutcome.text,
+        });
+        requiredHonuaMapLibreSymbols.add("webmapJsonToMapLibreStyle");
+        rewrittenKinds.push("web-map");
+        for (const gap of webmapOutcome.manualGaps) {
+          const nodeStart = node.getStart(sourceFile);
+          const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+          const gapReason = formatWebMapMapLibreGapReason(gap);
+          manualTodos.push({
+            kind: "web-map",
+            file,
+            line: location.line + 1,
+            column: location.character + 1,
+            reason: gapReason,
+            difficulty: "complex",
+          });
+          if (annotateTodos) {
+            const lineStart = findLineStartOffset(source, nodeStart);
+            if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+              todoCommentEdits.push({
+                start: lineStart,
+                end: lineStart,
+                text: `// ${TODO_MARKER}[web-map]: ${gapReason}\n`,
+              });
+            }
+          }
+        }
+        return;
+      }
+
+      const nodeStart = node.getStart(sourceFile);
+      const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: "web-map",
+        file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: webmapOutcome.reason,
+        difficulty: "complex",
+      });
+      if (annotateTodos) {
+        const lineStart = findLineStartOffset(source, nodeStart);
+        if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[web-map]: ${webmapOutcome.reason}\n`,
+          });
+        }
+      }
+      return;
     }
 
     const safeCheck = isSafeConstructorCall(importBinding.kind, node, target);
@@ -2945,6 +3010,150 @@ function buildOptionalObjectOptionsText(node: ts.NewExpression, sourceFile: ts.S
     return "{}";
   }
   return arg.getText(sourceFile);
+}
+
+type HonuaMapLibreWebMapOutcome =
+  | { kind: "rewrite"; text: string; manualGaps: readonly WebMapMapLibreManualGap[] }
+  | { kind: "manual"; reason: string };
+
+/**
+ * Decide how to migrate a `new WebMap({...})` call for the `honua-maplibre`
+ * target. Safe WebMap JSON object literals are rewritten to a
+ * `webmapJsonToMapLibreStyle({...})` call; any other shape (string portal
+ * item id, identifier references, computed properties, spreads, ?)
+ * falls through to a manual TODO carrying a clear reason.
+ */
+function handleHonuaMapLibreWebMapNewExpression(
+  node: ts.NewExpression,
+  sourceFile: ts.SourceFile,
+): HonuaMapLibreWebMapOutcome {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { kind: "manual", reason: HONUA_MAPLIBRE_WEBMAP_DYNAMIC_REASON };
+  }
+  if (args.length !== 1) {
+    return { kind: "manual", reason: HONUA_MAPLIBRE_WEBMAP_UNSUPPORTED_SHAPE_REASON };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return { kind: "manual", reason: HONUA_MAPLIBRE_WEBMAP_UNSUPPORTED_SHAPE_REASON };
+  }
+
+  // Reject portal-loaded / dynamic shapes outright ? they have no static
+  // JSON to feed into webmapJsonToMapLibreStyle.
+  if (objectLiteralHasProperty(arg, "portalItem")) {
+    return { kind: "manual", reason: HONUA_MAPLIBRE_WEBMAP_DYNAMIC_REASON };
+  }
+
+  const evaluated = evaluateObjectLiteralAsJson(arg);
+  if (!evaluated.ok) {
+    return { kind: "manual", reason: HONUA_MAPLIBRE_WEBMAP_UNSUPPORTED_SHAPE_REASON };
+  }
+
+  // Require at least one WebMap-JSON-specific top-level key so we don't
+  // mistake an ArcGIS JS API constructor literal (e.g. `{ basemap:
+  // 'streets' }`) for a WebMap JSON document. WebMap JSON uses
+  // `baseMap` (capital M) and/or `operationalLayers`.
+  const json = evaluated.value as Record<string, unknown>;
+  const looksLikeWebMapJson =
+    Object.prototype.hasOwnProperty.call(json, "operationalLayers") ||
+    Object.prototype.hasOwnProperty.call(json, "baseMap");
+  if (!looksLikeWebMapJson) {
+    return { kind: "manual", reason: HONUA_MAPLIBRE_WEBMAP_DYNAMIC_REASON };
+  }
+
+  let result: { manualGaps: readonly WebMapMapLibreManualGap[] };
+  try {
+    result = webmapJsonToMapLibreStyle(json as WebMapJson);
+  } catch {
+    return { kind: "manual", reason: HONUA_MAPLIBRE_WEBMAP_UNSUPPORTED_SHAPE_REASON };
+  }
+
+  return {
+    kind: "rewrite",
+    text: `webmapJsonToMapLibreStyle(${arg.getText(sourceFile)})`,
+    manualGaps: result.manualGaps,
+  };
+}
+
+function formatWebMapMapLibreGapReason(gap: WebMapMapLibreManualGap): string {
+  const pathSuffix = gap.path ? ` at ${gap.path}` : "";
+  return `WebMap ? MapLibre style derivation [${gap.kind}]${pathSuffix}: ${gap.reason}`;
+}
+
+/**
+ * Evaluate a TypeScript object literal as a JSON value. Returns ok:false
+ * if any node is non-literal (identifier, call, template expression,
+ * computed property, spread, method shorthand, etc.). Used by the
+ * WebMap ? MapLibre style derivation rewrite to gate which constructor
+ * arguments can be statically converted.
+ */
+function evaluateObjectLiteralAsJson(
+  node: ts.ObjectLiteralExpression,
+): { ok: true; value: Record<string, unknown> } | { ok: false } {
+  const result: Record<string, unknown> = {};
+  for (const property of node.properties) {
+    if (!ts.isPropertyAssignment(property)) {
+      return { ok: false };
+    }
+    const name = getPropertyNameText(property.name);
+    if (!name) {
+      return { ok: false };
+    }
+    const value = evaluateExpressionAsJson(property.initializer);
+    if (!value.ok) {
+      return { ok: false };
+    }
+    result[name] = value.value;
+  }
+  return { ok: true, value: result };
+}
+
+function evaluateExpressionAsJson(node: ts.Expression): { ok: true; value: unknown } | { ok: false } {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    return { ok: true, value: node.text };
+  }
+  if (ts.isNumericLiteral(node)) {
+    return { ok: true, value: Number(node.text) };
+  }
+  if (node.kind === ts.SyntaxKind.TrueKeyword) {
+    return { ok: true, value: true };
+  }
+  if (node.kind === ts.SyntaxKind.FalseKeyword) {
+    return { ok: true, value: false };
+  }
+  if (node.kind === ts.SyntaxKind.NullKeyword) {
+    return { ok: true, value: null };
+  }
+  if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.MinusToken) {
+    const inner = evaluateExpressionAsJson(node.operand);
+    if (!inner.ok || typeof inner.value !== "number") {
+      return { ok: false };
+    }
+    return { ok: true, value: -inner.value };
+  }
+  if (ts.isArrayLiteralExpression(node)) {
+    const values: unknown[] = [];
+    for (const element of node.elements) {
+      if (ts.isOmittedExpression(element) || ts.isSpreadElement(element)) {
+        return { ok: false };
+      }
+      const evaluated = evaluateExpressionAsJson(element);
+      if (!evaluated.ok) {
+        return { ok: false };
+      }
+      values.push(evaluated.value);
+    }
+    return { ok: true, value: values };
+  }
+  if (ts.isObjectLiteralExpression(node)) {
+    return evaluateObjectLiteralAsJson(node);
+  }
+  if (ts.isParenthesizedExpression(node)) {
+    return evaluateExpressionAsJson(node.expression);
+  }
+  return { ok: false };
 }
 
 function esriLeafletMethodForKind(kind: CodemodConstructorKind): string | undefined {

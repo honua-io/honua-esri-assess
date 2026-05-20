@@ -2545,6 +2545,61 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("module.exports = { map };");
   });
 
+  it("inserts compat require after 'use strict' directive prologue in CJS files", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "require-strict.cjs");
+    fs.writeFileSync(
+      file,
+      [
+        '"use strict";',
+        "const Map = require('@arcgis/core/Map');",
+        "const map = new Map({ basemap: 'streets' });",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    const nextSource = fs.readFileSync(file, "utf8");
+    const directiveIndex = nextSource.indexOf('"use strict";');
+    const compatRequireIndex = nextSource.indexOf('require("@honua/sdk-esri-compat")');
+    expect(directiveIndex).toBe(0);
+    expect(compatRequireIndex).toBeGreaterThan(directiveIndex);
+  });
+
+  it("preserves aliased compat-require destructure when adding new symbols", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "aliased.cjs");
+    fs.writeFileSync(
+      file,
+      [
+        'const { MapCompat: Map } = require("@honua/sdk-esri-compat");',
+        "const FeatureLayer = require('@arcgis/core/layers/FeatureLayer');",
+        "const m = new Map({ basemap: 'streets' });",
+        "const fl = new FeatureLayer({ url: 'https://example.test/rest/services/x/FeatureServer/0' });",
+        "module.exports = { m, fl };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('const { MapCompat: Map, FeatureLayerCompat } = require("@honua/sdk-esri-compat");');
+    expect(nextSource).toContain("new Map({ basemap: 'streets' })");
+    expect(nextSource).toContain("new FeatureLayerCompat(");
+  });
+
   it("falls back to manual TODO for CJS require constructor when targeting esri-leaflet", () => {
     const root = makeTempProject();
     const file = path.join(root, "require-map-leaflet.cjs");
@@ -3657,5 +3712,300 @@ describe("runEsriCompatCodemod", () => {
     expect(result.filesChanged).toBe(0);
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain("emitter.on('layerview-create'");
+  });
+
+  // --------------------------------------------------------------------------
+  // Task 1: orphaned arcgis-require pruning after CJS auto-migrate.
+  // --------------------------------------------------------------------------
+  it("prunes orphaned arcgis require declaration after CJS auto-migrate", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "orphan-require.cjs");
+    fs.writeFileSync(
+      file,
+      ["const Map = require('@arcgis/core/Map');", "const map = new Map({ basemap: 'streets' });"].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('const { MapCompat } = require("@honua/sdk-esri-compat");');
+    expect(nextSource).toContain("new MapCompat({ basemap: 'streets' })");
+    expect(nextSource).not.toContain("const Map = require('@arcgis/core/Map');");
+    expect(nextSource).not.toContain("require('@arcgis/core/Map')");
+  });
+
+  it("preserves arcgis require declaration when it has non-constructor references", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "static-require.cjs");
+    fs.writeFileSync(
+      file,
+      [
+        "const Map = require('@arcgis/core/Map');",
+        // Non-constructor reference ? read a static off the imported binding.
+        "console.log(Map.SOMETHING);",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    // No constructor calls in this file ? manual call sites remain zero, and
+    // the require survives because removing it would break the static reference.
+    expect(result.metrics.autoMigratedCallSites).toBe(0);
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("const Map = require('@arcgis/core/Map');");
+    expect(nextSource).toContain("console.log(Map.SOMETHING);");
+  });
+
+  // --------------------------------------------------------------------------
+  // Task 2: receiver-aware event-name scoping.
+  // --------------------------------------------------------------------------
+  it("rewrites event names only on tracked compat receivers", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "tracked-receiver.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import MapView from '@arcgis/core/views/MapView';",
+        "const view = new MapView();",
+        "view.on('layerview-create', () => {});",
+        "void view;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    const fileResult = result.fileResults.find((entry) => entry.file === file);
+    expect(fileResult?.rewrittenEventNames).toBe(1);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('view.on("layer-view-created"');
+  });
+
+  it("does not rewrite event names on untracked receivers even when arcgis imports exist", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "untracked-receiver.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import MapView from '@arcgis/core/views/MapView';",
+        "declare const someEmitter: { on(name: string, handler: () => void): void };",
+        // `view` is tracked, `someEmitter` is not ? only the view.on() call
+        // should be rewritten.
+        "const view = new MapView();",
+        "view.on('layerview-create', () => {});",
+        "someEmitter.on('layerview-create', () => {});",
+        "void view;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    const fileResult = result.fileResults.find((entry) => entry.file === file);
+    expect(fileResult?.rewrittenEventNames).toBe(1);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('view.on("layer-view-created"');
+    expect(nextSource).toContain("someEmitter.on('layerview-create', () => {});");
+  });
+
+  // --------------------------------------------------------------------------
+  // Task 3: reactiveUtils.watch accessor parsing.
+  // --------------------------------------------------------------------------
+  it("rewrites reactiveUtils.watch simple accessor to receiver/property form", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "watch-simple.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import MapView from '@arcgis/core/views/MapView';",
+        "import * as reactiveUtils from '@arcgis/core/core/reactiveUtils';",
+        "const view = new MapView();",
+        "reactiveUtils.watch(() => view.scale, (next) => { void next; });",
+        "void view;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('reactiveUtils.watch(view, "scale", (next) => { void next; });');
+    const watchTodos = result.manualTodos.filter((todo) => todo.kind === "reactive-utils");
+    expect(watchTodos).toHaveLength(0);
+  });
+
+  it("emits manual TODO for reactiveUtils.watch multi-property accessor", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "watch-multi.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import MapView from '@arcgis/core/views/MapView';",
+        "import * as reactiveUtils from '@arcgis/core/core/reactiveUtils';",
+        "const view = new MapView();",
+        "reactiveUtils.watch(() => [view.scale, view.zoom], (next) => { void next; });",
+        "void view;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    const todos = result.manualTodos.filter((todo) => todo.kind === "reactive-utils");
+    expect(todos).toHaveLength(1);
+    expect(todos[0]?.reason).toContain("reactiveUtils.watch accessor function is too complex");
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("reactiveUtils.watch(() => [view.scale, view.zoom]");
+  });
+
+  // --------------------------------------------------------------------------
+  // Task 4: FeatureLayer constructor property-value transforms.
+  // --------------------------------------------------------------------------
+  it("rewrites FeatureLayer with lowercase renderer.field", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "renderer-lowercase.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "const url = 'https://example.test/rest/services/default/FeatureServer/0';",
+        "const layer = new FeatureLayer({ url, renderer: { type: 'simple', field: 'pop_count' } });",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("new FeatureLayerCompat({");
+  });
+
+  it("emits manual TODO for FeatureLayer with mixed-case renderer.field", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "renderer-mixed-case.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "const url = 'https://example.test/rest/services/default/FeatureServer/0';",
+        "const layer = new FeatureLayer({ url, renderer: { type: 'simple', field: 'POPULATION' } });",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.autoMigratedCallSites).toBe(0);
+    expect(result.metrics.manualCallSites).toBe(1);
+    expect(result.manualTodos[0]?.reason).toContain("FeatureLayer renderer.field name appears to be mixed-case");
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("new FeatureLayer({");
+    expect(nextSource).not.toContain("new FeatureLayerCompat");
+  });
+
+  it("rewrites FeatureLayer with string-template popupTemplate content", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "popup-string.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "const url = 'https://example.test/rest/services/default/FeatureServer/0';",
+        "const layer = new FeatureLayer({ url, popupTemplate: { title: 'Place', content: '{name}: {pop_count}' } });",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("new FeatureLayerCompat({");
+  });
+
+  it("emits manual TODO for FeatureLayer popupTemplate fieldInfos with arrow-function format", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "popup-format-fn.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "const url = 'https://example.test/rest/services/default/FeatureServer/0';",
+        "const layer = new FeatureLayer({",
+        "  url,",
+        "  popupTemplate: {",
+        "    title: 'Place',",
+        "    content: [{ type: 'fields', fieldInfos: [{ fieldName: 'pop_count', format: (v) => String(v) }] }],",
+        "  },",
+        "});",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.autoMigratedCallSites).toBe(0);
+    expect(result.metrics.manualCallSites).toBe(1);
+    expect(result.manualTodos[0]?.reason).toContain("FeatureLayer popupTemplate.content fieldInfos format callback");
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("new FeatureLayer({");
+    expect(nextSource).not.toContain("new FeatureLayerCompat");
   });
 });

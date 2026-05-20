@@ -30,6 +30,12 @@ const IDENTITY_MANAGER_IMPORT_UNSUPPORTED_REASON =
 const ESRI_REQUEST_IMPORT_UNSUPPORTED_REASON = "esriRequest import shape is unsupported for automatic migration.";
 const SHADOWED_IMPORT_CONSTRUCTOR_REASON =
   "Constructor identifier is shadowed by a local declaration; requires manual migration.";
+const FEATURE_LAYER_RENDERER_FIELD_CASE_REASON =
+  "FeatureLayer renderer.field name appears to be mixed-case; Honua expects lowercase";
+const FEATURE_LAYER_POPUP_FIELD_INFO_FORMAT_REASON =
+  "FeatureLayer popupTemplate.content fieldInfos format callback requires manual migration";
+const REACTIVE_UTILS_WATCH_ACCESSOR_REASON =
+  "reactiveUtils.watch accessor function is too complex to rewrite automatically; requires manual migration.";
 
 const ARCGIS_TO_COMPAT_EVENT_REMAP: Readonly<Record<string, string>> = Object.freeze({
   "layerview-create": "layer-view-created",
@@ -912,6 +918,8 @@ function codemodFile(
   }
   const shadowedImportLocalNames = collectShadowedImportLocalNames(sourceFile, new Set(importsByLocalName.keys()));
   const identifierMemberUsage = buildIdentifierMemberUsageIndex(sourceFile);
+  const trackedReceiverKeys = collectTrackedCompatReceiverKeys(sourceFile, importsByLocalName);
+  const reactiveUtilsLocals = collectReactiveUtilsLocalNames(sourceFile);
 
   const constructorEdits: TextEdit[] = [];
   const dynamicImportEdits: TextEdit[] = [];
@@ -1084,13 +1092,62 @@ function codemodFile(
     ) {
       const literal = node.arguments[0];
       const remapped = ARCGIS_TO_COMPAT_EVENT_REMAP[literal.text];
-      if (remapped) {
+      const receiverKey = resolveReceiverKey(node.expression);
+      if (remapped && receiverKey && trackedReceiverKeys.has(receiverKey)) {
         eventNameEdits.push({
           start: literal.getStart(sourceFile),
           end: literal.getEnd(),
           text: `"${remapped}"`,
         });
       }
+      return;
+    }
+
+    // reactiveUtils.watch(accessor, handler) ? rewrite simple property-access
+    // accessors to compat (receiver, propertyPath, handler) form, and emit a
+    // manual TODO when the accessor is too complex to rewrite safely.
+    if (
+      ts.isCallExpression(node) &&
+      node.arguments.length >= 2 &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      reactiveUtilsLocals.namespaceNames.has(node.expression.expression.text) &&
+      node.expression.name.text === "watch"
+    ) {
+      const parsed = parseReactiveUtilsWatchAccessor(node.arguments[0], trackedReceiverKeys);
+      handleReactiveUtilsWatchAccessor({
+        node,
+        accessor: node.arguments[0],
+        parsed,
+        sourceFile,
+        source,
+        file,
+        annotateTodos,
+        eventNameEdits,
+        manualTodos,
+        todoCommentEdits,
+      });
+      return;
+    }
+    if (
+      ts.isCallExpression(node) &&
+      node.arguments.length >= 2 &&
+      ts.isIdentifier(node.expression) &&
+      reactiveUtilsLocals.watchNames.has(node.expression.text)
+    ) {
+      const parsed = parseReactiveUtilsWatchAccessor(node.arguments[0], trackedReceiverKeys);
+      handleReactiveUtilsWatchAccessor({
+        node,
+        accessor: node.arguments[0],
+        parsed,
+        sourceFile,
+        source,
+        file,
+        annotateTodos,
+        eventNameEdits,
+        manualTodos,
+        todoCommentEdits,
+      });
       return;
     }
 
@@ -2614,18 +2671,29 @@ function ensureCompatNamedRequire(
       if (!ts.isObjectBindingPattern(declaration.name)) {
         continue;
       }
-      const existingLocalNames = new Set<string>();
+      const existingExportedNames = new Set<string>();
+      const renderedSpecifiers: string[] = [];
       for (const element of declaration.name.elements) {
-        if (ts.isIdentifier(element.name)) {
-          existingLocalNames.add(element.name.text);
+        if (!ts.isIdentifier(element.name)) {
+          continue;
         }
+        const localName = element.name.text;
+        let exportedName: string;
+        if (element.propertyName && ts.isIdentifier(element.propertyName)) {
+          exportedName = element.propertyName.text;
+          renderedSpecifiers.push(`${exportedName}: ${localName}`);
+        } else {
+          exportedName = localName;
+          renderedSpecifiers.push(localName);
+        }
+        existingExportedNames.add(exportedName);
       }
-      const missing = symbols.filter((symbol) => !existingLocalNames.has(symbol));
+      const missing = symbols.filter((symbol) => !existingExportedNames.has(symbol));
       if (missing.length === 0) {
         return { nextSource: source, changed: false };
       }
-      const mergedNames = [...existingLocalNames, ...missing].sort();
-      const replacement = `const { ${mergedNames.join(", ")} } = require("${importPath}");`;
+      const mergedSpecifiers = [...renderedSpecifiers, ...missing];
+      const replacement = `const { ${mergedSpecifiers.join(", ")} } = require("${importPath}");`;
       const nextSource = applyTextEdits(source, [
         {
           start: statement.getStart(sourceFile),
@@ -3064,6 +3132,242 @@ function findEnclosingStatement(node: ts.Node): ts.Statement | undefined {
     current = current.parent;
   }
   return undefined;
+}
+
+/**
+ * Receiver key for tracking which identifiers/this-properties are bound to a
+ * tracked arcgis `new XCompat(...)`. Identifiers are stored as their text; this
+ * member accesses are stored as `this.<name>`.
+ */
+function receiverKeyForExpression(expression: ts.Expression): string | undefined {
+  if (ts.isIdentifier(expression)) {
+    return expression.text;
+  }
+  if (
+    ts.isPropertyAccessExpression(expression) &&
+    expression.expression.kind === ts.SyntaxKind.ThisKeyword &&
+    ts.isIdentifier(expression.name)
+  ) {
+    return `this.${expression.name.text}`;
+  }
+  return undefined;
+}
+
+/**
+ * Collect the set of receiver keys (identifier names and `this.<name>`
+ * patterns) that are bound to a `new X(...)` whose constructor identifier
+ * resolves through the codemod's tracked imports. The result is used to scope
+ * receiver-sensitive rewrites (event-name remap, reactiveUtils.watch accessor)
+ * so we don't touch unrelated emitters that happen to live in a file with
+ * arcgis imports.
+ */
+function collectTrackedCompatReceiverKeys(
+  sourceFile: ts.SourceFile,
+  importsByLocalName: ReadonlyMap<string, ArcGisImportBinding>,
+): Set<string> {
+  const keys = new Set<string>();
+
+  walk(sourceFile, (node) => {
+    if (!ts.isNewExpression(node)) {
+      return;
+    }
+    const rewriteTarget = resolveConstructorRewriteTarget(node.expression, sourceFile, importsByLocalName);
+    if (!rewriteTarget) {
+      return;
+    }
+
+    const parent = node.parent;
+    if (ts.isVariableDeclaration(parent) && parent.initializer === node && ts.isIdentifier(parent.name)) {
+      keys.add(parent.name.text);
+      return;
+    }
+    if (
+      ts.isBinaryExpression(parent) &&
+      parent.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      parent.right === node
+    ) {
+      const key = receiverKeyForExpression(parent.left);
+      if (key) {
+        keys.add(key);
+      }
+      return;
+    }
+    if (
+      ts.isAsExpression(parent) &&
+      ts.isVariableDeclaration(parent.parent) &&
+      parent.parent.initializer === parent &&
+      ts.isIdentifier(parent.parent.name)
+    ) {
+      keys.add(parent.parent.name.text);
+      return;
+    }
+    if (ts.isPropertyDeclaration(parent) && parent.initializer === node && ts.isIdentifier(parent.name)) {
+      keys.add(`this.${parent.name.text}`);
+      return;
+    }
+  });
+
+  return keys;
+}
+
+/**
+ * Resolve the local name of a property access receiver used as `<receiver>.on`
+ * or `<receiver>.watch` ? returning an identifier text or `this.<name>`.
+ */
+function resolveReceiverKey(expression: ts.PropertyAccessExpression): string | undefined {
+  return receiverKeyForExpression(expression.expression);
+}
+
+/**
+ * Collect the local names that resolve to the reactiveUtils import binding
+ * (any of namespace import, default import, or `reactiveUtils` named import).
+ * `watch`-as-named-import is handled separately via the `watch` local name.
+ */
+function collectReactiveUtilsLocalNames(sourceFile: ts.SourceFile): {
+  namespaceNames: Set<string>;
+  watchNames: Set<string>;
+} {
+  const namespaceNames = new Set<string>();
+  const watchNames = new Set<string>();
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "reactive-utils") {
+      continue;
+    }
+    const importClause = statement.importClause;
+    if (!importClause) {
+      continue;
+    }
+    if (importClause.name) {
+      namespaceNames.add(importClause.name.text);
+    }
+    const namedBindings = importClause.namedBindings;
+    if (!namedBindings) {
+      continue;
+    }
+    if (ts.isNamespaceImport(namedBindings)) {
+      namespaceNames.add(namedBindings.name.text);
+      continue;
+    }
+    for (const element of namedBindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      const localName = element.name.text;
+      if (importedName === "default" || importedName === "reactiveUtils") {
+        namespaceNames.add(localName);
+      } else if (importedName === "watch") {
+        watchNames.add(localName);
+      }
+    }
+  }
+  return { namespaceNames, watchNames };
+}
+
+/**
+ * Inspect an arrow/function accessor passed to `reactiveUtils.watch(accessor, h)`.
+ * If the accessor body is a single property access chain on a tracked compat
+ * receiver, return the receiver key and the dot-joined property path. Otherwise
+ * return undefined so the caller can emit a manual TODO.
+ */
+function parseReactiveUtilsWatchAccessor(
+  accessor: ts.Expression,
+  trackedReceivers: ReadonlySet<string>,
+): { kind: "simple"; receiverText: string; propertyPath: string } | { kind: "complex" } | undefined {
+  if (!ts.isArrowFunction(accessor) && !ts.isFunctionExpression(accessor)) {
+    return undefined;
+  }
+  if (accessor.parameters.length !== 0) {
+    return { kind: "complex" };
+  }
+  let bodyExpression: ts.Expression | undefined;
+  if (ts.isArrowFunction(accessor) && !ts.isBlock(accessor.body)) {
+    bodyExpression = accessor.body;
+  } else {
+    const block = accessor.body as ts.Block;
+    if (block.statements.length !== 1) {
+      return { kind: "complex" };
+    }
+    const only = block.statements[0];
+    if (ts.isReturnStatement(only) && only.expression) {
+      bodyExpression = only.expression;
+    } else if (ts.isExpressionStatement(only)) {
+      bodyExpression = only.expression;
+    } else {
+      return { kind: "complex" };
+    }
+  }
+  if (!bodyExpression) {
+    return { kind: "complex" };
+  }
+  // Walk a property access chain. The deepest node must be an identifier (or `this`).
+  const segments: string[] = [];
+  let current: ts.Expression = bodyExpression;
+  while (ts.isPropertyAccessExpression(current)) {
+    if (!ts.isIdentifier(current.name)) {
+      return { kind: "complex" };
+    }
+    segments.unshift(current.name.text);
+    current = current.expression;
+  }
+  const receiverKey = receiverKeyForExpression(current);
+  if (!receiverKey || segments.length === 0) {
+    return { kind: "complex" };
+  }
+  if (!trackedReceivers.has(receiverKey)) {
+    return { kind: "complex" };
+  }
+  // current is the receiver expression ? produce its raw text using getText() at
+  // call site (we only have its node here, not the source file). The caller
+  // computes the receiver text from the original source.
+  return { kind: "simple", receiverText: receiverKey, propertyPath: segments.join(".") };
+}
+
+function handleReactiveUtilsWatchAccessor(options: {
+  node: ts.CallExpression;
+  accessor: ts.Expression;
+  parsed: ReturnType<typeof parseReactiveUtilsWatchAccessor>;
+  sourceFile: ts.SourceFile;
+  source: string;
+  file: string;
+  annotateTodos: boolean;
+  eventNameEdits: TextEdit[];
+  manualTodos: MigrationTodo[];
+  todoCommentEdits: TextEdit[];
+}): void {
+  const { node, accessor, parsed, sourceFile, source, file, annotateTodos } = options;
+  if (!parsed) {
+    return;
+  }
+  if (parsed.kind === "complex") {
+    const nodeStart = node.getStart(sourceFile);
+    const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+    options.manualTodos.push({
+      kind: "reactive-utils",
+      file,
+      line: location.line + 1,
+      column: location.character + 1,
+      reason: REACTIVE_UTILS_WATCH_ACCESSOR_REASON,
+      difficulty: "moderate",
+    });
+    if (annotateTodos) {
+      const lineStart = findLineStartOffset(source, nodeStart);
+      if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+        options.todoCommentEdits.push({
+          start: lineStart,
+          end: lineStart,
+          text: `// ${TODO_MARKER}[reactive-utils]: ${REACTIVE_UTILS_WATCH_ACCESSOR_REASON}\n`,
+        });
+      }
+    }
+    return;
+  }
+  // Simple: rewrite the accessor argument to `receiver, "propertyPath"`.
+  options.eventNameEdits.push({
+    start: accessor.getStart(sourceFile),
+    end: accessor.getEnd(),
+    text: `${parsed.receiverText}, "${parsed.propertyPath}"`,
+  });
 }
 
 function removeUnusedArcGisImports(file: string, source: string): { nextSource: string; removedCount: number } {
@@ -3923,7 +4227,110 @@ function isSafeFeatureLayerCompatCall(
     };
   }
 
+  const propertyValueIssue = collectFeatureLayerPropertyValueIssue(arg);
+  if (propertyValueIssue) {
+    return { ok: false, reason: propertyValueIssue };
+  }
+
   return { ok: true };
+}
+
+/**
+ * Inspect a FeatureLayer constructor option literal for Honua-divergent
+ * property values that the codemod cannot transform deterministically:
+ * - `renderer.field` containing any uppercase character (Honua expects
+ *   lowercase field names).
+ * - `popupTemplate.content` arrays containing a `{ type: "fields", fieldInfos:
+ *   [{ format: (v) => ... }] }` entry, since arrow-function field formatters
+ *   need manual translation.
+ *
+ * Returns a manual-TODO reason string when one of these divergences is found,
+ * otherwise undefined.
+ */
+function collectFeatureLayerPropertyValueIssue(arg: ts.ObjectLiteralExpression): string | undefined {
+  for (const property of arg.properties) {
+    if (!ts.isPropertyAssignment(property)) {
+      continue;
+    }
+    const name = getObjectPropertyName(property);
+    if (name === "renderer" && ts.isObjectLiteralExpression(property.initializer)) {
+      for (const rendererProp of property.initializer.properties) {
+        if (!ts.isPropertyAssignment(rendererProp)) {
+          continue;
+        }
+        if (getObjectPropertyName(rendererProp) !== "field") {
+          continue;
+        }
+        if (
+          ts.isStringLiteral(rendererProp.initializer) ||
+          ts.isNoSubstitutionTemplateLiteral(rendererProp.initializer)
+        ) {
+          const fieldValue = rendererProp.initializer.text;
+          if (/[A-Z]/.test(fieldValue)) {
+            return FEATURE_LAYER_RENDERER_FIELD_CASE_REASON;
+          }
+        }
+      }
+    }
+    if (name === "popupTemplate" && ts.isObjectLiteralExpression(property.initializer)) {
+      for (const popupProp of property.initializer.properties) {
+        if (!ts.isPropertyAssignment(popupProp)) {
+          continue;
+        }
+        if (getObjectPropertyName(popupProp) !== "content") {
+          continue;
+        }
+        if (!ts.isArrayLiteralExpression(popupProp.initializer)) {
+          continue;
+        }
+        for (const element of popupProp.initializer.elements) {
+          if (!ts.isObjectLiteralExpression(element)) {
+            continue;
+          }
+          const typeText = readStringPropertyText(element, "type");
+          if (typeText !== "fields") {
+            continue;
+          }
+          const fieldInfosProp = element.properties.find(
+            (p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && getObjectPropertyName(p) === "fieldInfos",
+          );
+          if (!fieldInfosProp || !ts.isArrayLiteralExpression(fieldInfosProp.initializer)) {
+            continue;
+          }
+          for (const info of fieldInfosProp.initializer.elements) {
+            if (!ts.isObjectLiteralExpression(info)) {
+              continue;
+            }
+            const formatProp = info.properties.find(
+              (p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && getObjectPropertyName(p) === "format",
+            );
+            if (!formatProp) {
+              continue;
+            }
+            if (ts.isArrowFunction(formatProp.initializer) || ts.isFunctionExpression(formatProp.initializer)) {
+              return FEATURE_LAYER_POPUP_FIELD_INFO_FORMAT_REASON;
+            }
+          }
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+function readStringPropertyText(literal: ts.ObjectLiteralExpression, propertyName: string): string | undefined {
+  for (const property of literal.properties) {
+    if (!ts.isPropertyAssignment(property)) {
+      continue;
+    }
+    if (getObjectPropertyName(property) !== propertyName) {
+      continue;
+    }
+    if (ts.isStringLiteral(property.initializer) || ts.isNoSubstitutionTemplateLiteral(property.initializer)) {
+      return property.initializer.text;
+    }
+  }
+  return undefined;
 }
 
 function isSafeGraphicCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {

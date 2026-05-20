@@ -462,15 +462,19 @@ describe("arcgis migration integration", () => {
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
+    // The fixture's `reactiveUtils.watch(() => ready, ...)` accessor reads a
+    // local variable that is not bound to a tracked compat receiver, so the
+    // codemod now emits a manual TODO for it (per task 3 in the migration
+    // punch list). The import-rewrite still succeeds.
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(2);
     expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
-    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.manualCallSites).toBe(1);
     expect(codemodResult.metrics.byKind["reactive-utils"]).toEqual({
-      total: 1,
+      total: 2,
       autoMigrated: 1,
-      manual: 0,
+      manual: 1,
     });
-    expect(report.readiness).toBe("ready");
+    expect(report.readiness).toBe("assisted");
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");

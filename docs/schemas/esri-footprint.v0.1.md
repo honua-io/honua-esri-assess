@@ -298,7 +298,7 @@ v0.2 bump; clarifying an existing code is a v0.1.x doc bump.
 
 | Code                    | Typical severity | When to emit                                                                                  |
 |-------------------------|------------------|-----------------------------------------------------------------------------------------------|
-| `rate-limited`          | info / warn      | The source throttled the scanner; coverage is still complete but the scan took longer.        |
+| `rate-limited`          | info / warn      | The source throttled the scanner; coverage may be partial when the throttled endpoint cannot be read. |
 | `partial-coverage`      | warn             | The scanner could not enumerate a region of the source (timeout, pagination ceiling, etc.).   |
 | `missing-permission`    | warn             | The scanner credential cannot read part of the source. Surface a hint with the required role. |
 | `unresolved-reference`  | warn             | An item references another item that the scanner could not find or could not read.            |
@@ -409,9 +409,9 @@ and is exercised by `tests/test_esri_footprint_schema.py`.
 
 ## Out of scope at v0.1
 
-These items are deliberately deferred so the contract can ship before the
-scanners are wired. They are candidates for v0.2 once the closed
-migration product ingests a real footprint.
+These items are deliberately deferred so the v0.1 contract stays focused on
+read-only inventory and typed diagnostics. They are candidates for v0.2 once
+the closed migration product ingests real fixture-backed footprints.
 
 - Per-item readiness or risk flags.
 - Explicit dependency edges across kinds (webmap → service → layer).

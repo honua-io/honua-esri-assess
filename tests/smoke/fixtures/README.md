@@ -28,10 +28,11 @@ than a silent skip. The FileGDB corpus is filesystem-only and uses
 ## Refreshing against a real org (out of CI)
 
 `responses`-based smoke tests never touch the network. If you need to refresh a
-fixture against a real ArcGIS Online org:
+fixture against a real ArcGIS Online org or ArcGIS Server:
 
 1. Use a read-only Honua-owned demo org.
-2. Run the scanner with `requests` + `responses.start(passthrough=...)` recording.
+2. Run the scanner with a local recording harness that preserves the scanner's
+   GET-only request shape.
 3. Sanitize the resulting JSON (strip `clientId`, `token`, `serviceItemId`s
    tied to customer data, etc.) before committing.
 
@@ -40,6 +41,9 @@ fixture-only by design so we never ship anything network-shaped in CI.
 
 ## Expected counts (`tests/smoke/expected/`)
 
-Each backend has an `expected/<backend>-...-counts.json` golden. Counts must
-agree with the fixture inventory; the smoke tests print a diff-friendly mismatch
-if the fixture is edited without updating the golden.
+Each backend has an `expected/<backend>-...-counts.json` golden. The golden
+must agree with the emitted footprint aggregates and backend facets; for
+example, ArcGIS Server `serviceCounts` records advertised services even when a
+probe later downgrades the service to a diagnostic instead of an inventory
+record. The smoke tests print a diff-friendly mismatch if the fixture is edited
+without updating the golden.

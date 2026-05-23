@@ -38,11 +38,15 @@ def expected_counts() -> dict[str, dict[str, Any]]:
     }
 
 
-def _build_mock(corpus: str) -> responses.RequestsMock:
+def _build_mock(
+    corpus: str, *, assert_all_requests_are_fired: bool = True
+) -> responses.RequestsMock:
     """Return a configured (but not yet active) RequestsMock for the corpus."""
     corpus_dir = FIXTURES_DIR / corpus
     routes_doc = json.loads((corpus_dir / "_routes.json").read_text(encoding="utf-8"))
-    rsps = responses.RequestsMock(assert_all_requests_are_fired=True)
+    rsps = responses.RequestsMock(
+        assert_all_requests_are_fired=assert_all_requests_are_fired
+    )
     for entry in routes_doc.get("routes", []):
         body = (corpus_dir / entry["body_file"]).read_text(encoding="utf-8")
         params = entry.get("params") or {}
@@ -52,7 +56,12 @@ def _build_mock(corpus: str) -> responses.RequestsMock:
             body=body,
             status=entry.get("status", 200),
             content_type="application/json",
-            match=[matchers.query_param_matcher(params, strict_match=False)],
+            match=[
+                matchers.query_param_matcher(
+                    params,
+                    strict_match=bool(entry.get("match_querystring", False)),
+                )
+            ],
         )
     return rsps
 
@@ -68,7 +77,11 @@ def mocked_routes() -> Any:
             ...
     """
 
-    def _factory(corpus: str) -> responses.RequestsMock:
-        return _build_mock(corpus)
+    def _factory(
+        corpus: str, *, assert_all_requests_are_fired: bool = True
+    ) -> responses.RequestsMock:
+        return _build_mock(
+            corpus, assert_all_requests_are_fired=assert_all_requests_are_fired
+        )
 
     return _factory

@@ -9,18 +9,23 @@ it against ArcGIS Online, ArcGIS Server, or FileGDB inventories.
 
 ## Current status
 
-Shipped in this contract pass:
+Shipped in the current contract line:
 
 - `EsriFootprint.json` v0.1 JSON Schema and reference documentation.
 - Canonical sample footprint and fixture-backed schema validation tests.
 - Bootstrap `honua-esri-assess` CLI with `--version`.
-
-Planned scanner and reporting work:
-
 - Fixture-backed read-only ArcGIS Online Portal Sharing API smoke scanner.
 - Fixture-backed read-only ArcGIS Server REST smoke scanner.
 - Fixture-backed FileGDB inventory path using license-compatible dependencies.
 - Markdown readiness report renderer smoke coverage.
+- Separate CI smoke job that runs the fixture-backed pipeline without a live
+  Esri system.
+
+Still out of scope for this line:
+
+- CI fixture refreshes against a live demo org or live ArcGIS Server.
+- Any handoff artifact other than `EsriFootprint.json`.
+- Network telemetry unless a future release adds an explicit opt-in control.
 
 ## Command-line usage
 
@@ -138,13 +143,13 @@ report renderer, the no-network guard, and a console-script smoke check. The
 current corpus runs in well under a second on a developer laptop — the
 sub-30-second wall-clock budget is the CI ceiling, not the target.
 
-The suite uses `responses` to intercept the `requests` session and
-`tests/smoke/test_no_network.py` monkeypatches `socket.socket.__init__` to
-fail any outbound `AF_INET`/`AF_INET6` connection. That socket guard is the
-structural enforcement of the "network telemetry must be explicit and off by
-default" project constraint — fixtures alone would catch a scanner that hit
-the wrong URL, but only the socket guard catches a scanner that bypassed the
-mocked session entirely.
+The HTTP smoke tests use `responses` to intercept the `requests` session and
+assert the registered fixture routes were exercised. The dedicated no-network
+tests in `tests/smoke/test_no_network.py` also monkeypatch
+`socket.socket.__init__` to fail outbound `AF_INET`/`AF_INET6` connections
+while running a representative AGOL scan and the FileGDB path. Together those
+checks enforce the "network telemetry must be explicit and off by default"
+project constraint for the fixture-backed suite.
 
 The CI workflow runs the smoke suite as a separate job so a smoke failure is
 distinguishable from a unit-test failure in the PR status. See

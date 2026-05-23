@@ -208,6 +208,41 @@ def test_filegdb_scanner_normalizes_measured_geometry_types(
     assert artifact["diagnostics"] == []
 
 
+def test_filegdb_scanner_preserves_ogr_subtype_field_semantics(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "customer.gdb"
+    workspace.mkdir()
+    reader = FakeFileGdbReader(
+        layers=[FileGdbLayer("Assets", "Point")],
+        info_by_layer={
+            "Assets": {
+                "crs": "EPSG:4326",
+                "geometry_type": "Point",
+                "features": 2,
+                "fields": ["GLOBALID", "ASSET_GUID", "BIG_ID", "NAME"],
+                "ogr_types": ["String", "String", "Integer64", "String"],
+                "ogr_subtypes": ["UUID", "UUID", "Integer64", None],
+                "dtypes": ["object", "object", "int64", "object"],
+            }
+        },
+    )
+
+    artifact = scan_filegdb_workspace(
+        workspace,
+        options=_fixed_options(),
+        reader=reader,
+    )
+
+    _assert_schema_valid(artifact)
+    assert artifact["inventory"][0]["fields"] == [
+        {"name": "GLOBALID", "type": "esriFieldTypeGlobalID"},
+        {"name": "ASSET_GUID", "type": "esriFieldTypeGUID"},
+        {"name": "BIG_ID", "type": "esriFieldTypeBigInteger"},
+        {"name": "NAME", "type": "esriFieldTypeString"},
+    ]
+
+
 def test_filegdb_scanner_surfaces_layer_failures_as_safe_diagnostics(
     tmp_path: Path,
 ) -> None:

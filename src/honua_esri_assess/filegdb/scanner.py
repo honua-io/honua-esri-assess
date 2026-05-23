@@ -428,6 +428,7 @@ def _feature_count(features: Any) -> int | None:
 def _field_descriptors(info: Mapping[str, Any]) -> list[JsonObject]:
     field_names = _sequence(info.get("fields"))
     ogr_types = _sequence(info.get("ogr_types"))
+    ogr_subtypes = _sequence(info.get("ogr_subtypes"))
     dtypes = _sequence(info.get("dtypes"))
     nullable_values = _sequence(info.get("nullable", info.get("nullables")))
     fid_column = info.get("fid_column")
@@ -441,6 +442,7 @@ def _field_descriptors(info: Mapping[str, Any]) -> list[JsonObject]:
             "type": _esri_field_type(
                 field_name=str(field_name),
                 ogr_type=_value_at(ogr_types, index),
+                ogr_subtype=_value_at(ogr_subtypes, index),
                 dtype=_value_at(dtypes, index),
                 fid_column=None if fid_column is None else str(fid_column),
             ),
@@ -456,6 +458,7 @@ def _esri_field_type(
     *,
     field_name: str,
     ogr_type: Any,
+    ogr_subtype: Any,
     dtype: Any,
     fid_column: str | None,
 ) -> str:
@@ -465,13 +468,19 @@ def _esri_field_type(
     if normalized_name in {"OBJECTID", "FID", "OID"}:
         return "esriFieldTypeOID"
 
-    text = f"{ogr_type or ''} {dtype or ''}".lower()
+    text = f"{ogr_type or ''} {ogr_subtype or ''} {dtype or ''}".lower()
+    if "globalid" in text or normalized_name in {"GLOBALID", "GLOBAL_ID"}:
+        return "esriFieldTypeGlobalID"
     if "guid" in text or "uuid" in text:
         return "esriFieldTypeGUID"
     if "binary" in text or "blob" in text:
         return "esriFieldTypeBlob"
     if "date" in text or "time" in text:
         return "esriFieldTypeDate"
+    if "integer64" in text or "bigint" in text or "big integer" in text:
+        return "esriFieldTypeBigInteger"
+    if "int64" in text or "longlong" in text or "long long" in text:
+        return "esriFieldTypeBigInteger"
     if "int16" in text or "small" in text:
         return "esriFieldTypeSmallInteger"
     if "int" in text:

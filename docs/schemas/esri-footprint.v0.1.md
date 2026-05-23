@@ -290,10 +290,8 @@ Current AGOL producer behavior: `honua-esri-assess scan agol` emits one
 The emitter normalizes missing `owner`, `title`, `type`, and `modified` values
 to schema-safe fallbacks rather than leaking raw exceptions. Dependency
 extraction is not implemented in v0.1, so scanned items currently carry an
-empty `dependencies` list. The optional `--deep` flag performs read-only
-hosted-service probes for scanner coverage and diagnostics; v0.1 still emits
-portal-item records only and does not add AGOL service or layer records to the
-artifact.
+empty `dependencies` list. v0.1 emits portal-item records only and does not add
+AGOL service or layer records to the artifact.
 
 #### ServerService (`kind: "server-service"`)
 

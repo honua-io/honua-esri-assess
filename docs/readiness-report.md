@@ -51,8 +51,6 @@ honua-esri-assess report --input EsriFootprint.json --strict
 | `--input` | yes | Path to `EsriFootprint.json`, or `-` to read JSON from stdin. |
 | `--output` | no | Markdown output path, or `-` for stdout. Defaults to stdout. |
 | `--strict` | no | Exit with a typed schema error when v0.1 validation fails. |
-| `--verbose` | no | Enable local info logging. |
-| `--debug` | no | Enable local debug logging and include tracebacks on errors. |
 
 Schema validation uses the v0.1 schema packaged with the CLI and the runtime
 `jsonschema` dependency. The published schema also remains available for audit
@@ -64,9 +62,8 @@ because the installed package is incomplete, the validation-unavailable notice
 is also rendered as a schema warning. `--strict` fails invalid footprints and
 also fails with a typed schema error when validation cannot run.
 
-For prospect-facing runs, leave `--debug` off so the stderr surface remains
-typed and sanitized. The report command does not write customer Esri systems or
-send network telemetry.
+The stderr surface remains typed and sanitized. The report command does not
+write customer Esri systems or send network telemetry.
 
 ## Renderer API
 
@@ -87,7 +84,7 @@ markdown = render(footprint, options=RenderOptions(max_inventory_rows=500))
 ## CLI response contract
 
 The report command prints sanitized, typed errors. It does not print raw Python
-tracebacks unless `--debug` is set.
+tracebacks.
 
 | Condition | Exit code | Output |
 | --- | ---: | --- |
@@ -96,7 +93,7 @@ tracebacks unless `--debug` is set.
 | `--strict` schema validation failure | `3` | `stderr` starts with `error: [report.schema.invalid]`. |
 | Renderer or unexpected internal failure | `4` | `stderr` starts with `error: [report.render.internal]`. |
 
-Local logs are allowed through `--verbose` and `--debug`.
+The command has no network telemetry or debug traceback flag.
 
 ## Report sections
 

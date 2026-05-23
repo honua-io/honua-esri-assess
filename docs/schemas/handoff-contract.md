@@ -86,9 +86,8 @@ services are represented in `inventory[]` with `folder: ""`; folder services
 carry their folder name. Each server service inventory record has
 `kind: "server-service"`, raw `serviceType`, credential-free `serviceUrl`,
 and `layerCount`. `server.folders` contains the folder names visited by the
-scan; for a `--folder` scan this is the visited subset, not a promise that
-every folder on the server was inventoried. Version metadata sourced from
-`/arcgis/rest/info` is recorded in `server.version` when available.
+scan. Version metadata sourced from `/arcgis/rest/info` is recorded in
+`server.version` when available.
 
 **Consumer (closed migration product)** pins to an exact `major.minor`
 while the schema is pre-1.0, with a wildcard patch:
@@ -186,10 +185,9 @@ artifact:
   FileGDB.
 - The AGOL producer uses Portal Sharing REST `GET` calls only. It normalizes
   organization URLs and `/sharing/rest` URLs, then reads `portals/self`,
-  `community/groups`, `search`, `community/users` when token-authenticated,
-  and optional ArcGIS Online hosted service metadata when `--deep` is enabled.
-  The AGOL CLI also supports a per-request `--timeout`; that timeout only
-  limits local waiting and does not change the handoff artifact shape.
+  `community/groups`, `search`, and `community/users` when token-authenticated.
+  The AGOL CLI also supports a per-request `--timeout`; that timeout only limits
+  local waiting and does not change the handoff artifact shape.
 - Pre-existing AGOL tokens are passed as query-string credentials to Esri only;
   they are redacted from diagnostics, logs, and the emitted footprint.
 - No field in the artifact records or implies a write.
@@ -211,10 +209,11 @@ dependencies, invalid workspaces, layer-listing failures, and per-layer
 metadata failures are reported with the locked v0.1 diagnostic vocabulary.
 
 CLI process-level stderr diagnostics (`scanner-error`, `output-write-failed`,
-`schema-validation-failed`, `report-input-failed`, `internal-error`) are
-**not** part of the schema enum. They describe local CLI process state and
-never appear inside `EsriFootprint.json`. The closed product reads the
-artifact and ignores CLI stderr.
+`schema-validation-failed`, `report.input.*`, `report.schema.invalid`,
+`report.render.internal`, `internal-error`) are **not** part of the schema enum.
+They describe local CLI process state and never appear inside
+`EsriFootprint.json`. The closed product reads the artifact and ignores CLI
+stderr.
 
 `honua-esri-assess schema validate EsriFootprint.json` is the supported local
 validation command for prospects and for the closed product's ingest path. It
@@ -230,8 +229,8 @@ service inventory, layer counts, complexity, manual-review items, migration
 ordering, and diagnostics without contacting Esri systems.
 
 The renderer is a pure deterministic API: parsed `EsriFootprint.json` dict in,
-Markdown string out. File reads, file writes, schema validation, stdout/stderr,
-and local logging are owned by the CLI layer, not by
+Markdown string out. File reads, file writes, schema validation, and
+stdout/stderr are owned by the CLI layer, not by
 `honua_esri_assess.report.render()`.
 
 `honua-esri-assess report` accepts `--input` as a path or `-` for stdin.

@@ -25,7 +25,7 @@ def run(options: ScanOptions) -> ScanResult:
             options.target,
             credential=credential,
             timeout=options.timeout,
-            retry_policy=RetryPolicy(attempts=max(1, options.max_retries)),
+            retry_policy=RetryPolicy(attempts=max(1, options.max_retries + 1)),
             user_agent=options.user_agent,
         )
         result = PortalScanner(client, deep=False).scan()

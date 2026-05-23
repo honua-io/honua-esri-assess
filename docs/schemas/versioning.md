@@ -15,9 +15,10 @@ The policy does **not** govern:
 
 - CLI flags, argument names, or shell-level UX of `honua-esri-assess`.
 - The CLI process-level stderr diagnostic codes (e.g. `scanner-error`,
-  `output-write-failed`, `schema-validation-failed`, `report-input-failed`,
-  `internal-error`). These describe local CLI process state and are separate
-  from the locked artifact `diagnostics[].code` enum.
+  `output-write-failed`, `schema-validation-failed`, `report.input.*`,
+  `report.schema.invalid`, `report.render.internal`, `internal-error`). These
+  describe local CLI process state and are separate from the locked artifact
+  `diagnostics[].code` enum.
 - The internal Python API (anything importable from `honua_esri_assess.*`).
 - The layout, headings, or wording of the human-readable Markdown readiness
   report. The report is a derivative view of `EsriFootprint.json`, not a
@@ -239,10 +240,10 @@ prospect-safe typed diagnostic on stderr.
 
 The stderr process-diagnostic vocabulary is deliberately separate from the
 artifact `diagnostics[].code` vocabulary. Process codes such as
-`scanner-error`, `report-input-failed`, `output-write-failed`,
-`schema-validation-failed`, and `internal-error` describe command execution,
-not source inventory observations, and are not valid values inside
-`EsriFootprint.json`.
+`scanner-error`, `report.input.*`, `report.schema.invalid`,
+`report.render.internal`, `output-write-failed`, `schema-validation-failed`,
+and `internal-error` describe command execution, not source inventory
+observations, and are not valid values inside `EsriFootprint.json`.
 ## Network telemetry
 
 - **Off by default.** The scanner does not phone home, beacon, or post

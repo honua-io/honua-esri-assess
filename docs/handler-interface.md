@@ -89,7 +89,7 @@ can return a typed prospect-safe stderr line with a stable exit code:
 
 | Failure kind | Class | Exit |
 | --- | --- | --- |
-| Scanner could not produce an inventory | `DiagnosticError(code="scanner-error")` | `10` |
+| Scanner could not produce an inventory | `DiagnosticError(code="scanner-error")` or wrapped backend `AssessmentError` | `10` or backend-specific |
 | CLI could not save the requested artifact | `OutputWriteError` (raised by the CLI on `OSError`) | `20` |
 | Schema validation failed when requested | `SchemaValidationError` | `30` |
 | Unexpected internal failure | unhandled exception → `internal-error` | `1` |

@@ -86,7 +86,8 @@ Honua-operated service.
 # search, content/items/<id> directly to this URL).
 honua-esri-assess scan agol \
   --target https://yourorg.maps.arcgis.com/sharing/rest \
-  --token-env AGOL_TOKEN \  --output EsriFootprint.json
+  --token-env AGOL_TOKEN \
+  --output EsriFootprint.json
 
 # ArcGIS Server REST endpoint.
 honua-esri-assess scan server \
@@ -149,10 +150,15 @@ wired to a CLI command in this release.
   unsupported item type) is downgraded to a typed entry in `diagnostics[]`
   inside the artifact and mirrored to stderr as a typed, prospect-safe
   diagnostic. Empty or partial inventories are still successful runs.
-- Exit `2` — missing or invalid arguments (e.g., `scan` without a backend, or
-  an unknown flag).
-- Exit `10` — an expected scanner or report-input failure occurred before a
-  requested output could be produced (`scanner-error`, `report-input-failed`).
+- Exit `2` — missing or invalid arguments, or report input/output/JSON handling
+  failed with a typed `report.input.*` error.
+- Exit `3` — `report --strict` rejected an invalid footprint
+  (`report.schema.invalid`).
+- Exit `4` — report rendering failed after input parsing succeeded
+  (`report.render.internal`).
+- Exit `10` or a backend-specific scanner exit — an expected scanner failure
+  occurred before a requested output could be produced (`scanner-error`,
+  `portal.*`, `server.*`).
 - Exit `20` — the CLI could not save the requested output artifact
   (`output-write-failed`).
 - Exit `30` — schema validation failed for `scan --validate` or
@@ -163,8 +169,9 @@ wired to a CLI command in this release.
 Diagnostics are always typed and prospect-safe; the CLI does not emit Python
 tracebacks at any exit code. CLI stderr diagnostics are process diagnostics
 such as `scanner-error`, `output-write-failed`, `schema-validation-failed`,
-`report-input-failed`, and `internal-error`; they are separate from the locked
-`EsriFootprint.json` `diagnostics[].code` enum documented below.
+`report.input.*`, `report.schema.invalid`, `report.render.internal`, and
+`internal-error`; they are separate from the locked `EsriFootprint.json`
+`diagnostics[].code` enum documented below.
 
 ## Telemetry
 
@@ -214,25 +221,25 @@ Two policy docs govern the broader contract:
 
 The AGOL scanner uses the documented Portal Sharing REST API in read-only mode.
 It only issues `GET` requests against Esri systems and writes the local
-`EsriFootprint.json` artifact, or stdout when `--output` is omitted or set to
-`-`.
+`EsriFootprint.json` artifact.
 
 Anonymous scans enumerate publicly visible content in the target org:
 
 ```shell
 honua-esri-assess scan agol \
-  --target https://example.maps.arcgis.com \
+  --target https://example.maps.arcgis.com/sharing/rest \
   --output EsriFootprint.json
 ```
 
 Token scans use a pre-existing ArcGIS Online token as a query-string
 credential. The token is not written to the footprint, diagnostics, cache keys,
-or logs:
+or logs. Supply the token through an environment variable:
 
 ```shell
+export AGOL_TOKEN="..."
 honua-esri-assess scan agol \
-  --target https://example.maps.arcgis.com \
-  --token "$AGOL_TOKEN" \
+  --target https://example.maps.arcgis.com/sharing/rest \
+  --token-env AGOL_TOKEN \
   --output EsriFootprint.json
 ```
 
@@ -240,8 +247,7 @@ The AGOL footprint emits `source.kind: "arcgis-online"`, a `portal` facet, and
 `portal-item` inventory records. The current v0.1 emitter records item id, type,
 owner, title, sharing, modified timestamp, optional extent, and an empty
 `dependencies` list for scanned items. It does not expose AGOL service or layer
-records in the artifact; `--deep` only performs read-only hosted-service probes
-for scanner coverage and diagnostics.
+records in the artifact.
 
 Anonymous scans skip organization-user enumeration and can emit an informational
 `partial-coverage` diagnostic. Both anonymous and token scans attempt readable
@@ -273,21 +279,19 @@ ArcGIS Server REST API in read-only mode and writes `EsriFootprint.json`:
 ```
 honua-esri-assess scan server \
     --target https://gis.example.com/arcgis \
-    [--token <pre-existing-token>] \
-    [--deep | --shallow] \
-    [--folder <name>] \
+    [--token-env SERVER_TOKEN] \
     [--output EsriFootprint.json] \
     [--timeout 30] \
     [--max-retries 3] \
-    [--allow-nonstandard-base] \
-    [--verbose | --debug]
+    [--user-agent honua-esri-assess/0.1.0] \
+    [--validate]
 ```
 
 `--target` accepts any of `https://host`, `https://host/arcgis`,
 `https://host/arcgis/rest`, or `https://host/arcgis/rest/services`; the
-client canonicalizes to `<host>/arcgis/rest/services` internally.
-`--allow-nonstandard-base` skips canonicalization for servers mounted
-under unusual prefixes.
+client canonicalizes to `<host>/arcgis/rest/services` internally. For custom
+mounts, the supplied path is preserved and the `/rest/services` suffix is
+appended when needed.
 
 Behavior the scanner guarantees:
 
@@ -295,46 +299,40 @@ Behavior the scanner guarantees:
   server. The HTTP wrapper exposes no write helpers; every call is a
   `GET` of the documented REST surface.
 - **Two auth modes.** Anonymous (default), or a caller-supplied
-  pre-existing ArcGIS Server token via `--token`. Tokens are appended as
+  pre-existing ArcGIS Server token via `--token-env`. Tokens are appended as
   the outbound `token=` query param, redacted from log records, and never
   written into the footprint or stderr summary. URL userinfo, query
   strings, and fragments are stripped before writing `source.locator` or
   `ServerService.serviceUrl`.
 - **Bounded retries.** Transient HTTP status (`429`, `502`, `503`, `504`)
-  triggers exponential backoff up to `--max-retries` attempts. Retry sleep
-  time is capped at 30 seconds; the per-request timeout is controlled
-  separately by `--timeout`. A `Retry-After` header is honored within the
-  retry sleep budget.
+  triggers exponential backoff for up to `--max-retries` retries after the
+  first attempt. Retry sleep time is capped at 30 seconds; the per-request
+  timeout is controlled separately by `--timeout`. A `Retry-After` header is
+  honored within the retry sleep budget.
 - **Two diagnostic surfaces.**
-  - The CLI renders top-level failures as a single `error: [code] message`
+  - The CLI renders top-level failures as a single `error[code]` message
     line on stderr with a deterministic exit code (`server.auth`,
     `server.forbidden`, `server.not-found`, `server.rate-limited`,
     `server.connection`, `server.api`, `server.schema`). Python tracebacks
-    stay hidden unless `--debug` is passed.
+    are not printed in default mode.
   - Partial failures during the walk (forbidden folder, malformed
-    service entry, failed deep probe) emit prospect-safe records into the
+    service entry, failed service probe) emit prospect-safe records into the
     footprint's `diagnostics[]` block using the locked v0.1 diagnostic
     vocabulary (`missing-permission`, `partial-coverage`,
     `unsupported-item-type`, `rate-limited`); the scan continues where it
     can.
-- **Deep scan scope.** Service probes run by default to populate
-  `inventory[].layerCount`; `--shallow` records catalog entries without
-  per-service probes. Supported probe types are `MapServer`,
+- **Service probe scope.** Service probes run by default to populate
+  `inventory[].layerCount`. Supported probe types are `MapServer`,
   `FeatureServer`, `ImageServer`, `SceneServer`, and `StreamServer`; other
   types are recorded from the catalog walk only and emit `layerCount: 0`.
   The v0.1 footprint does not emit service capabilities, table counts, or
   the internal service-kind bucket.
-- **Folder filter.** `--folder NAME` restricts the folder walk to a
-  single folder name. Services at the catalog root are always
-  inventoried; the filter only narrows which subfolders are visited.
 - **No network telemetry.** Local logs (stderr) are structured;
-  `--verbose` enables INFO-level logging, `--debug` enables DEBUG plus
-  tracebacks. No host other than the user-supplied `--target` is ever
-  called.
+  `--log-format` and `--log-level` control local process logs. No host other
+  than the user-supplied `--target` is ever called.
 
-`stdout` carries the footprint JSON when `--output` is omitted; a one-line
-summary (`scanned N services across M folders in T.TTs`) is written to
-stderr.
+`--output` defaults to `./EsriFootprint.json`; after writing the artifact, the
+CLI prints a one-line scanned-item summary to stderr.
 
 ### ArcGIS Server footprint contract
 
@@ -344,8 +342,7 @@ A successful server scan emits `EsriFootprint.json` v0.1 with:
 - `source.locator` set to the credential-free services-root URL
   (`https://host/arcgis/rest/services` for standard mounts) and
   `source.capturedAt` set to the scan timestamp.
-- `server.folders[]` as the visited top-level folder names: all folders on
-  an unfiltered scan, or the matching folder when `--folder` is used.
+- `server.folders[]` as the visited top-level folder names.
 - `server.serviceCounts` keyed by raw ArcGIS Server service type and
   `server.version` when `/arcgis/rest/info` exposes it.
 - `inventory[]` entries with `kind == "server-service"`, credential-free
@@ -451,8 +448,7 @@ The report is a human-readable companion to `EsriFootprint.json`, not a second
 handoff contract for the closed migration product. The renderer is pure: it
 turns a parsed footprint dictionary into deterministic Markdown and performs no
 file, network, logging, or Esri-system I/O. The CLI owns JSON parsing, packaged
-schema validation, stdin/stdout support, local logging flags, and typed
-prospect-safe errors.
+schema validation, stdin/stdout support, and typed prospect-safe errors.
 
 Use `--strict` to fail when the input does not validate against the published
 v0.1 schema packaged with the CLI. Without `--strict`, schema validation

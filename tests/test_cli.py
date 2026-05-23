@@ -6,17 +6,22 @@ import json
 import re
 from collections.abc import Iterator
 from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import pytest
+import responses
 from typer.testing import CliRunner
 
 from honua_esri_assess.app import cli_app
 from honua_esri_assess.commands.common import ScanOptions, ScanResult
 from honua_esri_assess.commands.scan_handlers import HANDLERS, ScanHandler, register
+from honua_esri_assess.commands.scan_handlers import agol as agol_handler
 from honua_esri_assess.commands.scan_handlers import server as server_handler
 from honua_esri_assess.diagnostics import DiagnosticError
+from honua_esri_assess.portal.models import OrgInfo, PortalScanResult
+from honua_esri_assess.server.models import ServerInfo, ServerScanResult
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_PATH = REPO_ROOT / "tests" / "fixtures" / "esri-footprint-sample.json"
@@ -152,67 +157,78 @@ def test_network_scan_options_reach_builtin_handlers_without_secret_leakage(
 ) -> None:
     seen: dict[str, Any] = {}
 
-    def fake_scan(target: str, **kwargs: Any) -> dict[str, Any]:
-        seen["target"] = target
-        seen.update(kwargs)
-        result: dict[str, Any] = {
-            "inventory": [],
-            "diagnostics": [],
-        }
-        if backend == "agol":
-            result["portal"] = {
-                "orgId": "fixture-org",
-                "orgUrl": "https://fixture.local",
-                "itemCounts": {},
-            }
-        else:
-            result["server"] = {"serviceCounts": {}, "folders": []}
-        return result
-
     if backend == "agol":
-        def run(options: ScanOptions) -> ScanResult:
-            return ScanResult(
-                footprint={
-                    "schemaVersion": "v0.1",
-                    "generatedAt": "2026-01-01T00:00:00Z",
-                    "tool": {"name": "honua-esri-assess", "version": "0.1.0"},
-                    "source": {
-                        "kind": "arcgis-online",
-                        "locator": "fixture.local/fixture-org",
-                        "capturedAt": "2026-01-01T00:00:00Z",
-                    },
-                    "portal": {
-                        "orgId": "fixture-org",
-                        "orgUrl": "https://fixture.local",
-                        "itemCounts": {},
-                    },
-                    "inventory": [],
-                    "counts": {
-                        "items": {
-                            "portal-item": 0,
-                            "server-service": 0,
-                            "filegdb-feature-class": 0,
-                        },
-                        "layers": 0,
-                        "featureClasses": 0,
-                    },
-                    "diagnostics": [],
-                }
-            )
+        class FakePortalClient:
+            def __init__(
+                self,
+                target: str,
+                *,
+                credential: Any,
+                timeout: float,
+                retry_policy: Any,
+                user_agent: str,
+            ) -> None:
+                seen["target"] = target
+                seen["credential"] = credential
+                seen["timeout"] = timeout
+                seen["attempts"] = retry_policy.attempts
+                seen["user_agent"] = user_agent
+                self.auth_mode = credential.auth_mode
 
-        def tracking_run(options: ScanOptions) -> ScanResult:
-            fake_scan(
-                options.target,
-                token=options.token,
-                user_agent=options.user_agent,
-                max_retries=options.max_retries,
-                timeout=options.timeout,
-            )
-            return run(options)
+        class FakePortalScanner:
+            def __init__(self, client: FakePortalClient, *, deep: bool) -> None:
+                seen["deep"] = deep
+                self._client = client
 
-        register(ScanHandler(name="agol", run=tracking_run))
+            def scan(self) -> PortalScanResult:
+                return PortalScanResult(
+                    org=OrgInfo(
+                        id="fixture-org",
+                        name="Fixture",
+                        portal_url="https://fixture.local",
+                        sharing_rest_url="https://fixture.local/sharing/rest",
+                    ),
+                    auth_mode=self._client.auth_mode,
+                    captured_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                )
+
+        monkeypatch.setattr(agol_handler, "PortalClient", FakePortalClient)
+        monkeypatch.setattr(agol_handler, "PortalScanner", FakePortalScanner)
     else:
-        monkeypatch.setattr(server_handler.server_scanner, "scan", fake_scan)
+        class FakeServerClient:
+            def __init__(
+                self,
+                target: str,
+                *,
+                credential: Any,
+                timeout: float,
+                retry: Any,
+                user_agent: str,
+            ) -> None:
+                seen["target"] = target
+                seen["credential"] = credential
+                seen["timeout"] = timeout
+                seen["attempts"] = retry.max_attempts
+                seen["user_agent"] = user_agent
+                self.credential = credential
+                self.rest_root = "https://fixture.local/server/rest/services"
+
+        class FakeServerScanner:
+            def __init__(self, *, deep: bool) -> None:
+                seen["deep"] = deep
+
+            def scan(self, client: FakeServerClient) -> ServerScanResult:
+                return ServerScanResult(
+                    info=ServerInfo(url=client.rest_root, current_version="11.1"),
+                    auth_mode=client.credential.auth_mode,
+                    deep=True,
+                    folders=(),
+                    services=(),
+                    diagnostics=(),
+                )
+
+        monkeypatch.setattr(server_handler, "ServerClient", FakeServerClient)
+        monkeypatch.setattr(server_handler, "ServerScanner", FakeServerScanner)
     output = tmp_path / "EsriFootprint.json"
 
     result = runner.invoke(
@@ -227,7 +243,7 @@ def test_network_scan_options_reach_builtin_handlers_without_secret_leakage(
             "--user-agent",
             "honua-test/1.0",
             "--max-retries",
-            "2",
+            "1",
             "--timeout",
             "7.5",
             "--output",
@@ -239,13 +255,81 @@ def test_network_scan_options_reach_builtin_handlers_without_secret_leakage(
     assert result.exit_code == 0
     combined_output = result.output + (result.stderr or "")
     footprint_text = output.read_text(encoding="utf-8")
-    assert seen["token"] == "top-secret-token"
+    assert seen["credential"].auth_mode == "token"
+    if backend == "agol":
+        assert seen["credential"].params()["token"] == "top-secret-token"
+        assert seen["deep"] is False
+    else:
+        assert seen["credential"].apply({})["token"] == "top-secret-token"
+        assert seen["deep"] is True
     assert seen["user_agent"] == "honua-test/1.0"
-    assert seen["max_retries"] == 2
+    assert seen["attempts"] == 2
     assert seen["timeout"] == 7.5
     assert "ESRI_TOKEN" in combined_output
     assert "top-secret-token" not in combined_output
     assert "top-secret-token" not in footprint_text
+
+
+@responses.activate
+def test_server_handler_uses_canonical_contract_and_retries_once(
+    runner: CliRunner,
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "EsriFootprint.json"
+    responses.add(
+        responses.GET,
+        "https://fixture.local/server/rest/info",
+        json={"currentVersion": 11.1},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        "https://fixture.local/server/rest/services",
+        json={},
+        status=503,
+        headers={"Retry-After": "0"},
+    )
+    responses.add(
+        responses.GET,
+        "https://fixture.local/server/rest/services",
+        json={"folders": [], "services": []},
+        status=200,
+    )
+
+    result = runner.invoke(
+        cli_app,
+        [
+            "scan",
+            "server",
+            "--target",
+            "https://fixture.local/server",
+            "--token-env",
+            "SERVER_TOKEN",
+            "--user-agent",
+            "honua-test/1.0",
+            "--max-retries",
+            "1",
+            "--output",
+            str(output),
+        ],
+        env={"SERVER_TOKEN": "top-secret-token"},
+    )
+
+    assert result.exit_code == 0
+    footprint = json.loads(output.read_text(encoding="utf-8"))
+    assert footprint["source"]["locator"] == "https://fixture.local/server/rest/services"
+    assert footprint["server"]["version"] == "11.1"
+
+    service_calls = [
+        call
+        for call in responses.calls
+        if call.request.url.startswith("https://fixture.local/server/rest/services?")
+    ]
+    assert len(service_calls) == 2
+    assert all("token=top-secret-token" in call.request.url for call in responses.calls)
+    assert all(call.request.headers["User-Agent"] == "honua-test/1.0" for call in responses.calls)
+    assert "top-secret-token" not in output.read_text(encoding="utf-8")
+    assert "top-secret-token" not in result.output + (result.stderr or "")
 
 
 def test_typed_scanner_error_returns_exit_10_without_traceback(

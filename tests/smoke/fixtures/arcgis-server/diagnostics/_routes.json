@@ -1,6 +1,14 @@
 {
   "routes": [
     {
+      "url": "https://fixture.local/server/rest/info",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "rest_info.json",
+      "status": 200
+    },
+    {
       "url": "https://fixture.local/server/rest/services",
       "method": "GET",
       "match_querystring": true,

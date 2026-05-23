@@ -157,7 +157,7 @@ class ServerClient:
         self.user_agent = user_agent
         self.retry = retry or RetryPolicy()
         self._session = session or requests.Session()
-        self._session.headers.setdefault("User-Agent", user_agent)
+        self._session.headers["User-Agent"] = user_agent
         self._sleep = sleep
         self._log = get_logger("server.client")
 

@@ -16,6 +16,21 @@ it against ArcGIS Online, ArcGIS Server, or FileGDB inventories.
 - Markdown readiness report and sample output.
 - Fixture-backed CI smoke test.
 
+## Schema and handoff
+
+`EsriFootprint.json` is the sole supported handoff into the closed Honua
+migration product. Two policy docs govern that contract:
+
+- [`docs/schemas/versioning.md`](docs/schemas/versioning.md) — semver
+  interpretation, deprecation policy, producer guarantees, and consumer
+  expectations for the artifact.
+- [`docs/schemas/handoff-contract.md`](docs/schemas/handoff-contract.md) —
+  prospect-facing summary of what flows between this tool and the closed
+  product, and how to verify a footprint locally.
+
+The schema body for the current `0.1.x` line is tracked under
+[honua-io/honua-esri-assess#2](https://github.com/honua-io/honua-esri-assess/issues/2).
+
 ## Decisions
 
 - Language: Python.

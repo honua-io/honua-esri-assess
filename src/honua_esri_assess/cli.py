@@ -24,7 +24,11 @@ def build_parser() -> argparse.ArgumentParser:
     scan_sub = scan.add_subparsers(dest="backend")
 
     agol = scan_sub.add_parser("agol", help="Scan an ArcGIS Online portal (read-only).")
-    agol.add_argument("--target", required=True, help="Portal Sharing base URL.")
+    agol.add_argument(
+        "--target",
+        required=True,
+        help="Portal Sharing REST base URL, e.g. https://example.maps.arcgis.com/sharing/rest",
+    )
     agol.add_argument("--output", required=True, type=Path, help="Path to write EsriFootprint.json.")
 
     server = scan_sub.add_parser("server", help="Scan an ArcGIS Server REST endpoint (read-only).")
@@ -83,7 +87,8 @@ def _run_agol(target: str, output: Path) -> int:
         diagnostics=result["diagnostics"],
         portal_name=result.get("portalName"),
     )
-    write_footprint(footprint, output)
+    if not _write_footprint_safely(footprint, output):
+        return 1
     _emit_diagnostics_to_stderr(footprint)
     return 0
 
@@ -100,7 +105,8 @@ def _run_server(target: str, output: Path) -> int:
         diagnostics=result["diagnostics"],
         server=result["server"],
     )
-    write_footprint(footprint, output)
+    if not _write_footprint_safely(footprint, output):
+        return 1
     _emit_diagnostics_to_stderr(footprint)
     return 0
 
@@ -117,7 +123,8 @@ def _run_filegdb(target: str, output: Path) -> int:
         diagnostics=result["diagnostics"],
         filegdb=result["filegdb"],
     )
-    write_footprint(footprint, output)
+    if not _write_footprint_safely(footprint, output):
+        return 1
     _emit_diagnostics_to_stderr(footprint)
     return 0
 
@@ -127,8 +134,20 @@ def _dispatch_report(args: argparse.Namespace) -> int:
         footprint = json.loads(args.input.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return _emit_typed_failure("Could not load EsriFootprint.json for report rendering.")
-    report_module.write(footprint, args.output)
+    try:
+        report_module.write(footprint, args.output)
+    except OSError:
+        return _emit_typed_failure("Could not write the Markdown report output.")
     return 0
+
+
+def _write_footprint_safely(footprint: dict, output: Path) -> bool:
+    try:
+        write_footprint(footprint, output)
+    except OSError:
+        _emit_typed_failure("Could not write the EsriFootprint.json output.")
+        return False
+    return True
 
 
 def _emit_diagnostics_to_stderr(footprint: dict) -> None:

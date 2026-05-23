@@ -83,15 +83,15 @@ def _record_service(
     relative = f"services/{name}/{raw_type}" if not folder else f"services/{folder}/{name.split('/')[-1]}/{raw_type}"
     probe_url = urljoin(base, relative)
     probe = _fetch_json(sess, probe_url, diagnostics, relative)
-    layers: list[Any] = []
-    if isinstance(probe, dict):
-        candidate_layers = probe.get("layers")
-        if isinstance(candidate_layers, list):
-            layers = candidate_layers
+    if not isinstance(probe, dict):
+        return
+    candidate_layers = probe.get("layers")
+    layers: list[Any] = candidate_layers if isinstance(candidate_layers, list) else []
+    description = probe.get("serviceDescription")
     record = {
         "kind": kind,
         "id": name.split("/")[-1],
-        "title": probe.get("serviceDescription") if isinstance(probe, dict) and isinstance(probe.get("serviceDescription"), str) else name.split("/")[-1],
+        "title": description if isinstance(description, str) else name.split("/")[-1],
         "url": probe_url,
         "layerCount": len(layers),
     }
@@ -144,7 +144,7 @@ def _fetch_json(
         )
         return None
     try:
-        return response.json()
+        payload = response.json()
     except ValueError:
         diagnostics.append(
             Diagnostic(
@@ -154,3 +154,31 @@ def _fetch_json(
             )
         )
         return None
+    if isinstance(payload, dict) and isinstance(payload.get("error"), dict):
+        err_code = payload["error"].get("code")
+        if err_code == 403:
+            diagnostics.append(
+                Diagnostic(
+                    code="missing-permission",
+                    message=f"Access denied while reading {target_label}.",
+                    target=target_label,
+                )
+            )
+        elif err_code == 429:
+            diagnostics.append(
+                Diagnostic(
+                    code="rate-limited",
+                    message=f"Rate limited while reading {target_label}; partial inventory returned.",
+                    target=target_label,
+                )
+            )
+        else:
+            diagnostics.append(
+                Diagnostic(
+                    code="partial-coverage",
+                    message=f"Esri returned an error envelope for {target_label}.",
+                    target=target_label,
+                )
+            )
+        return None
+    return payload

@@ -208,13 +208,21 @@ def _fetch_json(
                     target=target_label,
                 )
             )
-            return None
-        diagnostics.append(
-            Diagnostic(
-                code="partial-coverage",
-                message=f"Esri returned an error envelope for {target_label}.",
-                target=target_label,
+        elif err_code == 429:
+            diagnostics.append(
+                Diagnostic(
+                    code="rate-limited",
+                    message=f"Rate limited while reading {target_label}; partial inventory returned.",
+                    target=target_label,
+                )
             )
-        )
+        else:
+            diagnostics.append(
+                Diagnostic(
+                    code="partial-coverage",
+                    message=f"Esri returned an error envelope for {target_label}.",
+                    target=target_label,
+                )
+            )
         return None
     return payload

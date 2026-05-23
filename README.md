@@ -24,8 +24,11 @@ Planned scanner and reporting work:
 
 ## Command-line usage
 
-Every subcommand is **read-only** against the target Esri system — the CLI
-never issues a write, posts telemetry, or contacts a Honua-operated service.
+The `honua-esri-assess` console script (and `python -m honua_esri_assess`)
+exposes a `scan` subcommand per backend plus a `report` subcommand that
+renders the resulting `EsriFootprint.json` to Markdown. Every subcommand is
+**read-only** against the target Esri system — the CLI never issues a write,
+posts telemetry, or contacts a Honua-operated service.
 
 ```
 # ArcGIS Online (Portal Sharing REST base — the scanner appends portals/self,
@@ -50,10 +53,11 @@ honua-esri-assess report \
   --output report.md
 ```
 
-The AGOL `--target` must be the Portal Sharing REST base (typically
-`/sharing/rest`). The scanner appends the documented Portal Sharing endpoints
-to it directly, so passing a higher-level portal URL will produce
-`partial-coverage` diagnostics instead of an inventory.
+The AGOL `--target` must be the Portal Sharing REST base (typically the URL
+ending in `/sharing/rest`). The scanner appends endpoint paths (`portals/self`,
+`community/groups`, `search`, `content/items/<id>`) directly to that base, so
+passing a higher-level portal URL will produce `partial-coverage` diagnostics
+instead of an inventory.
 
 ### Exit codes and failure surface
 
@@ -81,6 +85,9 @@ migration product. The v0.1 contract is published in this repository:
 - Canonical sample: [`tests/fixtures/esri-footprint-sample.json`](tests/fixtures/esri-footprint-sample.json)
 
 `$id`: `https://schemas.honua.io/esri-footprint/v0.1.0/esri-footprint.json`
+
+The smoke suite validates every emitted footprint against that checked-in
+schema using `jsonschema.Draft202012Validator`.
 
 v0.x is unstable. Breaking changes are permitted between minor bumps; v1.0
 is the first stable promise. See the reference doc for the stability
@@ -129,16 +136,18 @@ FileGDB happy, report rendering, no-network enforcement, and console-script
 packaging. It finishes in well under a second on a developer laptop; the
 sub-30-second wall-clock budget is the CI ceiling, not the target.
 
-`tests/smoke/test_no_network.py` monkeypatches `socket.socket.__init__` so any
-code path that bypasses `requests` (e.g., a stray `urllib.request.urlopen`)
-fails the run. This is the structural enforcement of the "network telemetry
-must be explicit and off by default" project constraint — fixtures alone would
-catch a scanner that hit the wrong URL, but only the socket guard catches a
-scanner that bypassed the mocked session entirely.
+The suite uses `responses` to intercept the `requests` session and
+`tests/smoke/test_no_network.py` monkeypatches `socket.socket.__init__` to
+fail any outbound `AF_INET`/`AF_INET6` connection. That socket guard is the
+structural enforcement of the "network telemetry must be explicit and off by
+default" project constraint — fixtures alone would catch a scanner that hit
+the wrong URL, but only the socket guard catches a scanner that bypassed the
+mocked session entirely.
 
 The CI workflow runs the smoke job as a separate matrix entry so a smoke
 failure is distinguishable from a unit-test failure in the PR status. See
-`tests/smoke/fixtures/README.md` for the fixture layout and refresh protocol.
+[`tests/smoke/fixtures/README.md`](tests/smoke/fixtures/README.md) for the
+fixture layout and refresh protocol.
 
 ## Decisions
 

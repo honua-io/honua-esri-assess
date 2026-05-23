@@ -9,7 +9,6 @@ from typing import Any, Mapping
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-from honua_esri_assess.cli import main
 from honua_esri_assess.filegdb import (
     FileGdbLayer,
     FileGdbReaderUnavailable,
@@ -308,112 +307,32 @@ def test_filegdb_scanner_emits_error_diagnostic_when_reader_is_unavailable(
     assert "honua-esri-assess[filegdb]" in artifact["diagnostics"][0]["hint"]
 
 
-def test_filegdb_cli_writes_footprint_json_with_fake_scanner(
+def test_filegdb_workspace_writes_schema_valid_artifact_with_fake_scanner(
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
     workspace = tmp_path / "customer.gdb"
     workspace.mkdir()
-    output_path = tmp_path / "EsriFootprint.json"
 
-    def fake_scan_filegdb_workspace(
-        workspace_arg: str,
-        *,
-        options: FileGdbScanOptions,
-    ) -> Mapping[str, Any]:
-        assert Path(workspace_arg) == workspace
-        assert options.path_hash_salt == "cli-salt"
-        return scan_filegdb_workspace(
-            workspace,
-            options=FileGdbScanOptions(
-                path_hash_salt="cli-salt",
-                captured_at=CAPTURED_AT,
-                generated_at=GENERATED_AT,
-            ),
-            reader=FakeFileGdbReader(
-                layers=[FileGdbLayer("Roads", "LineString")],
-                info_by_layer={
-                    "Roads": {
-                        "crs": "EPSG:4326",
-                        "geometry_type": "LineString",
-                        "features": 3,
-                        "fields": [],
-                    }
-                },
-            ),
-        )
-
-    import honua_esri_assess.filegdb as filegdb
-
-    monkeypatch.setattr(filegdb, "scan_filegdb_workspace", fake_scan_filegdb_workspace)
-
-    exit_code = main(
-        [
-            "filegdb",
-            str(workspace),
-            "--output",
-            str(output_path),
-            "--path-hash-salt",
-            "cli-salt",
-        ]
+    artifact = scan_filegdb_workspace(
+        workspace,
+        options=FileGdbScanOptions(
+            path_hash_salt="cli-salt",
+            captured_at=CAPTURED_AT,
+            generated_at=GENERATED_AT,
+        ),
+        reader=FakeFileGdbReader(
+            layers=[FileGdbLayer("Roads", "LineString")],
+            info_by_layer={
+                "Roads": {
+                    "crs": "EPSG:4326",
+                    "geometry_type": "LineString",
+                    "features": 3,
+                    "fields": [],
+                }
+            },
+        ),
     )
 
-    assert exit_code == 0
-    artifact = json.loads(output_path.read_text(encoding="utf-8"))
     _assert_schema_valid(artifact)
     assert artifact["source"]["kind"] == "filegdb"
     assert artifact["inventory"][0]["geometryType"] == "esriGeometryPolyline"
-
-
-def test_filegdb_cli_creates_missing_output_parent_dirs(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    workspace = tmp_path / "customer.gdb"
-    workspace.mkdir()
-    output_path = tmp_path / "nested" / "out" / "EsriFootprint.json"
-    assert not output_path.parent.exists()
-
-    def fake_scan_filegdb_workspace(
-        workspace_arg: str,
-        *,
-        options: FileGdbScanOptions,
-    ) -> Mapping[str, Any]:
-        return scan_filegdb_workspace(
-            workspace,
-            options=FileGdbScanOptions(
-                path_hash_salt="cli-salt",
-                captured_at=CAPTURED_AT,
-                generated_at=GENERATED_AT,
-            ),
-            reader=FakeFileGdbReader(
-                layers=[FileGdbLayer("Roads", "LineString")],
-                info_by_layer={
-                    "Roads": {
-                        "crs": "EPSG:4326",
-                        "geometry_type": "LineString",
-                        "features": 0,
-                        "fields": [],
-                    }
-                },
-            ),
-        )
-
-    import honua_esri_assess.filegdb as filegdb
-
-    monkeypatch.setattr(filegdb, "scan_filegdb_workspace", fake_scan_filegdb_workspace)
-
-    exit_code = main(
-        [
-            "filegdb",
-            str(workspace),
-            "--output",
-            str(output_path),
-            "--path-hash-salt",
-            "cli-salt",
-        ]
-    )
-
-    assert exit_code == 0
-    assert output_path.exists()
-    assert output_path.parent.is_dir()

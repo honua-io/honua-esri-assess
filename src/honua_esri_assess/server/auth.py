@@ -18,7 +18,9 @@ from typing import Protocol
 class Credential(Protocol):
     """Minimal contract every credential carrier honors."""
 
-    auth_mode: str
+    @property
+    def auth_mode(self) -> str:
+        """Describe the authentication mode without exposing credential material."""
 
     def apply(self, params: dict[str, str]) -> dict[str, str]:
         """Return a copy of *params* augmented with any auth parameters."""

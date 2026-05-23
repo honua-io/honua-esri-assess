@@ -4,10 +4,16 @@ E6 adds read-only enumeration for Esri license entitlements and extension
 observations. The collector output is designed to slot into the optional
 `portal.licensing` and `server.licensing` blocks in `EsriFootprint.json` v0.1.
 
-The interim `honua-esri-assess entitlements` command prints a fragment for
-validation and integration work. It is not a second handoff contract; the
-closed migration product continues to ingest only full `EsriFootprint.json`
-artifacts.
+`EsriFootprint.json` remains the sole handoff contract; entitlement
+observations only reach the closed migration product when a `scan` handler
+attaches them to the emitted footprint.
+
+> **Status (E9 CLI consolidation).** The interim standalone
+> `honua-esri-assess entitlements` subcommand has been retired alongside the
+> CLI consolidation in [E9](../README.md#command-line-usage). The Python
+> collectors below remain the supported interim surface until scanner
+> integration lands; the CLI usage examples in earlier revisions of this
+> document apply only to pre-E9 releases.
 
 ## Read-only endpoint coverage
 
@@ -24,9 +30,9 @@ Portal / ArcGIS Online collector:
 | User-type license counts | `/sharing/rest/portals/self/userLicenseTypes` |
 | Org-wide user total fallback | `/sharing/rest/portals/{orgId}/users` |
 
-The Portal CLI `--target` is the portal base URL, for example
-`https://www.arcgis.com` or `https://example.maps.arcgis.com`. It is not the
-`/sharing/rest` base used by `scan agol`.
+When invoked from Python, the Portal collector expects a portal base URL,
+for example `https://www.arcgis.com` or `https://example.maps.arcgis.com`. It
+is not the `/sharing/rest` base used by `scan agol`.
 
 ArcGIS Server collector:
 
@@ -38,49 +44,27 @@ ArcGIS Server collector:
 | Service discovery for SOE/SOI checks | `/admin/services` and `/admin/services/{folder}` |
 | Per-service SOEs/SOIs | `/admin/services/{folder}/{name}.{type}` |
 
-The Server CLI `--target` is the ArcGIS Server root, for example
-`https://gis.example.com/arcgis`.
+When invoked from Python, the Server collector expects the ArcGIS Server
+root, for example `https://gis.example.com/arcgis`.
 
-## CLI usage
+## Collector knobs
 
-```bash
-honua-esri-assess entitlements agol \
-  --target https://www.arcgis.com \
-  --token "$ESRI_TOKEN"
+The Python collectors mirror the option surface of the retired CLI:
 
-honua-esri-assess entitlements agol \
-  --target https://www.arcgis.com \
-  --anonymous
-
-honua-esri-assess entitlements server \
-  --target https://gis.example.com/arcgis \
-  --token "$ESRI_TOKEN"
-
-honua-esri-assess entitlements server \
-  --target https://gis.example.com/arcgis \
-  --service Hosted/Parcels.MapServer \
-  --service World.MapServer
-
-honua-esri-assess entitlements server \
-  --target https://gis.example.com/arcgis \
-  --no-service-extensions
-```
-
-Common flags:
-
-| Flag | Applies to | Behavior |
+| Knob | Applies to | Behavior |
 | --- | --- | --- |
-| `--token` | Portal, Server | Adds the token to Esri GET requests for org/admin endpoints. |
-| `--timeout` | Portal, Server | Sets HTTP timeout in seconds. Default is `30`. |
-| `--verbose` | Portal, Server | Enables INFO logs to stderr. |
-| `--debug` | Portal, Server | Enables DEBUG logs and re-raises hard failures. Do not use for customer-facing runs. |
-| `--anonymous` | Portal | Skips token-required subscription, user-license, and users endpoints. |
-| `--service FOLDER/NAME.TYPE` | Server | Restricts SOE/SOI lookup to explicit services. Repeatable. Folder is optional. |
-| `--no-service-extensions` | Server | Skips per-service SOE/SOI enumeration. |
+| `RequestsHttpClient(token=...)` | Portal, Server | Adds the token to Esri GET requests for org/admin endpoints. |
+| `RequestsHttpClient(default_timeout=...)` | Portal, Server | Sets HTTP timeout in seconds. Default is `30`. |
+| `PortalEntitlementsCollector(anonymous=True)` | Portal | Skips token-required subscription, user-license, and users endpoints. |
+| `ServerEntitlementsCollector(include_service_extensions=False)` | Server | Skips per-service SOE/SOI enumeration. |
+| `ServerEntitlementsCollector.collect([ServiceRef(...), ...])` | Server | Restricts SOE/SOI lookup to explicit services. Folder is optional. |
+
+Logging is configured by the surrounding application; the collectors emit
+no telemetry of their own.
 
 ## Response shape
 
-The command writes JSON to stdout:
+The collectors produce a JSON-serializable fragment:
 
 ```json
 {
@@ -134,21 +118,21 @@ optional lookup is skipped.
 
 ## Diagnostics and failures
 
-Soft coverage gaps become typed diagnostics in the JSON payload and keep exit
-code `0`. Examples include:
+Soft coverage gaps become typed diagnostics on the collector result. Examples
+include:
 
 - `missing-permission` for optional org/admin endpoints denied by the token.
 - `partial-coverage` for unexpected but recoverable response shapes or unknown
   extension codes recorded verbatim.
 - `unresolved-reference` for service endpoints that cannot be enumerated.
 
-Hard entitlement failures return exit code `3` with a prospect-safe stderr
-message unless `--debug` is set. Hard failures include authentication required
-on required endpoints, forbidden/not-found/rate-limit responses that cannot be
-downgraded, connection failures, Esri API errors, and non-JSON responses.
-
-Unexpected failures return exit code `1`. Invalid CLI usage returns exit code
-`2`.
+Hard entitlement failures raise `EntitlementsError` subclasses
+(`EntitlementsAuthError`, `EntitlementsForbiddenError`,
+`EntitlementsNotFoundError`, `EntitlementsRateLimitedError`,
+`EntitlementsConnectionError`, `EntitlementsApiError`,
+`EntitlementsSchemaError`). Callers are responsible for translating these to
+their own user-facing surface; they must never leak raw exception text or
+tokens to prospects.
 
 ## Developer integration
 

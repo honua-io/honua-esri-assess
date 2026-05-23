@@ -7,7 +7,9 @@ from typing import Protocol
 
 
 class Credential(Protocol):
-    auth_mode: str
+    @property
+    def auth_mode(self) -> str:
+        """Describe the authentication mode without exposing credential material."""
 
     def params(self) -> dict[str, str]:
         """Return query-string auth parameters."""

@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+import json
+import os
+import re
+import tempfile
+import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass, field as dataclass_field
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Final
+
+import typer
 
 DIAGNOSTIC_CODES: Final[frozenset[str]] = frozenset(
     {
@@ -20,6 +29,21 @@ DIAGNOSTIC_CODES: Final[frozenset[str]] = frozenset(
 SEVERITY_LEVELS: Final[frozenset[str]] = frozenset({"info", "warn", "error"})
 _SEVERITY_ALIASES: Final[dict[str, str]] = {"warning": "warn"}
 _MAX_MESSAGE_LENGTH = 240
+
+SECRET_PATTERNS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
+    (
+        re.compile(r"(?i)(token|password|secret|authorization|api[_-]?key)=([^&\s]+)"),
+        r"\1=<redacted>",
+    ),
+    (re.compile(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]+"), r"\1<redacted>"),
+    (re.compile(r"(://)([^/\s@]+)@"), r"\1<redacted>@"),
+    (
+        re.compile(
+            r"(?i)([;?&])(jsessionid|phpsessid|aspsessionid[a-z0-9]*|sessionid|sid)=([^&\s;#?]+)"
+        ),
+        r"\1\2=<redacted>",
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -54,6 +78,14 @@ class Diagnostic:
         if self.hint is not None:
             out["hint"] = self.hint
         return out
+
+
+@dataclass(frozen=True)
+class CliDiagnostic:
+    code: str
+    severity: str
+    message: str
+    scope: str | None = None
 
 
 class AssessmentError(Exception):
@@ -91,6 +123,68 @@ class AssessmentError(Exception):
             severity=self.severity,
             message=self.message,
             context=self.context,
+        )
+
+
+class DiagnosticError(Exception):
+    """Base class for expected command failures."""
+
+    exit_code = 10
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "scanner-error",
+        scope: str | None = None,
+        severity: str = "error",
+    ) -> None:
+        super().__init__(message)
+        self.diagnostic = CliDiagnostic(
+            code=code,
+            severity=severity,
+            message=message,
+            scope=scope,
+        )
+
+
+class BackendNotAvailableError(DiagnosticError):
+    """Raised by placeholder handlers until a scanner backend merges."""
+
+    exit_code = 1
+
+    def __init__(self, message: str, *, backend: str) -> None:
+        super().__init__(
+            message,
+            code="backend-not-available",
+            scope=backend,
+        )
+
+
+class OutputWriteError(DiagnosticError):
+    """Raised when the CLI cannot persist EsriFootprint.json."""
+
+    exit_code = 20
+
+    def __init__(self, path: Path) -> None:
+        del path
+        super().__init__(
+            "Could not save EsriFootprint.json at the requested output path.",
+            code="output-write-failed",
+            scope="output",
+        )
+
+
+class SchemaValidationError(DiagnosticError):
+    """Raised when an artifact fails schema validation."""
+
+    exit_code = 30
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            message,
+            code="schema-validation-failed",
+            scope="schema",
         )
 
 
@@ -262,10 +356,83 @@ def render_error(error: AssessmentError) -> str:
     return f"error: [{error.code}] {error.message}"
 
 
+def render_diagnostic(diagnostic: Diagnostic | CliDiagnostic) -> str:
+    """Render a diagnostic without raw exceptions or stack traces."""
+
+    scope = f" scope={diagnostic.scope}" if diagnostic.scope else ""
+    return f"{diagnostic.severity}[{diagnostic.code}]{scope}: {diagnostic.message}"
+
+
+def print_diagnostic(diagnostic: Diagnostic | CliDiagnostic) -> None:
+    typer.echo(render_diagnostic(diagnostic), err=True)
+
+
+def print_diagnostic_error(error: DiagnosticError) -> None:
+    print_diagnostic(error.diagnostic)
+
+
+def redact(value: str) -> str:
+    redacted = value
+    for pattern, replacement in SECRET_PATTERNS:
+        redacted = pattern.sub(replacement, redacted)
+    return redacted
+
+
+def maybe_write_crash_dump(exc: BaseException) -> Path | None:
+    """Write a local redacted crash dump only when explicitly enabled."""
+
+    if os.environ.get("HONUA_ESRI_ASSESS_CRASH_DUMPS") != "1":
+        return None
+
+    crash_dir = Path.home() / ".cache" / "honua-esri-assess" / "crashes"
+    crash_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    fd, raw_path = tempfile.mkstemp(
+        prefix=f"crash-{timestamp}-",
+        suffix=".json",
+        dir=crash_dir,
+        text=True,
+    )
+    path = Path(raw_path)
+    payload = {
+        "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "exceptionType": type(exc).__name__,
+        "message": redact(str(exc)),
+        "traceback": redact("".join(traceback.format_exception(exc))),
+    }
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    return path
+
+
+def handle_unexpected_error(exc: BaseException) -> None:
+    dump_path = maybe_write_crash_dump(exc)
+    typer.echo(
+        "error[internal-error]: The command failed unexpectedly. "
+        "Raw exception details were not printed.",
+        err=True,
+    )
+    if dump_path is not None:
+        typer.echo(
+            f"Local diagnostic file: ~/.cache/honua-esri-assess/crashes/{dump_path.name}",
+            err=True,
+        )
+    raise typer.Exit(1)
+
+
+def diagnostics_as_dicts(diagnostics: tuple[Diagnostic, ...]) -> list[dict[str, Any]]:
+    return [diagnostic.to_dict() for diagnostic in diagnostics]
+
+
 __all__ = [
     "AssessmentError",
+    "BackendNotAvailableError",
+    "CliDiagnostic",
     "DIAGNOSTIC_CODES",
     "Diagnostic",
+    "DiagnosticError",
+    "OutputWriteError",
     "PortalApiError",
     "PortalAuthError",
     "PortalConnectionError",
@@ -278,6 +445,7 @@ __all__ = [
     "ReportRenderError",
     "ReportSchemaValidationError",
     "SEVERITY_LEVELS",
+    "SchemaValidationError",
     "ServerApiError",
     "ServerAuthError",
     "ServerConnectionError",
@@ -286,6 +454,13 @@ __all__ = [
     "ServerNotFoundError",
     "ServerRateLimitedError",
     "ServerSchemaError",
+    "diagnostics_as_dicts",
+    "handle_unexpected_error",
+    "maybe_write_crash_dump",
+    "print_diagnostic",
+    "print_diagnostic_error",
+    "redact",
+    "render_diagnostic",
     "render_error",
     "sanitize_message",
 ]

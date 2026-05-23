@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
 
-from honua_esri_assess import cli as cli_module
 from honua_esri_assess.cli import main as cli_main
+from honua_esri_assess.commands.common import ScanOptions, ScanResult
+from honua_esri_assess.commands.scan_handlers import HANDLERS, ScanHandler, register
 from honua_esri_assess.footprint import build_footprint
-from honua_esri_assess.portal.models import OrgInfo, PortalScanResult
 from honua_esri_assess.scanners import agol as agol_scanner
 from honua_esri_assess.scanners import server as server_scanner
 
@@ -20,6 +21,16 @@ SECRET_TARGET = (
     "https://alice:superpass@fixture.local/sharing/rest;jsessionid=session-secret"
     "?token=topsecret-token&password=hidden-password#session"
 )
+
+
+@pytest.fixture(autouse=True)
+def restore_handlers() -> Iterator[None]:
+    original = dict(HANDLERS)
+    try:
+        yield
+    finally:
+        HANDLERS.clear()
+        HANDLERS.update(original)
 
 
 def _assert_no_secrets(value: Any, *extra: str) -> None:
@@ -57,60 +68,43 @@ def test_footprint_builder_sanitizes_source_target_credentials() -> None:
     _assert_no_secrets(footprint)
 
 
-def _patch_agol_portal_scan(monkeypatch: pytest.MonkeyPatch, seen: dict[str, str]) -> None:
-    class _FakePortalClient:
-        def __init__(self, target: str, credential: Any = None, *, timeout: float = 30.0) -> None:
-            seen["target"] = target
-            self.auth_mode = getattr(credential, "auth_mode", "anonymous")
-            self.portal_url = "https://fixture.local"
-            self.sharing_rest_url = "https://fixture.local/sharing/rest"
-            self.timeout = timeout
-
-    class _FakePortalScanner:
-        def __init__(self, client: _FakePortalClient, *, deep: bool = False) -> None:
-            self.client = client
-            self.deep = deep
-
-        def scan(self) -> PortalScanResult:
-            return PortalScanResult(
-                org=OrgInfo(
-                    id="fixture-org",
-                    name="Fixture Org",
-                    portal_url=self.client.portal_url,
-                    sharing_rest_url=self.client.sharing_rest_url,
-                ),
-                auth_mode=self.client.auth_mode,
-                items=[],
-                diagnostics=[],
-            )
-
-    monkeypatch.setattr(cli_module, "PortalClient", _FakePortalClient)
-    monkeypatch.setattr(cli_module, "PortalScanner", _FakePortalScanner)
-
-
 @pytest.mark.parametrize("backend", ["agol", "server"])
 def test_scan_cli_uses_raw_target_but_writes_sanitized_handoff(
     backend: str,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seen: dict[str, str] = {}
 
-    def _fake_server_scan(target: str) -> dict[str, Any]:
-        seen["target"] = target
-        return {
-            "inventory": [],
-            "diagnostics": [],
-            "server": {"serviceCounts": {}, "folders": []},
-        }
+    def _fake_scan(options: ScanOptions) -> ScanResult:
+        seen["target"] = options.target
+        source_kind = "arcgis-online" if backend == "agol" else "arcgis-server"
+        kwargs: dict[str, Any]
+        if backend == "agol":
+            kwargs = {
+                "portal": {
+                    "orgId": "fixture-org",
+                    "orgUrl": "https://fixture.local",
+                    "itemCounts": {},
+                }
+            }
+        else:
+            kwargs = {"server": {"serviceCounts": {}, "folders": []}}
+        return ScanResult(
+            footprint=build_footprint(
+                source_kind=source_kind,
+                target=options.target,
+                inventory=[],
+                diagnostics=[],
+                **kwargs,
+            )
+        )
 
-    if backend == "agol":
-        _patch_agol_portal_scan(monkeypatch, seen)
-    else:
-        monkeypatch.setattr(cli_module.server_scanner, "scan", _fake_server_scan)
+    register(ScanHandler(name=backend, run=_fake_scan))
 
     output = tmp_path / "EsriFootprint.json"
-    exit_code = cli_main(["scan", backend, "--target", SECRET_TARGET, "--output", str(output)])
+    exit_code = cli_main(
+        ["scan", backend, "--target", SECRET_TARGET, "--output", str(output)]
+    )
 
     assert exit_code == 0
     assert seen["target"] == SECRET_TARGET
@@ -124,11 +118,27 @@ def test_scan_cli_uses_raw_target_but_writes_sanitized_handoff(
 
 def test_report_over_scan_output_does_not_render_target_credentials(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_agol_portal_scan(monkeypatch, {})
+    def _fake_scan(options: ScanOptions) -> ScanResult:
+        return ScanResult(
+            footprint=build_footprint(
+                source_kind="arcgis-online",
+                target=options.target,
+                inventory=[],
+                diagnostics=[],
+                portal={
+                    "orgId": "fixture-org",
+                    "orgUrl": "https://fixture.local",
+                    "itemCounts": {},
+                },
+            )
+        )
+
+    register(ScanHandler(name="agol", run=_fake_scan))
     footprint_path = tmp_path / "EsriFootprint.json"
-    scan_exit = cli_main(["scan", "agol", "--target", SECRET_TARGET, "--output", str(footprint_path)])
+    scan_exit = cli_main(
+        ["scan", "agol", "--target", SECRET_TARGET, "--output", str(footprint_path)]
+    )
     assert scan_exit == 0
 
     report_path = tmp_path / "report.md"
@@ -152,7 +162,7 @@ class _JsonResponse:
 
 
 class _AgolSession:
-    def get(self, url: str, *, params: dict[str, Any], timeout: int) -> _JsonResponse:
+    def get(self, url: str, *, params: dict[str, Any], timeout: float) -> _JsonResponse:
         path = urlsplit(url).path
         if path.endswith("/portals/self/users"):
             return _JsonResponse({"users": []})
@@ -193,17 +203,26 @@ class _AgolSession:
 
 
 def test_agol_scanner_sanitizes_item_urls_copied_from_esri_payloads() -> None:
-    result = agol_scanner.scan("https://fixture.local/sharing/rest", session=_AgolSession())
+    result = agol_scanner.scan(
+        "https://fixture.local/sharing/rest",
+        session=_AgolSession(),
+    )
 
     assert "url" not in result["inventory"][0]
-    _assert_no_secrets(result, "search-token", "probe-token", "probe-password", "probe:secret")
+    _assert_no_secrets(
+        result,
+        "search-token",
+        "probe-token",
+        "probe-password",
+        "probe:secret",
+    )
 
 
 class _ServerSession:
     def __init__(self) -> None:
         self.urls: list[str] = []
 
-    def get(self, url: str, *, params: dict[str, Any], timeout: int) -> _JsonResponse:
+    def get(self, url: str, *, params: dict[str, Any], timeout: float) -> _JsonResponse:
         self.urls.append(url)
         path = urlsplit(url).path
         if path.endswith("/services"):

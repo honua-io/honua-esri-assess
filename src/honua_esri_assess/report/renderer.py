@@ -157,11 +157,11 @@ def _inventory_table(kind: str, items: Sequence[Mapping[str, Any]]) -> str:
             rows,
         )
 
-    rows = [
+    fallback_rows = [
         (item_label(item), item.get("kind"), item_type_label(item), _item_detail(item))
         for item in items
     ]
-    return markdown_table(("Item", "Kind", "Type", "Details"), rows)
+    return markdown_table(("Item", "Kind", "Type", "Details"), fallback_rows)
 
 
 def _render_layer_count(footprint: Mapping[str, Any]) -> str:

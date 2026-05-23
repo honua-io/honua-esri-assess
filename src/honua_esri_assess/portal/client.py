@@ -16,6 +16,7 @@ from honua_esri_assess.diagnostics import (
     PortalApiError,
     PortalAuthError,
     PortalConnectionError,
+    PortalError,
     PortalForbiddenError,
     PortalNotFoundError,
     PortalRateLimitedError,
@@ -124,7 +125,9 @@ class PortalClient:
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self.urls = normalize_portal_url(target)
-        self.credential = credential or AnonymousCredential()
+        self.credential: Credential = (
+            credential if credential is not None else AnonymousCredential()
+        )
         self.timeout = timeout
         self.retry_policy = retry_policy or RetryPolicy()
         self.session = session or requests.Session()
@@ -209,7 +212,7 @@ class PortalClient:
 
     def _status_error(
         self, status_code: int, safe_url: str, payload: dict[str, Any]
-    ) -> PortalApiError:
+    ) -> PortalError:
         api_error = self._api_error(payload, safe_url, status_code=status_code)
         if api_error:
             return api_error
@@ -228,7 +231,7 @@ class PortalClient:
 
     def _api_error(
         self, payload: dict[str, Any], safe_url: str, *, status_code: int | None = None
-    ) -> PortalApiError | None:
+    ) -> PortalError | None:
         error = payload.get("error")
         if not isinstance(error, dict):
             return None

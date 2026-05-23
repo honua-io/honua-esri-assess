@@ -82,12 +82,10 @@ def test_agol_console_script_installed() -> None:
     when the entry point has not been linked onto PATH (uninstalled checkouts).
     """
 
-    import shutil
-
-    console_script = shutil.which("honua-esri-assess")
+    console_script = Path(sys.prefix) / "bin" / "honua-esri-assess"
     cmd = (
-        [console_script, "--version"]
-        if console_script
+        [str(console_script), "--version"]
+        if console_script.exists()
         else [sys.executable, "-m", "honua_esri_assess", "--version"]
     )
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)

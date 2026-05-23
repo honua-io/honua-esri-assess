@@ -93,6 +93,7 @@ def write_footprint(footprint: Mapping[str, Any], output: Path) -> None:
 def write_footprint_json(footprint: Mapping[str, Any], output_path: Path) -> None:
     """Write an EsriFootprint.json artifact."""
 
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(footprint_to_json(footprint), encoding="utf-8")
 
 

@@ -193,7 +193,7 @@
           },
           "then": {
             "properties": {
-              "locator": { "pattern": "^[^@?#\\s]+$" }
+              "locator": { "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}/[A-Za-z0-9][A-Za-z0-9_-]{0,127}$" }
             }
           }
         },
@@ -268,6 +268,15 @@
         "nullable": { "type": "boolean" }
       }
     },
+    "EsriTypeCountMap": {
+      "type": "object",
+      "description": "Map of Esri item or service type labels to counts. Property names are constrained to display-label characters so URLs, query tokens, credential strings, and raw path fragments cannot be carried as map keys.",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,79}$"
+      },
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
     "PortalFacet": {
       "type": "object",
       "description": "Facet required iff source.kind == arcgis-online. Closed at v0.1: vendor extras, callback URLs, and credential-like fields are schema-rejected so the artifact cannot smuggle telemetry or secrets.",
@@ -282,9 +291,8 @@
           "description": "ArcGIS Online organization base URL. Schema pattern rejects userinfo, query strings, and fragments so credentials and session tokens cannot ride along."
         },
         "itemCounts": {
-          "type": "object",
-          "description": "Map of Esri item type → count (e.g. \"Feature Service\": 12).",
-          "additionalProperties": { "type": "integer", "minimum": 0 }
+          "$ref": "#/$defs/EsriTypeCountMap",
+          "description": "Map of Esri item type → count (e.g. \"Feature Service\": 12). Keys are constrained to prospect-safe type labels."
         },
         "sharingSummary": {
           "type": "object",
@@ -311,9 +319,8 @@
           "items": { "type": "string" }
         },
         "serviceCounts": {
-          "type": "object",
-          "description": "Map of Esri service type → count (e.g. \"MapServer\": 4).",
-          "additionalProperties": { "type": "integer", "minimum": 0 }
+          "$ref": "#/$defs/EsriTypeCountMap",
+          "description": "Map of Esri service type → count (e.g. \"MapServer\": 4). Keys are constrained to prospect-safe type labels."
         },
         "version": {
           "type": "string",
@@ -442,7 +449,7 @@
     },
     "Diagnostic": {
       "type": "object",
-      "description": "Typed, prospect-safe diagnostic. code is drawn from a locked v0.1 enum; new codes require a v0.1.x doc bump until v0.2 expands the vocabulary.",
+      "description": "Typed, prospect-safe diagnostic. code is drawn from a locked v0.1 enum; new codes require a v0.2 vocabulary expansion. Clarifying existing codes may land in a v0.1.x doc bump.",
       "additionalProperties": false,
       "required": ["code", "severity", "message", "scope"],
       "properties": {

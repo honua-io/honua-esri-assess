@@ -319,6 +319,10 @@ def test_source_kind_rejects_mismatched_inventory_variants(
 @pytest.mark.parametrize(
     ("source_kind", "locator"),
     [
+        ("arcgis-online", "https://example.maps.arcgis.com/0123ABCDEF456789"),
+        ("arcgis-online", "C:/Users/Alice/customer.gdb"),
+        ("arcgis-online", r"C:\Users\Alice\customer.gdb"),
+        ("arcgis-online", "token=secret"),
         ("arcgis-online", "user:pass@example.maps.arcgis.com/0123ABCDEF456789"),
         ("arcgis-online", "example.maps.arcgis.com/0123ABCDEF456789?token=secret"),
         ("arcgis-online", "example.maps.arcgis.com/0123ABCDEF456789#fragment"),
@@ -417,6 +421,40 @@ def test_portal_org_url_rejects_secret_bearing_urls(
 ) -> None:
     artifact = copy.deepcopy(sample)
     artifact["portal"]["orgUrl"] = org_url
+    assert not validator.is_valid(artifact)
+
+
+@pytest.mark.parametrize(
+    ("source_kind", "map_path", "unsafe_key"),
+    [
+        (
+            "arcgis-online",
+            ("portal", "itemCounts"),
+            "https://collector.example.com/hook?token=secret",
+        ),
+        ("arcgis-online", ("portal", "itemCounts"), "https://collector.example.com/hook"),
+        ("arcgis-online", ("portal", "itemCounts"), "token=secret"),
+        (
+            "arcgis-server",
+            ("server", "serviceCounts"),
+            "https://collector.example.com/hook?token=secret",
+        ),
+        ("arcgis-server", ("server", "serviceCounts"), "https://collector.example.com/hook"),
+        ("arcgis-server", ("server", "serviceCounts"), "token=secret"),
+    ],
+)
+def test_count_maps_reject_url_or_token_like_keys(
+    validator: Draft202012Validator,
+    sample: dict,
+    source_kind: str,
+    map_path: tuple[str, ...],
+    unsafe_key: str,
+) -> None:
+    artifact = _valid_artifact_for_kind(sample, source_kind)
+    target = artifact
+    for segment in map_path:
+        target = target[segment]
+    target[unsafe_key] = 1
     assert not validator.is_valid(artifact)
 
 

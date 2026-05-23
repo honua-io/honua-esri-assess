@@ -7,14 +7,20 @@ versioned `EsriFootprint.json` artifact for the closed Honua migration product.
 The tool is Apache-2.0 by design so prospects can audit the code before running
 it against ArcGIS Online, ArcGIS Server, or FileGDB inventories.
 
-## Initial Scope
+## Current status
+
+Shipped in this contract pass:
 
 - `EsriFootprint.json` v0.1 JSON Schema and reference documentation.
+- Canonical sample footprint and fixture-backed schema validation tests.
+- Bootstrap `honua-esri-assess` CLI with `--version`.
+
+Planned scanner and reporting work:
+
 - Read-only ArcGIS Online Portal Sharing API scanner.
 - Read-only ArcGIS Server REST scanner.
 - FileGDB inventory path using license-compatible dependencies.
 - Markdown readiness report and sample output.
-- Fixture-backed CI smoke test.
 
 ## Schema and handoff
 
@@ -55,3 +61,7 @@ Two policy docs govern the broader contract:
 python -m pip install -e ".[dev]"
 pytest
 ```
+
+The test suite validates the published schema, the canonical sample, the
+source-kind discriminator rules, prospect-safe URL/path constraints, and strict
+RFC3339 UTC timestamps.

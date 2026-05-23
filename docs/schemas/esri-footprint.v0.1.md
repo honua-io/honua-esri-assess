@@ -41,17 +41,20 @@ tools may read the file, but no other consumer is part of the contract.
 - **No credentials or raw on-prem paths.** `source.locator`,
   `filegdb.pathHash`, and `ServerService.serviceUrl` are schema-pattern
   enforced so a published footprint never reveals a prospect's secrets
-  or filesystem layout. AGOL and server locators reject `@` (userinfo),
-  `?` (query string), `#` (fragment), and whitespace; FileGDB locators
-  must match `^sha256:[0-9a-f]{64}$`; service URLs reject the same
-  unsafe components. See [Source](#source) for the per-kind patterns.
+  or filesystem layout. AGOL locators must be exactly `host/org-id`.
+  Server locators reject `@` (userinfo), `?` (query string), `#`
+  (fragment), and whitespace; FileGDB locators must match
+  `^sha256:[0-9a-f]{64}$`; service URLs reject the same unsafe
+  components. Count-map keys are also constrained to type labels, not
+  URLs or token assignments. See [Source](#source) for the per-kind
+  patterns.
 
 ## Stability policy
 
 | Range  | Stability                                                          |
 |--------|--------------------------------------------------------------------|
 | v0.x   | **Unstable.** Breaking changes are permitted between minor bumps.  |
-| v0.1.x | Patch bumps are documentation or clarification only.               |
+| v0.1.x | Patch bumps are non-breaking clarifications, producer bug fixes, or additions inside explicitly open maps only. |
 | v0.2.0 | May break v0.1 consumers (e.g. expand the diagnostic enum).        |
 | v1.0   | First stable promise. Breaking changes require a v2 bump.          |
 
@@ -66,8 +69,9 @@ top-level key is a deliberate schema bump. Contract objects are closed at
 v0.1, including the source block, facets, inventory variants, diagnostics,
 spatial references, extents, and field descriptors. The only open maps are
 the documented count-by-type maps such as `portal.itemCounts` and
-`server.serviceCounts`; consumers must not treat unknown map keys as
-load-bearing contract fields.
+`server.serviceCounts`; their keys are constrained to prospect-safe type
+labels and consumers must not treat unknown map keys as load-bearing
+contract fields.
 
 | Field           | Required | Type                              | Description                                                                                                  |
 |-----------------|----------|-----------------------------------|--------------------------------------------------------------------------------------------------------------|
@@ -120,15 +124,17 @@ allowed `EsriItem` variant, and it pins the `locator` pattern. See
 
 `source.locator` patterns enforced by the schema:
 
-| `source.kind`   | `locator` pattern                       | Example                                            |
-|-----------------|-----------------------------------------|----------------------------------------------------|
-| `arcgis-online` | `^[^@?#\s]+$`                           | `honua.maps.arcgis.com/0123ABCDEF456789`           |
-| `arcgis-server` | `^https?://[^@?#\s]+(/[^?#\s]*)?$`      | `https://gis.example.com/arcgis/rest/services`     |
-| `filegdb`       | `^sha256:[0-9a-f]{64}$`                 | `sha256:0000…` (salted sha256 of the gdb path)     |
+| `source.kind`   | `locator` pattern                                                                                                     | Example                                            |
+|-----------------|-----------------------------------------------------------------------------------------------------------------------|----------------------------------------------------|
+| `arcgis-online` | `^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}/[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`              | `honua.maps.arcgis.com/0123ABCDEF456789`           |
+| `arcgis-server` | `^https?://[^@?#\s]+(/[^?#\s]*)?$`                                                                                   | `https://gis.example.com/arcgis/rest/services`     |
+| `filegdb`       | `^sha256:[0-9a-f]{64}$`                                                                                              | `sha256:0000…` (salted sha256 of the gdb path)     |
 
-The patterns reject `@` (userinfo), `?` (query string), `#` (fragment),
-and whitespace. They are also why a raw FileGDB filesystem path is
-schema-rejected for `filegdb` sources.
+The AGOL pattern rejects schemes, colons, backslashes, equals signs, and
+extra path segments by requiring exactly a DNS host plus one organization-id
+segment. Server locator patterns reject `@` (userinfo), `?` (query string),
+`#` (fragment), and whitespace. The FileGDB pattern is why a raw filesystem
+path is schema-rejected for `filegdb` sources.
 
 ### PortalFacet
 
@@ -138,7 +144,7 @@ Required iff `source.kind == "arcgis-online"`; forbidden otherwise (see [Discrim
 |------------------|----------|-----------------------------------------------------|----------------------------------------------------------|
 | `orgId`          | yes      | string                                              | ArcGIS Online organization id.                           |
 | `orgUrl`         | yes      | URI                                                 | Organization base URL.                                   |
-| `itemCounts`     | yes      | `{ [itemType: string]: integer }`                   | Roll-up by Esri item type (e.g. `Feature Service`).      |
+| `itemCounts`     | yes      | `{ [safe itemType label]: integer }`                | Roll-up by Esri item type (e.g. `Feature Service`). Keys must match `^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,79}$`. |
 | `sharingSummary` | no       | `{ private, org, public, shared: integer }`         | Roll-up of sharing levels across portal items.           |
 
 ### ServerFacet
@@ -148,7 +154,7 @@ Required iff `source.kind == "arcgis-server"`; forbidden otherwise (see [Discrim
 | Field           | Required | Type                                    | Description                                                                 |
 |-----------------|----------|-----------------------------------------|-----------------------------------------------------------------------------|
 | `folders`       | yes      | string[]                                | Top-level service folder names. Empty array if all services live at the root.|
-| `serviceCounts` | yes      | `{ [serviceType: string]: integer }`    | Roll-up by Esri service type (e.g. `MapServer`).                            |
+| `serviceCounts` | yes      | `{ [safe serviceType label]: integer }` | Roll-up by Esri service type (e.g. `MapServer`). Keys must match `^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,79}$`. |
 | `version`       | no       | string                                  | Reported ArcGIS Server version (e.g. `"11.2"`).                             |
 
 ### FileGdbFacet
@@ -225,7 +231,8 @@ a new aggregate is a deliberate schema bump.
 
 Scanners SHOULD emit all three `items` sub-keys so the migration product
 can rely on per-kind totals; consumers should treat an absent sub-key as
-`0`. A future v0.1.x or v0.2 may tighten the schema to require them.
+`0`. Tightening the schema to require those sub-keys would be a breaking
+change for strict v0.1 validators and therefore requires a v0.2 bump.
 
 ### Diagnostic
 

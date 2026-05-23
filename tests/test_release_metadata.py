@@ -50,11 +50,11 @@ def test_runtime_dependencies_are_pinned_with_lower_bounds() -> None:
     assert "tenacity>=8.2,<10" in dependencies
 
 
-def test_release_please_manifest_matches_initial_version() -> None:
+def test_release_please_manifest_matches_project_version() -> None:
     manifest = json.loads(
         (REPO_ROOT / ".release-please-manifest.json").read_text(encoding="utf-8")
     )
-    assert manifest == {".": "0.1.0"}
+    assert manifest == {".": _pyproject()["project"]["version"]}
 
 
 def test_release_please_config_uses_component_tags() -> None:
@@ -101,7 +101,8 @@ def test_publish_tag_validator_rejects_untagged_non_dry_run(
     monkeypatch.chdir(REPO_ROOT)
     monkeypatch.delenv("GITHUB_REF_NAME", raising=False)
 
-    assert module.main(["honua-esri-assess-v0.1.0"]) == 0
+    version = _pyproject()["project"]["version"]
+    assert module.main([f"honua-esri-assess-v{version}"]) == 0
     assert module.main(["main"]) == 1
     assert module.main([]) == 1
     assert module.main(["--allow-untagged"]) == 0

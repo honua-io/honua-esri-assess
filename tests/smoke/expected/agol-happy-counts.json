@@ -1,0 +1,8 @@
+{
+  "total": 3,
+  "byKind": {
+    "feature-service": 1,
+    "map-service": 1,
+    "web-map": 1
+  }
+}

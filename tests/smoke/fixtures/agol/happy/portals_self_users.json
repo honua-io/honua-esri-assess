@@ -1,0 +1,10 @@
+{
+  "total": 2,
+  "start": 1,
+  "num": 100,
+  "nextStart": -1,
+  "users": [
+    { "username": "demo.publisher", "role": "org_publisher" },
+    { "username": "demo.user", "role": "org_user" }
+  ]
+}

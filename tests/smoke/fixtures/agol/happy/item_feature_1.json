@@ -1,0 +1,11 @@
+{
+  "id": "item-feature-1",
+  "title": "Parcels Feature Service",
+  "type": "Feature Service",
+  "owner": "demo.publisher",
+  "url": "https://services.fixture.local/Demo/Parcels/FeatureServer",
+  "layers": [
+    { "id": 0, "name": "Parcels" },
+    { "id": 1, "name": "Parcel Owners" }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "serviceDescription": "Demo Imagery Mosaic",
+  "layers": [
+    { "id": 0, "name": "Imagery" }
+  ]
+}

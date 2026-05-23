@@ -1,0 +1,6 @@
+{
+  "featureClasses": [
+    { "name": "Parcels", "geometryType": "polygon", "featureCount": 1248 },
+    { "name": "Hydrants", "geometryType": "point", "featureCount": 312 }
+  ]
+}

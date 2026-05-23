@@ -1,0 +1,12 @@
+{
+  "total": 3,
+  "byKind": {
+    "feature-service": 1,
+    "map-service": 2
+  },
+  "serviceCounts": {
+    "FeatureServer": 1,
+    "MapServer": 2
+  },
+  "folders": ["Demo"]
+}

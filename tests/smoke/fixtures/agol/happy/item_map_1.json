@@ -1,0 +1,10 @@
+{
+  "id": "item-map-1",
+  "title": "Basemap Mosaic",
+  "type": "Map Service",
+  "owner": "demo.publisher",
+  "url": "https://services.fixture.local/Demo/Basemap/MapServer",
+  "layers": [
+    { "id": 0, "name": "Imagery" }
+  ]
+}

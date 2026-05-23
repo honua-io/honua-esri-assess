@@ -1,0 +1,7 @@
+{
+  "serviceDescription": "Parcels Feature Service",
+  "layers": [
+    { "id": 0, "name": "Parcels" },
+    { "id": 1, "name": "Owners" }
+  ]
+}

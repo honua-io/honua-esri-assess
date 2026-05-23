@@ -1,0 +1,44 @@
+{
+  "routes": [
+    {
+      "url": "https://fixture.local/server/rest/services",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "services_root.json",
+      "status": 200
+    },
+    {
+      "url": "https://fixture.local/server/rest/services/Demo",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "folder_demo.json",
+      "status": 200
+    },
+    {
+      "url": "https://fixture.local/server/rest/services/RootBasemap/MapServer",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "service_rootbasemap.json",
+      "status": 200
+    },
+    {
+      "url": "https://fixture.local/server/rest/services/Demo/Parcels/FeatureServer",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "service_parcels.json",
+      "status": 200
+    },
+    {
+      "url": "https://fixture.local/server/rest/services/Demo/Imagery/MapServer",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "service_imagery.json",
+      "status": 200
+    }
+  ]
+}

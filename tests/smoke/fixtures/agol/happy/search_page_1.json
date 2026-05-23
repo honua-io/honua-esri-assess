@@ -1,0 +1,23 @@
+{
+  "query": "*",
+  "total": 4,
+  "start": 1,
+  "num": 100,
+  "nextStart": 3,
+  "results": [
+    {
+      "id": "item-feature-1",
+      "title": "Parcels Feature Service",
+      "type": "Feature Service",
+      "owner": "demo.publisher",
+      "url": "https://services.fixture.local/Demo/Parcels/FeatureServer"
+    },
+    {
+      "id": "item-map-1",
+      "title": "Basemap Mosaic",
+      "type": "Map Service",
+      "owner": "demo.publisher",
+      "url": "https://services.fixture.local/Demo/Basemap/MapServer"
+    }
+  ]
+}

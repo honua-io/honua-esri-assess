@@ -1,0 +1,7 @@
+{
+  "currentVersion": 11.1,
+  "folders": ["Demo"],
+  "services": [
+    { "name": "RootBasemap", "type": "MapServer" }
+  ]
+}

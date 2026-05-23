@@ -9,18 +9,15 @@
       "status": 200
     },
     {
-      "url": "https://fixture.local/sharing/rest/portals/self/users",
-      "method": "GET",
-      "match_querystring": true,
-      "params": { "f": "json" },
-      "body_file": "portals_self_users.json",
-      "status": 200
-    },
-    {
       "url": "https://fixture.local/sharing/rest/community/groups",
       "method": "GET",
       "match_querystring": true,
-      "params": { "f": "json" },
+      "params": {
+        "f": "json",
+        "q": "orgid:0123456789abcdef",
+        "start": "1",
+        "num": "100"
+      },
       "body_file": "community_groups.json",
       "status": 200
     },
@@ -28,7 +25,12 @@
       "url": "https://fixture.local/sharing/rest/search",
       "method": "GET",
       "match_querystring": true,
-      "params": { "f": "json", "q": "*", "start": "1", "num": "100" },
+      "params": {
+        "f": "json",
+        "q": "orgid:0123456789abcdef",
+        "start": "1",
+        "num": "100"
+      },
       "body_file": "search_page_1.json",
       "status": 200
     },
@@ -36,32 +38,13 @@
       "url": "https://fixture.local/sharing/rest/search",
       "method": "GET",
       "match_querystring": true,
-      "params": { "f": "json", "q": "*", "start": "3", "num": "100" },
+      "params": {
+        "f": "json",
+        "q": "orgid:0123456789abcdef",
+        "start": "3",
+        "num": "100"
+      },
       "body_file": "search_page_2.json",
-      "status": 200
-    },
-    {
-      "url": "https://fixture.local/sharing/rest/content/items/item-feature-1",
-      "method": "GET",
-      "match_querystring": true,
-      "params": { "f": "json" },
-      "body_file": "item_feature_1.json",
-      "status": 200
-    },
-    {
-      "url": "https://fixture.local/sharing/rest/content/items/item-map-1",
-      "method": "GET",
-      "match_querystring": true,
-      "params": { "f": "json" },
-      "body_file": "item_map_1.json",
-      "status": 200
-    },
-    {
-      "url": "https://fixture.local/sharing/rest/content/items/item-webmap-1",
-      "method": "GET",
-      "match_querystring": true,
-      "params": { "f": "json" },
-      "body_file": "item_webmap_1.json",
       "status": 200
     }
   ]

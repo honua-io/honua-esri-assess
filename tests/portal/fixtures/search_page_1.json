@@ -1,0 +1,31 @@
+{
+  "total": 3,
+  "start": 1,
+  "num": 2,
+  "nextStart": 3,
+  "results": [
+    {
+      "id": "item-feature-1",
+      "title": "Parcels",
+      "owner": "publisher",
+      "type": "Feature Service",
+      "access": "org",
+      "url": "https://services.arcgis.com/demo/arcgis/rest/services/Parcels/FeatureServer",
+      "created": 1711929600000,
+      "modified": 1714521600000,
+      "tags": ["cadastre", "planning"],
+      "typeKeywords": ["Hosted Service", "Feature Service"]
+    },
+    {
+      "id": "item-map-1",
+      "title": "Capital Projects",
+      "owner": "planner",
+      "type": "Web Map",
+      "access": "public",
+      "created": 1717200000000,
+      "modified": 1717286400000,
+      "tags": ["projects"],
+      "typeKeywords": ["Web Map"]
+    }
+  ]
+}

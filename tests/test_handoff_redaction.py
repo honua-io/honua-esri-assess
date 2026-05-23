@@ -12,6 +12,7 @@ import pytest
 from honua_esri_assess import cli as cli_module
 from honua_esri_assess.cli import main as cli_main
 from honua_esri_assess.footprint import build_footprint
+from honua_esri_assess.portal.models import OrgInfo, PortalScanResult
 from honua_esri_assess.scanners import agol as agol_scanner
 from honua_esri_assess.scanners import server as server_scanner
 
@@ -56,6 +57,37 @@ def test_footprint_builder_sanitizes_source_target_credentials() -> None:
     _assert_no_secrets(footprint)
 
 
+def _patch_agol_portal_scan(monkeypatch: pytest.MonkeyPatch, seen: dict[str, str]) -> None:
+    class _FakePortalClient:
+        def __init__(self, target: str, credential: Any = None, *, timeout: float = 30.0) -> None:
+            seen["target"] = target
+            self.auth_mode = getattr(credential, "auth_mode", "anonymous")
+            self.portal_url = "https://fixture.local"
+            self.sharing_rest_url = "https://fixture.local/sharing/rest"
+            self.timeout = timeout
+
+    class _FakePortalScanner:
+        def __init__(self, client: _FakePortalClient, *, deep: bool = False) -> None:
+            self.client = client
+            self.deep = deep
+
+        def scan(self) -> PortalScanResult:
+            return PortalScanResult(
+                org=OrgInfo(
+                    id="fixture-org",
+                    name="Fixture Org",
+                    portal_url=self.client.portal_url,
+                    sharing_rest_url=self.client.sharing_rest_url,
+                ),
+                auth_mode=self.client.auth_mode,
+                items=[],
+                diagnostics=[],
+            )
+
+    monkeypatch.setattr(cli_module, "PortalClient", _FakePortalClient)
+    monkeypatch.setattr(cli_module, "PortalScanner", _FakePortalScanner)
+
+
 @pytest.mark.parametrize("backend", ["agol", "server"])
 def test_scan_cli_uses_raw_target_but_writes_sanitized_handoff(
     backend: str,
@@ -63,18 +95,6 @@ def test_scan_cli_uses_raw_target_but_writes_sanitized_handoff(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seen: dict[str, str] = {}
-
-    def _fake_agol_scan(target: str) -> dict[str, Any]:
-        seen["target"] = target
-        return {
-            "portal": {
-                "orgId": "fixture-org",
-                "orgUrl": "https://fixture.local",
-                "itemCounts": {},
-            },
-            "inventory": [],
-            "diagnostics": [],
-        }
 
     def _fake_server_scan(target: str) -> dict[str, Any]:
         seen["target"] = target
@@ -85,7 +105,7 @@ def test_scan_cli_uses_raw_target_but_writes_sanitized_handoff(
         }
 
     if backend == "agol":
-        monkeypatch.setattr(cli_module.agol_scanner, "scan", _fake_agol_scan)
+        _patch_agol_portal_scan(monkeypatch, seen)
     else:
         monkeypatch.setattr(cli_module.server_scanner, "scan", _fake_server_scan)
 
@@ -106,18 +126,7 @@ def test_report_over_scan_output_does_not_render_target_credentials(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _fake_scan(target: str) -> dict[str, Any]:
-        return {
-            "portal": {
-                "orgId": "fixture-org",
-                "orgUrl": "https://fixture.local",
-                "itemCounts": {},
-            },
-            "inventory": [],
-            "diagnostics": [],
-        }
-
-    monkeypatch.setattr(cli_module.agol_scanner, "scan", _fake_scan)
+    _patch_agol_portal_scan(monkeypatch, {})
     footprint_path = tmp_path / "EsriFootprint.json"
     scan_exit = cli_main(["scan", "agol", "--target", SECRET_TARGET, "--output", str(footprint_path)])
     assert scan_exit == 0

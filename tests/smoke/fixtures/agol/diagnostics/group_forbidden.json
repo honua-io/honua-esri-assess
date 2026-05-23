@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": 403,
+    "message": "User does not have permission to list groups."
+  }
+}

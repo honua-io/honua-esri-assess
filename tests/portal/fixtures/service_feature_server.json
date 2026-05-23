@@ -1,0 +1,27 @@
+{
+  "capabilities": "Query",
+  "layers": [
+    {
+      "id": 0,
+      "name": "Parcels",
+      "type": "Feature Layer",
+      "geometryType": "esriGeometryPolygon",
+      "maxRecordCount": 2000
+    },
+    {
+      "id": 1,
+      "name": "Addresses",
+      "type": "Feature Layer",
+      "geometryType": "esriGeometryPoint",
+      "maxRecordCount": 2000
+    }
+  ],
+  "tables": [
+    {
+      "id": 2,
+      "name": "Owners",
+      "type": "Table",
+      "maxRecordCount": 2000
+    }
+  ]
+}

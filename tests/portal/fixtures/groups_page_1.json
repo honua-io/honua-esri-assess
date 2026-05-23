@@ -1,0 +1,14 @@
+{
+  "total": 1,
+  "start": 1,
+  "num": 100,
+  "nextStart": -1,
+  "results": [
+    {
+      "id": "group-1",
+      "title": "Public Data",
+      "owner": "publisher",
+      "access": "public"
+    }
+  ]
+}

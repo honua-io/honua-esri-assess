@@ -1,0 +1,14 @@
+{
+  "id": "org-123",
+  "name": "Demo GIS",
+  "isPortal": false,
+  "urlKey": "demo",
+  "customBaseUrl": "maps.arcgis.com",
+  "helperServices": {
+    "routing": {},
+    "printTask": {}
+  },
+  "portalProperties": {
+    "apps": ["dashboards"]
+  }
+}

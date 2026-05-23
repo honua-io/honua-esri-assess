@@ -85,7 +85,9 @@ Per release line, the closed product receives:
    [`docs/samples/`](../samples/esri-footprint.sample.json)
    that the closed product can use as a conformance check, plus fixture
    corpora and golden expectations under `tests/smoke/` for scanner-backed
-   conformance checks.
+   conformance checks. Scanner-specific unit fixtures may live under
+   `tests/<scanner>/` when they cover producer behavior that is not part of
+   the cross-backend smoke corpus.
 
 ## Verifying a footprint before handoff
 
@@ -148,6 +150,14 @@ artifact:
 
 - No write APIs are called against ArcGIS Online, ArcGIS Server, or any
   FileGDB.
+- The AGOL producer uses Portal Sharing REST `GET` calls only. It normalizes
+  organization URLs and `/sharing/rest` URLs, then reads `portals/self`,
+  `community/groups`, `search`, `community/users` when token-authenticated,
+  and optional ArcGIS Online hosted service metadata when `--deep` is enabled.
+  The AGOL CLI also supports a per-request `--timeout`; that timeout only
+  limits local waiting and does not change the handoff artifact shape.
+- Pre-existing AGOL tokens are passed as query-string credentials to Esri only;
+  they are redacted from diagnostics, logs, and the emitted footprint.
 - No field in the artifact records or implies a write.
 - The closed product is expected to honor the same read-only stance on
   any subsequent assessment passes that share this contract.
@@ -159,9 +169,11 @@ Recoverable failures during scanning are surfaced as typed entries in
 or the footprint. A command can exit nonzero after writing an artifact when
 the artifact contains `error`-severity diagnostics; the artifact remains the
 handoff contract and should be inspected locally before upload. If the CLI
-cannot produce or write the artifact, it exits nonzero with a prospect-safe
-message on stderr and no stack trace. The artifact diagnostic shape is fixed by
-the [versioning policy](./versioning.md#diagnostics-surface); the vocabulary is
+cannot produce or write the artifact, it exits nonzero with one prospect-safe
+typed error line on stderr. Raw tracebacks are developer-only behavior behind
+an explicit debug option, not the default customer surface. The artifact
+diagnostic shape is fixed by the
+[versioning policy](./versioning.md#diagnostics-surface); the vocabulary is
 closed per release line. At v0.1 the catalog is locked to six codes; see the
 [v0.1 diagnostic code catalog](./esri-footprint.v0.1.md#diagnostic-code-catalog).
 

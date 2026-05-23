@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "honua-esri-assess"
+version = "0.0.0"
+description = "Read-only Esri footprint assessment CLI for Honua migration discovery."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Honua" }]
+
+[project.scripts]
+honua-esri-assess = "honua_esri_assess.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -16,12 +16,15 @@ DIAGNOSTIC_CODES: Final[frozenset[str]] = frozenset(
     }
 )
 
+SEVERITY_LEVELS: Final[frozenset[str]] = frozenset({"info", "warning", "error"})
+
 
 @dataclass(frozen=True)
 class Diagnostic:
     code: str
     message: str
-    target: str | None = None
+    severity: str = "warning"
+    field: str | None = None
 
     def __post_init__(self) -> None:
         if self.code not in DIAGNOSTIC_CODES:
@@ -29,9 +32,18 @@ class Diagnostic:
                 f"Unknown diagnostic code {self.code!r}; "
                 f"expected one of {sorted(DIAGNOSTIC_CODES)}"
             )
+        if self.severity not in SEVERITY_LEVELS:
+            raise ValueError(
+                f"Unknown diagnostic severity {self.severity!r}; "
+                f"expected one of {sorted(SEVERITY_LEVELS)}"
+            )
 
     def to_dict(self) -> dict[str, str]:
-        out: dict[str, str] = {"code": self.code, "message": self.message}
-        if self.target is not None:
-            out["target"] = self.target
+        out: dict[str, str] = {
+            "code": self.code,
+            "severity": self.severity,
+            "message": self.message,
+        }
+        if self.field is not None:
+            out["field"] = self.field
         return out

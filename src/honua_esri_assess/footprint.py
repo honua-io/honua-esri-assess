@@ -11,8 +11,8 @@ from typing import Any, Iterable
 from . import __version__
 from .diagnostics import Diagnostic
 
-SCHEMA_VERSION = "v0.1"
-TOOL_NAME = "honua-esri-assess"
+SCHEMA_VERSION = "0.1.0"
+PRODUCER_NAME = "honua-esri-assess"
 
 
 def build_footprint(
@@ -35,7 +35,7 @@ def build_footprint(
     now = generated_at or datetime.now(timezone.utc)
     footprint: dict[str, Any] = {
         "schemaVersion": SCHEMA_VERSION,
-        "tool": {"name": TOOL_NAME, "version": __version__},
+        "producer": {"name": PRODUCER_NAME, "version": __version__},
         "source": source,
         "generatedAt": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "inventory": items,

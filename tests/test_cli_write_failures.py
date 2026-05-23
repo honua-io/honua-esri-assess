@@ -76,8 +76,8 @@ def test_report_write_to_directory_emits_typed_diagnostic(
     capsys,
 ) -> None:
     footprint = {
-        "schemaVersion": "v0.1",
-        "tool": {"name": "honua-esri-assess", "version": "0.0.0"},
+        "schemaVersion": "0.1.0",
+        "producer": {"name": "honua-esri-assess", "version": "0.0.0"},
         "source": {"kind": "filegdb", "target": "stub.gdb"},
         "generatedAt": "2026-01-01T00:00:00Z",
         "inventory": [],

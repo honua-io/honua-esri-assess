@@ -51,9 +51,9 @@ def test_agol_happy_scan(
     footprint = json.loads(output.read_text(encoding="utf-8"))
     schema_validator.validate(footprint)
 
-    assert footprint["schemaVersion"] == "v0.1"
-    assert footprint["tool"]["name"] == "honua-esri-assess"
-    assert footprint["source"]["kind"] == "arcgis-online"
+    assert footprint["schemaVersion"] == "0.1.0"
+    assert footprint["producer"]["name"] == "honua-esri-assess"
+    assert footprint["source"]["kind"] == "agol"
     assert footprint["source"]["portalName"] == "Honua Demo Portal"
     assert footprint["inventory"], "inventory should be non-empty"
 

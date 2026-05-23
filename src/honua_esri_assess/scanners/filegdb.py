@@ -36,7 +36,7 @@ def scan(target: str | Path) -> dict[str, Any]:
             Diagnostic(
                 code="partial-coverage",
                 message="No FileGDB inventory descriptor found at the supplied path.",
-                target=str(path.name),
+                field=str(path.name),
             )
         )
         return {
@@ -52,7 +52,7 @@ def scan(target: str | Path) -> dict[str, Any]:
             Diagnostic(
                 code="partial-coverage",
                 message="FileGDB inventory descriptor could not be parsed.",
-                target=descriptor_path.name,
+                field=descriptor_path.name,
             )
         )
         return {
@@ -67,7 +67,7 @@ def scan(target: str | Path) -> dict[str, Any]:
             Diagnostic(
                 code="partial-coverage",
                 message="FileGDB inventory descriptor missing 'featureClasses'.",
-                target=descriptor_path.name,
+                field=descriptor_path.name,
             )
         )
         feature_classes = []
@@ -112,7 +112,7 @@ def _to_record(fc: dict[str, Any], diagnostics: list[Diagnostic]) -> dict[str, A
                 Diagnostic(
                     code="unsupported-item-type",
                     message=f"Unrecognized geometry type {geom!r}; recorded as-is.",
-                    target=name,
+                    field=name,
                 )
             )
             normalized = geom

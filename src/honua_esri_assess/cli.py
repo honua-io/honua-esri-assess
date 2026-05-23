@@ -81,7 +81,7 @@ def _run_agol(target: str, output: Path) -> int:
     except Exception:
         return _emit_typed_failure("AGOL scan failed before producing an inventory.")
     footprint = build_footprint(
-        source_kind="arcgis-online",
+        source_kind="agol",
         target=target,
         inventory=result["inventory"],
         diagnostics=result["diagnostics"],
@@ -154,8 +154,8 @@ def _emit_diagnostics_to_stderr(footprint: dict) -> None:
     for diag in footprint.get("diagnostics", []) or []:
         code = diag.get("code", "unknown")
         message = diag.get("message", "")
-        target = diag.get("target")
-        suffix = f" [target={target}]" if target else ""
+        field = diag.get("field")
+        suffix = f" [field={field}]" if field else ""
         print(f"{code}: {message}{suffix}", file=sys.stderr)
 
 

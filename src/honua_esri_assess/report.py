@@ -22,7 +22,7 @@ def render(footprint: dict[str, Any]) -> str:
     if "portalName" in source:
         lines.append(f"- **Portal name:** {source['portalName']}")
     lines.append(f"- **Generated at:** {footprint.get('generatedAt', 'unknown')}")
-    lines.append(f"- **Tool version:** {footprint.get('tool', {}).get('version', 'unknown')}")
+    lines.append(f"- **Tool version:** {footprint.get('producer', {}).get('version', 'unknown')}")
     lines.append("")
 
     counts = footprint.get("counts", {})
@@ -68,8 +68,8 @@ def render(footprint: dict[str, Any]) -> str:
         for diag in diagnostics:
             code = diag.get("code", "unknown")
             message = diag.get("message", "")
-            target = diag.get("target")
-            suffix = f" (target: {target})" if target else ""
+            field = diag.get("field")
+            suffix = f" (field: {field})" if field else ""
             lines.append(f"- **{code}** — {message}{suffix}")
     lines.append("")
     return "\n".join(lines)

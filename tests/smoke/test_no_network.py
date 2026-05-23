@@ -54,7 +54,7 @@ def test_agol_scan_opens_no_real_sockets(
         )
     assert exit_code == 0
     footprint = json.loads(output.read_text(encoding="utf-8"))
-    assert footprint["source"]["kind"] == "arcgis-online"
+    assert footprint["source"]["kind"] == "agol"
     assert footprint["inventory"], "expected inventory to be populated under the no-network guard"
 
 

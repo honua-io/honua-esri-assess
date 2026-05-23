@@ -52,7 +52,7 @@ def scan(target: str, *, session: requests.Session | None = None) -> dict[str, A
                 Diagnostic(
                     code="unsupported-item-type",
                     message=f"Skipped unsupported item type {kind!r}.",
-                    target=item.get("id"),
+                    field=item.get("id"),
                 )
             )
             continue
@@ -155,7 +155,7 @@ def _fetch_json(
             Diagnostic(
                 code="partial-coverage",
                 message=f"Could not reach {target_label}; inventory may be incomplete.",
-                target=target_label,
+                field=target_label,
             )
         )
         return None
@@ -165,7 +165,7 @@ def _fetch_json(
             Diagnostic(
                 code="missing-permission",
                 message=f"Access denied while reading {target_label}.",
-                target=target_label,
+                field=target_label,
             )
         )
         return None
@@ -174,7 +174,7 @@ def _fetch_json(
             Diagnostic(
                 code="rate-limited",
                 message=f"Rate limited while reading {target_label}; partial inventory returned.",
-                target=target_label,
+                field=target_label,
             )
         )
         return None
@@ -183,7 +183,7 @@ def _fetch_json(
             Diagnostic(
                 code="partial-coverage",
                 message=f"Upstream returned HTTP {status} for {target_label}.",
-                target=target_label,
+                field=target_label,
             )
         )
         return None
@@ -194,7 +194,7 @@ def _fetch_json(
             Diagnostic(
                 code="partial-coverage",
                 message=f"Non-JSON response from {target_label}.",
-                target=target_label,
+                field=target_label,
             )
         )
         return None
@@ -205,7 +205,7 @@ def _fetch_json(
                 Diagnostic(
                     code="missing-permission",
                     message=f"Access denied while reading {target_label}.",
-                    target=target_label,
+                    field=target_label,
                 )
             )
         elif err_code == 429:
@@ -213,7 +213,7 @@ def _fetch_json(
                 Diagnostic(
                     code="rate-limited",
                     message=f"Rate limited while reading {target_label}; partial inventory returned.",
-                    target=target_label,
+                    field=target_label,
                 )
             )
         else:
@@ -221,7 +221,7 @@ def _fetch_json(
                 Diagnostic(
                     code="partial-coverage",
                     message=f"Esri returned an error envelope for {target_label}.",
-                    target=target_label,
+                    field=target_label,
                 )
             )
         return None

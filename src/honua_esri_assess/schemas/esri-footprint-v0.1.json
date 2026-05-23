@@ -1,0 +1,486 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.honua.io/esri-footprint/v0.1.0/esri-footprint.json",
+  "title": "EsriFootprint",
+  "description": "Read-only inventory of an Esri estate (ArcGIS Online, ArcGIS Server, or FileGDB) produced by honua-esri-assess and consumed by the closed Honua migration product. Schema version esri-footprint/v0.1 (full SemVer in $id). v0.x is unstable — breaking changes are permitted within v0.x; v1.0 is the first stable promise.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "tool",
+    "source",
+    "inventory",
+    "counts",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "v0.1",
+      "description": "Major.minor of the contract carried in-band. Full SemVer (e.g. v0.1.0) lives in $id."
+    },
+    "generatedAt": {
+      "$ref": "#/$defs/RFC3339",
+      "description": "When the scanner finished producing this artifact (RFC3339 UTC)."
+    },
+    "tool": {
+      "$ref": "#/$defs/ToolProvenance"
+    },
+    "source": {
+      "$ref": "#/$defs/Source"
+    },
+    "portal": {
+      "$ref": "#/$defs/PortalFacet"
+    },
+    "server": {
+      "$ref": "#/$defs/ServerFacet"
+    },
+    "filegdb": {
+      "$ref": "#/$defs/FileGdbFacet"
+    },
+    "inventory": {
+      "type": "array",
+      "description": "Normalized records from the scanned source, discriminated by EsriItem.kind. Portal items, Server services, and FileGDB feature classes coexist in a single list.",
+      "items": { "$ref": "#/$defs/EsriItem" }
+    },
+    "counts": {
+      "$ref": "#/$defs/Counts"
+    },
+    "diagnostics": {
+      "type": "array",
+      "description": "Typed, prospect-safe diagnostics surfaced during scanning. Raw exceptions and stack traces are forbidden by project constraint and excluded from the schema.",
+      "items": { "$ref": "#/$defs/Diagnostic" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "source": {
+            "properties": { "kind": { "const": "arcgis-online" } },
+            "required": ["kind"]
+          }
+        },
+        "required": ["source"]
+      },
+      "then": {
+        "required": ["portal"],
+        "not": {
+          "anyOf": [
+            { "required": ["server"] },
+            { "required": ["filegdb"] }
+          ]
+        },
+        "properties": {
+          "inventory": {
+            "items": { "$ref": "#/$defs/PortalItem" }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "source": {
+            "properties": { "kind": { "const": "arcgis-server" } },
+            "required": ["kind"]
+          }
+        },
+        "required": ["source"]
+      },
+      "then": {
+        "required": ["server"],
+        "not": {
+          "anyOf": [
+            { "required": ["portal"] },
+            { "required": ["filegdb"] }
+          ]
+        },
+        "properties": {
+          "inventory": {
+            "items": { "$ref": "#/$defs/ServerService" }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "source": {
+            "properties": { "kind": { "const": "filegdb" } },
+            "required": ["kind"]
+          }
+        },
+        "required": ["source"]
+      },
+      "then": {
+        "required": ["filegdb"],
+        "not": {
+          "anyOf": [
+            { "required": ["portal"] },
+            { "required": ["server"] }
+          ]
+        },
+        "properties": {
+          "inventory": {
+            "items": { "$ref": "#/$defs/FileGdbFeatureClass" }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "RFC3339": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?Z$",
+      "description": "RFC3339 UTC date-time string with an explicit Z suffix."
+    },
+    "SemVer": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+      "description": "Semantic version string (MAJOR.MINOR.PATCH with optional pre-release/build metadata)."
+    },
+    "ToolProvenance": {
+      "type": "object",
+      "description": "Scanner provenance. version is required so consumers can reason about which scanner produced the artifact.",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "const": "honua-esri-assess",
+          "description": "Always honua-esri-assess at v0.1; other producers are not part of the contract."
+        },
+        "version": { "$ref": "#/$defs/SemVer" }
+      }
+    },
+    "Source": {
+      "type": "object",
+      "description": "Identifies the scanned Esri source. Discriminated by kind. locator must be a prospect-safe identifier — never credentials, never raw on-prem paths; FileGDB paths are surfaced as a salted hash. locator format is constrained by kind via the allOf branches below.",
+      "additionalProperties": false,
+      "required": ["kind", "locator", "capturedAt"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["arcgis-online", "arcgis-server", "filegdb"]
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Prospect-safe identifier for the source. AGOL: host + organization id (e.g. honua.maps.arcgis.com/0123ABC). Server: base services URL with no query string, fragment, or userinfo. FileGDB: salted sha256 of the gdb path (sha256:<64 hex>)."
+        },
+        "capturedAt": {
+          "$ref": "#/$defs/RFC3339",
+          "description": "When the scan against this source began."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "const": "filegdb" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "locator": { "pattern": "^sha256:[0-9a-f]{64}$" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "arcgis-online" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "locator": { "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}/[A-Za-z0-9][A-Za-z0-9_-]{0,127}$" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "arcgis-server" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "locator": { "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$" }
+            }
+          }
+        }
+      ]
+    },
+    "SpatialReference": {
+      "type": "object",
+      "description": "Spatial reference identification. Esri publishes wkid, latestWkid, or wkt inconsistently — at least one must be present. Closed object: producers must normalize to the documented keys before emitting.",
+      "additionalProperties": false,
+      "properties": {
+        "wkid": { "type": "integer" },
+        "latestWkid": { "type": "integer" },
+        "wkt": { "type": "string" }
+      },
+      "anyOf": [
+        { "required": ["wkid"] },
+        { "required": ["latestWkid"] },
+        { "required": ["wkt"] }
+      ]
+    },
+    "Extent": {
+      "type": "object",
+      "description": "Bounding box and spatial reference for an item or layer.",
+      "additionalProperties": false,
+      "required": ["bbox", "crs"],
+      "properties": {
+        "bbox": {
+          "type": "array",
+          "description": "[xmin, ymin, xmax, ymax] in the crs coordinate system.",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "number" }
+        },
+        "crs": { "$ref": "#/$defs/SpatialReference" }
+      }
+    },
+    "GeometryType": {
+      "description": "Esri geometry type tag. null is allowed for tables and non-spatial items.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "esriGeometryPoint",
+            "esriGeometryMultipoint",
+            "esriGeometryPolyline",
+            "esriGeometryPolygon",
+            "esriGeometryEnvelope"
+          ]
+        },
+        { "type": "null" }
+      ]
+    },
+    "FieldDescriptor": {
+      "type": "object",
+      "description": "Minimal field metadata captured for FileGDB feature classes. Closed object: extras require a schema bump.",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string", "description": "Esri field type tag (e.g. esriFieldTypeOID, esriFieldTypeString)." },
+        "nullable": { "type": "boolean" }
+      }
+    },
+    "EsriTypeCountMap": {
+      "type": "object",
+      "description": "Map of Esri item or service type labels to counts. Property names are constrained to display-label characters so URLs, query tokens, credential strings, and raw path fragments cannot be carried as map keys.",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,79}$"
+      },
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "PortalFacet": {
+      "type": "object",
+      "description": "Facet required iff source.kind == arcgis-online. Closed at v0.1: vendor extras, callback URLs, and credential-like fields are schema-rejected so the artifact cannot smuggle telemetry or secrets.",
+      "additionalProperties": false,
+      "required": ["orgId", "orgUrl", "itemCounts"],
+      "properties": {
+        "orgId": { "type": "string", "minLength": 1 },
+        "orgUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$",
+          "description": "ArcGIS Online organization base URL. Schema pattern rejects userinfo, query strings, and fragments so credentials and session tokens cannot ride along."
+        },
+        "itemCounts": {
+          "$ref": "#/$defs/EsriTypeCountMap",
+          "description": "Map of Esri item type → count (e.g. \"Feature Service\": 12). Keys are constrained to prospect-safe type labels."
+        },
+        "sharingSummary": {
+          "type": "object",
+          "description": "Roll-up of sharing levels across portal items.",
+          "additionalProperties": false,
+          "properties": {
+            "private": { "type": "integer", "minimum": 0 },
+            "org": { "type": "integer", "minimum": 0 },
+            "public": { "type": "integer", "minimum": 0 },
+            "shared": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "ServerFacet": {
+      "type": "object",
+      "description": "Facet required iff source.kind == arcgis-server. Closed at v0.1: vendor extras, callback URLs, and credential-like fields are schema-rejected so the artifact cannot smuggle telemetry or secrets.",
+      "additionalProperties": false,
+      "required": ["folders", "serviceCounts"],
+      "properties": {
+        "folders": {
+          "type": "array",
+          "description": "Top-level service folder names. Empty array if all services live at the root.",
+          "items": { "type": "string" }
+        },
+        "serviceCounts": {
+          "$ref": "#/$defs/EsriTypeCountMap",
+          "description": "Map of Esri service type → count (e.g. \"MapServer\": 4). Keys are constrained to prospect-safe type labels."
+        },
+        "version": {
+          "type": "string",
+          "description": "Reported ArcGIS Server version (e.g. \"11.2\")."
+        }
+      }
+    },
+    "FileGdbFacet": {
+      "type": "object",
+      "description": "Facet required iff source.kind == filegdb. Closed at v0.1: vendor extras, callback URLs, and credential-like fields are schema-rejected so the artifact cannot smuggle telemetry or secrets.",
+      "additionalProperties": false,
+      "required": ["pathHash", "featureClassCount"],
+      "properties": {
+        "pathHash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "Salted sha256 of the FileGDB path. The raw path is never published."
+        },
+        "featureClassCount": { "type": "integer", "minimum": 0 },
+        "version": {
+          "type": "string",
+          "description": "FileGDB format version reported by the reader, when available."
+        }
+      }
+    },
+    "EsriItem": {
+      "description": "Discriminated union of normalized inventory records. Variants are closed at v0.1: extras require a schema bump so the artifact cannot smuggle credentials or telemetry fields per item.",
+      "oneOf": [
+        { "$ref": "#/$defs/PortalItem" },
+        { "$ref": "#/$defs/ServerService" },
+        { "$ref": "#/$defs/FileGdbFeatureClass" }
+      ]
+    },
+    "PortalItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "type", "owner", "title", "sharing", "modified"],
+      "properties": {
+        "kind": { "const": "portal-item" },
+        "id": { "type": "string", "minLength": 1, "description": "Portal item id." },
+        "type": { "type": "string", "description": "Esri portal item type (e.g. \"Feature Service\", \"Web Map\")." },
+        "owner": { "type": "string" },
+        "title": { "type": "string" },
+        "sharing": {
+          "type": "string",
+          "enum": ["private", "org", "public", "shared"]
+        },
+        "modified": { "$ref": "#/$defs/RFC3339" },
+        "extent": { "$ref": "#/$defs/Extent" },
+        "dependencies": {
+          "type": "array",
+          "description": "Portal item ids this item references (e.g. webmap → services). Edges between layers/services are deferred to v0.2.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "ServerService": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "serviceUrl", "serviceType", "folder", "layerCount"],
+      "properties": {
+        "kind": { "const": "server-service" },
+        "serviceUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$",
+          "description": "Fully-qualified service URL with no query string, fragment, or userinfo. Credentials must never appear in this field."
+        },
+        "serviceType": {
+          "type": "string",
+          "description": "Esri service type (e.g. MapServer, FeatureServer, ImageServer)."
+        },
+        "folder": {
+          "type": "string",
+          "description": "Folder name relative to the services root, or empty string if the service lives at the root."
+        },
+        "layerCount": { "type": "integer", "minimum": 0 },
+        "geometryType": { "$ref": "#/$defs/GeometryType" },
+        "extent": { "$ref": "#/$defs/Extent" },
+        "sr": { "$ref": "#/$defs/SpatialReference" }
+      }
+    },
+    "FileGdbFeatureClass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name", "geometryType", "sr"],
+      "properties": {
+        "kind": { "const": "filegdb-feature-class" },
+        "name": { "type": "string", "minLength": 1 },
+        "geometryType": { "$ref": "#/$defs/GeometryType" },
+        "sr": { "$ref": "#/$defs/SpatialReference" },
+        "featureCount": { "type": "integer", "minimum": 0 },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FieldDescriptor" }
+        }
+      }
+    },
+    "Counts": {
+      "type": "object",
+      "description": "Aggregate roll-up of the inventory. Top-level closed so adding a new aggregate is a deliberate schema bump.",
+      "additionalProperties": false,
+      "required": ["items", "layers", "featureClasses"],
+      "properties": {
+        "items": {
+          "type": "object",
+          "description": "Totals by EsriItem.kind: portal-item, server-service, filegdb-feature-class.",
+          "additionalProperties": false,
+          "properties": {
+            "portal-item": { "type": "integer", "minimum": 0 },
+            "server-service": { "type": "integer", "minimum": 0 },
+            "filegdb-feature-class": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "layers": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Sum of layerCount across server-service items."
+        },
+        "featureClasses": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of filegdb-feature-class inventory records."
+        }
+      }
+    },
+    "Diagnostic": {
+      "type": "object",
+      "description": "Typed, prospect-safe diagnostic. code is drawn from a locked v0.1 enum; new codes require a v0.2 vocabulary expansion. Clarifying existing codes may land in a v0.1.x doc bump.",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "scope"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "rate-limited",
+            "partial-coverage",
+            "missing-permission",
+            "unresolved-reference",
+            "unsupported-item-type",
+            "redacted-field"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "warn", "error"]
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable summary. Must not contain raw stack traces, credentials, or full on-prem paths."
+        },
+        "scope": {
+          "type": "string",
+          "description": "Identifier of the affected area — usually source.kind, a folder, or an EsriItem identifier."
+        },
+        "hint": {
+          "type": "string",
+          "description": "Optional remediation hint surfaced to the prospect."
+        }
+      }
+    }
+  }
+}

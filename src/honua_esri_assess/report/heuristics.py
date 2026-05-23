@@ -174,13 +174,13 @@ def score_complexity(
 
     diag_entries = diagnostics(footprint)
     severity_counts = Counter(str(entry.get("severity") or "info") for entry in diag_entries)
-    complex_types = sorted(
-        {
-            str(item.get("type"))
-            for item in inventory_items(footprint)
-            if item.get("kind") == "portal-item" and item.get("type") in COMPLEX_PORTAL_TYPES
-        }
-    )
+    complex_type_set: set[str] = set()
+    for item in inventory_items(footprint):
+        if item.get("kind") == "portal-item":
+            item_type = item_type_label(item)
+            if item_type in COMPLEX_PORTAL_TYPES:
+                complex_type_set.add(item_type)
+    complex_types = sorted(complex_type_set)
     detected_sources = sorted({item_source_label(item) for item in inventory_items(footprint)})
 
     rationale = [
@@ -430,14 +430,14 @@ def _ordering_rank(item: Mapping[str, Any]) -> int:
     if kind == "filegdb-feature-class":
         return 10
     if kind == "server-service":
-        service_type = item.get("serviceType")
+        service_type = str(item.get("serviceType") or "")
         if service_type == "FeatureServer":
             return 20
         if service_type in {"MapServer", "ImageServer"}:
             return 30
         return 90
     if kind == "portal-item":
-        item_type = item.get("type")
+        item_type = str(item.get("type") or "")
         if item_type == "Feature Service":
             return 40
         if item_type in {"Tile Service", "Vector Tile Service"}:

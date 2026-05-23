@@ -1,13 +1,35 @@
-# Markdown Readiness Report
+# Markdown readiness report
 
 The readiness report is the human-readable companion to
-`EsriFootprint.json`. It is not a second handoff contract for the closed Honua
-migration product. The only machine contract remains the JSON footprint and
-its published v0.1 schema.
+`EsriFootprint.json`. It helps a prospect review inventory, rough migration
+complexity, manual-review flags, suggested sequencing, and diagnostics before
+the footprint is handed to Honua.
 
-The report is read-only by construction: it is rendered from an already
-captured footprint and does not contact ArcGIS Online, ArcGIS Server, FileGDB
-paths, Honua services, or any telemetry endpoint.
+It is **not** a second handoff contract. `EsriFootprint.json` remains the sole
+machine-readable contract consumed by the closed Honua migration product. The
+report is read-only by construction: it is rendered from an already captured
+footprint and does not contact ArcGIS Online, ArcGIS Server, FileGDB paths,
+Honua services, or any telemetry endpoint.
+
+## Renderer contract
+
+`honua_esri_assess.report.render()` accepts a parsed footprint mapping and
+returns deterministic Markdown.
+
+- The renderer performs no file, network, logging, or Esri-system I/O.
+- The renderer does not validate or mutate the input footprint.
+- The CLI owns JSON parsing, optional schema validation, input/output paths,
+  logging, and prospect-safe error handling.
+- The report wording, heading layout, and heuristic thresholds are not schema
+  versioned. Changes to those surfaces do not change `schemaVersion`.
+
+The committed sample report is generated from the canonical footprint:
+
+- Footprint: [`docs/samples/esri-footprint.sample.json`](./samples/esri-footprint.sample.json)
+- Report: [`docs/samples/readiness-report.sample.md`](./samples/readiness-report.sample.md)
+
+The test suite compares the sample report byte-for-byte with freshly rendered
+output.
 
 ## CLI usage
 
@@ -20,7 +42,8 @@ honua-esri-assess report \
   --input docs/samples/esri-footprint.sample.json \
   --output -
 
-cat EsriFootprint.json | honua-esri-assess report --input - --output -
+honua-esri-assess report --input - --output -
+honua-esri-assess report --input EsriFootprint.json --strict
 ```
 
 | Flag | Required | Description |
@@ -35,15 +58,11 @@ Schema validation uses the v0.1 schema packaged with the CLI and the runtime
 `jsonschema` dependency. The published schema also remains available for audit
 at [`schemas/esri-footprint-v0.1.json`](../schemas/esri-footprint-v0.1.json).
 
-By default, validation findings are rendered as a `Schema Warnings` section and
-the report still exits successfully. If validation cannot run because the
-installed package is incomplete, that validation-unavailable notice is also
-rendered as a schema warning. Use `--strict` when an invalid footprint or
-unavailable validator should fail before rendering:
-
-```bash
-honua-esri-assess report --input EsriFootprint.json --strict
-```
+Without `--strict`, validation failures are rendered into a `Schema Warnings`
+section and the report still exits successfully. If validation cannot run
+because the installed package is incomplete, the validation-unavailable notice
+is also rendered as a schema warning. `--strict` fails invalid footprints and
+also fails with a typed schema error when validation cannot run.
 
 For prospect-facing runs, leave `--debug` off so the stderr surface remains
 typed and sanitized. The report command does not write customer Esri systems or
@@ -57,11 +76,6 @@ from honua_esri_assess.report import RenderOptions, render
 markdown = render(footprint, options=RenderOptions(max_inventory_rows=500))
 ```
 
-`render()` is a pure deterministic function: parsed footprint mapping in,
-Markdown string out. It performs no file I/O, network I/O, logging, schema
-loading, or schema validation. The CLI owns reading, writing, stdout/stderr,
-logging setup, and validation.
-
 `RenderOptions` controls:
 
 - `include_diagnostics`: include the diagnostics summary section.
@@ -70,74 +84,74 @@ logging setup, and validation.
   future callers.
 - `schema_warnings`: warnings to render under `Schema Warnings`.
 
+## CLI response contract
+
+The report command prints sanitized, typed errors. It does not print raw Python
+tracebacks unless `--debug` is set.
+
+| Condition | Exit code | Output |
+| --- | ---: | --- |
+| Report rendered successfully | `0` | Markdown is written to `--output`; stdout is used only when `--output -`. |
+| Input read, JSON parse, non-object JSON, or output write failure | `2` | `stderr` starts with `error: [report.input.read]`, `error: [report.input.parse]`, or `error: [report.input.write]`. |
+| `--strict` schema validation failure | `3` | `stderr` starts with `error: [report.schema.invalid]`. |
+| Renderer or unexpected internal failure | `4` | `stderr` starts with `error: [report.render.internal]`. |
+
+Local logs are allowed through `--verbose` and `--debug`.
+
 ## Report sections
 
-The renderer emits these sections when data is available:
+| Section | Purpose | Source fields |
+| --- | --- | --- |
+| Header | Identifies schema version, generation time, source, locator, capture time, and scanner build. | `schemaVersion`, `generatedAt`, `source`, `tool` |
+| Schema Warnings | Lists validation issues or skipped-validation notices from the CLI. | CLI validation result |
+| Service Inventory | Groups captured inventory by source family and item kind, then renders a stable table per group. | `inventory[]` |
+| Layer Count | Shows total inventory records, server layers, FileGDB feature classes, and source/type breakdowns. | `counts`, facets, `inventory[]` |
+| Complexity Estimate | Assigns a Small, Medium, Large, or Very Large bucket and explains the rationale. | `counts`, `inventory[]`, `diagnostics[]` |
+| Manual Review Items | Flags entries that likely need human planning before migration. | `inventory[]`, scoped `diagnostics[]` |
+| Migration Ordering | Suggests a deterministic high-level migration sequence. | `inventory[]` |
+| Diagnostics Summary | Groups diagnostics by severity and code, then lists sanitized detail lines. | `diagnostics[]` |
 
-- `Honua Esri Readiness Report`: schema, source, capture time, and scanner
-  provenance.
-- `Schema Warnings`: best-effort validation findings supplied by the CLI.
-- `Service Inventory`: grouped inventory rows for portal items, server
-  services, or FileGDB feature classes.
-- `Layer Count`: inventory total, server layer total, FileGDB feature class
-  total, and source/type breakdowns.
-- `Complexity Estimate`: Small, Medium, Large, or Very Large bucket with
-  rationale.
-- `Manual Review Items`: items flagged by v0.1 review heuristics.
-- `Migration Ordering`: deterministic recommended ordering groups.
-- `Diagnostics Summary`: diagnostic counts by severity/code plus detail lines.
+## Complexity heuristic
 
-## Heuristics
-
-Complexity uses the highest bucket from inventory-record count and server-layer
-count:
+The bucket is the higher of the item-count band and server-layer band.
+Feature-class count, complex portal types, multiple source families, and
+diagnostic volume are included in the rationale but do not raise the bucket by
+themselves.
 
 | Bucket | Inventory records | Server layers |
 | --- | ---: | ---: |
-| Small | <= 50 | <= 200 |
-| Medium | <= 500 | <= 2,000 |
-| Large | <= 5,000 | <= 20,000 |
-| Very Large | > 5,000 | > 20,000 |
+| Small | `0-50` | `0-200` |
+| Medium | `51-500` | `201-2,000` |
+| Large | `501-5,000` | `2,001-20,000` |
+| Very Large | `>5,000` | `>20,000` |
 
-FileGDB feature class count, complex portal item types, diagnostic volume, and
-multi-source inventory are reported in the rationale but do not raise the
-complexity bucket by themselves.
+## Manual-review reasons
 
-Manual review reason codes are:
+| Reason code | When it appears |
+| --- | --- |
+| `flagged-by-diagnostic` | A `warn` or `error` diagnostic is scoped to the item's `id`, `title`, `serviceUrl`, or `name`. |
+| `complex-item-type` | A portal item is a specialized type such as `Experience`, `Geocoding Service`, `Geoprocessing Service`, `Insights Workbook`, `Locator Package`, `Notebook`, `Solution`, `Survey123 Form`, or `Workforce Project`. |
+| `unknown-item-type` | A portal item type is `Other`, `Unknown`, `Unsupported`, or `Unsupported Item Type`. |
+| `missing-spatial-reference` | A FileGDB feature class has no `wkid`, `latestWkid`, or `wkt` in its spatial reference. |
+| `legacy-spatial-reference` | A FileGDB feature class uses a v0.1 watchlist WKID: `26711`, `32040`, or `102671`. |
+| `unsupported-service-type` | An ArcGIS Server service type is outside `FeatureServer`, `ImageServer`, `MapServer`, or `VectorTileServer`. |
 
-- `flagged-by-diagnostic`
-- `complex-item-type`
-- `unknown-item-type`
-- `missing-spatial-reference`
-- `legacy-spatial-reference`
-- `unsupported-service-type`
+## Migration ordering
 
-Migration ordering is deterministic and groups data-like sources before
-dependent maps, apps, dashboards, and specialized portal content:
+The ordering is advisory and deterministic. It helps readers plan review
+passes; it does not add write or migration semantics to the footprint.
 
-1. FileGDB feature classes.
-2. ArcGIS Server feature services.
-3. ArcGIS Server map and image services.
-4. AGOL hosted feature services.
-5. AGOL hosted tile and vector tile services.
-6. AGOL web maps.
-7. AGOL web apps, dashboards, and experiences.
-8. AGOL notebooks, solutions, workforce, survey, and insights.
-9. Other or unknown item types.
-
-## Failure contract
-
-The report CLI emits typed, prospect-safe stderr lines. It does not expose raw
-stack traces, credentials, customer paths, or internal exception text in the
-default user-facing surface. `--debug` is a local development switch and may
-include tracebacks.
-
-| Exit | Meaning |
-| ---: | --- |
-| 0 | Report rendered successfully. Non-strict schema findings appear in `Schema Warnings`. |
-| 2 | Input read, JSON parse, top-level shape, or output write failure. |
-| 3 | `--strict` schema validation failure (`report.schema.invalid`). |
-| 4 | Renderer/internal failure after input parsing succeeded (`report.render.internal`). |
+| Order | Group | Matching items |
+| ---: | --- | --- |
+| 1 | FileGDB feature classes | `filegdb-feature-class` |
+| 2 | ArcGIS Server feature services | `server-service` with `serviceType: "FeatureServer"` |
+| 3 | ArcGIS Server map and image services | `server-service` with `serviceType: "MapServer"` or `"ImageServer"` |
+| 4 | AGOL hosted feature services | `portal-item` with `type: "Feature Service"` |
+| 5 | AGOL hosted tile and vector tile services | `portal-item` with `type: "Tile Service"` or `"Vector Tile Service"` |
+| 6 | AGOL web maps | `portal-item` with `type: "Web Map"` |
+| 7 | AGOL web apps, dashboards, and experiences | `portal-item` with `type: "Dashboard"`, `"Experience"`, or `"Web Mapping Application"` |
+| 8 | AGOL notebooks, solutions, workforce, survey, and insights | Portal items in the specialized manual-review set. |
+| 9 | Other or unknown item types | Any remaining inventory item. |
 
 ## Samples and tests
 

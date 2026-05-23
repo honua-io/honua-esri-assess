@@ -148,7 +148,7 @@ def _inventory_table(kind: str, items: Sequence[Mapping[str, Any]]) -> str:
                 item.get("geometryType"),
                 count(item.get("featureCount")),
                 _spatial_reference_label(item.get("sr")),
-                len(item.get("fields") or ()),
+                _field_count(item.get("fields")),
             )
             for item in items
         ]
@@ -336,6 +336,12 @@ def _item_detail(item: Mapping[str, Any]) -> str:
         if item.get(key):
             return str(item[key])
     return "-"
+
+
+def _field_count(fields: Any) -> int:
+    if isinstance(fields, Sequence) and not isinstance(fields, (str, bytes)):
+        return len(fields)
+    return 0
 
 
 def _severity_rank(severity: str) -> int:

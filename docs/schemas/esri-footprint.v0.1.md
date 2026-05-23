@@ -24,6 +24,7 @@ tools may read the file, but no other consumer is part of the contract.
 - Every top-level field and `$def` in the schema.
 - A diagnostic code catalog (closed enum at v0.1).
 - A canonical sample footprint and rendered readiness report.
+- Human-report behavior that depends on this contract.
 - What is intentionally **out of scope** at v0.1.
 
 ## Promises
@@ -436,6 +437,13 @@ The sample readiness report generated from that footprint lives at
 and is guarded by a golden-file renderer test.
 For report CLI usage, renderer API notes, section descriptions, and heuristics,
 see [`docs/readiness-report.md`](../readiness-report.md).
+
+The report guide lives at
+[`docs/readiness-report.md`](../readiness-report.md). It documents the CLI
+usage, exit codes, report sections, complexity bands, manual-review reason
+codes, and migration-ordering heuristics. The report is derived from
+`EsriFootprint.json` and is not a second handoff contract for the closed
+migration product.
 
 ## Out of scope at v0.1
 

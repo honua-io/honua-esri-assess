@@ -199,9 +199,15 @@ errors, and renderer failures use `report.render.internal`.
 
 The sample report is published at
 [`docs/samples/readiness-report.sample.md`](../samples/readiness-report.sample.md).
-The renderer is deterministic, and the test suite compares the committed
-sample report byte-for-byte with freshly rendered output.
-See the focused report guide at
+The renderer is deterministic, performs no I/O, and the test suite compares
+the committed sample report byte-for-byte with freshly rendered output.
+
+The `honua-esri-assess report` CLI handles JSON parsing, packaged v0.1 schema
+validation, stdin/stdout, file output, local logging, and typed prospect-safe
+errors. By default, validation issues are rendered into a `Schema Warnings`
+section and the command exits successfully; with `--strict`, invalid v0.1
+input exits with `report.schema.invalid`. The report guide documents the full
+CLI response contract and the v0.1 report heuristics:
 [`docs/readiness-report.md`](../readiness-report.md).
 
 ## Pointers

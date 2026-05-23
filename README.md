@@ -376,12 +376,19 @@ byte-for-byte sample report golden file).
 honua-esri-assess report --input docs/samples/esri-footprint.sample.json
 ```
 
+The report is a human-readable companion to `EsriFootprint.json`, not a second
+handoff contract for the closed migration product. The renderer is pure: it
+turns a parsed footprint dictionary into deterministic Markdown and performs no
+file, network, logging, or Esri-system I/O. The CLI owns JSON parsing, packaged
+schema validation, stdin/stdout support, local logging flags, and typed
+prospect-safe errors.
+
 Use `--strict` to fail when the input does not validate against the published
 v0.1 schema packaged with the CLI. Without `--strict`, schema validation
 findings or validation-unavailable notices are rendered as a `Schema Warnings`
 section so the report can still be reviewed.
 
-The renderer API is pure: `honua_esri_assess.report.render()` accepts a parsed
-footprint dictionary and returns Markdown without file, network, logging, or
-Esri-system I/O. See [`docs/readiness-report.md`](docs/readiness-report.md) for
-the full report contract, sections, heuristics, and CLI flag reference.
+The report includes a header, optional schema warnings, service inventory,
+layer count, complexity estimate, manual-review items, migration ordering, and
+diagnostics summary. See [`docs/readiness-report.md`](docs/readiness-report.md)
+for CLI exit codes, report-section details, and v0.1 heuristics.

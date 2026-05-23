@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from importlib import resources
 from typing import Any
 
 
@@ -17,36 +17,50 @@ class SchemaValidationIssue:
 
 
 def validate_footprint_v01(footprint: Mapping[str, Any]) -> tuple[SchemaValidationIssue, ...]:
-    """Validate a footprint when jsonschema and the repo schema are available."""
+    """Validate a footprint against the packaged EsriFootprint v0.1 schema."""
 
     try:
         from jsonschema import Draft202012Validator, FormatChecker
     except ImportError:
         return (
             SchemaValidationIssue(
-                message="Schema validation skipped because jsonschema is not installed.",
-                is_failure=False,
+                message="Schema validation could not run because jsonschema is not installed.",
+                is_failure=True,
             ),
         )
 
-    schema_path = _schema_path()
-    if not schema_path.exists():
+    try:
+        schema = _load_packaged_schema()
+    except FileNotFoundError:
         return (
             SchemaValidationIssue(
-                message="Schema validation skipped because schemas/esri-footprint-v0.1.json was not found.",
-                is_failure=False,
+                message="Schema validation could not run because the packaged v0.1 schema was not found.",
+                is_failure=True,
+            ),
+        )
+    except json.JSONDecodeError:
+        return (
+            SchemaValidationIssue(
+                message="Schema validation could not run because the packaged v0.1 schema is invalid JSON.",
+                is_failure=True,
             ),
         )
 
-    with schema_path.open("r", encoding="utf-8") as fh:
-        schema = json.load(fh)
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
     errors = sorted(validator.iter_errors(footprint), key=lambda error: list(error.path))
     return tuple(_issue_from_error(error) for error in errors)
 
 
-def _schema_path() -> Path:
-    return Path(__file__).resolve().parents[3] / "schemas" / "esri-footprint-v0.1.json"
+def _load_packaged_schema() -> Mapping[str, Any]:
+    schema_text = (
+        resources.files("honua_esri_assess")
+        .joinpath("schemas", "esri-footprint-v0.1.json")
+        .read_text(encoding="utf-8")
+    )
+    schema = json.loads(schema_text)
+    if not isinstance(schema, Mapping):
+        raise json.JSONDecodeError("schema root is not an object", schema_text, 0)
+    return schema
 
 
 def _issue_from_error(error: Any) -> SchemaValidationIssue:

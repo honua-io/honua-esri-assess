@@ -120,6 +120,12 @@ The command writes `EsriFootprint.json` by default; `--output -` writes the
 same artifact to stdout. `--force-feature-count` asks the read-only backend
 to compute `featureCount` values even when counting may be expensive.
 
+The older `scan filegdb --target <path> --output <file>` surface is retained
+for the fixture-backed descriptor scanner used by the smoke tests. It reads a
+local `_inventory.json` descriptor and emits the same v0.1 FileGDB artifact
+shape, but the production FileGDB metadata path is the top-level `filegdb`
+command above.
+
 The emitted `source.kind` is `"filegdb"` and the only source-specific facet
 is `filegdb`; `portal` and `server` facets are schema-rejected. The raw
 workspace path is never published. `source.locator` and
@@ -161,10 +167,13 @@ closed per release line. At v0.1 the catalog is locked to six codes; see the
 
 For the FileGDB path, missing optional reader dependencies, invalid
 workspaces, layer-listing failures, and per-layer metadata failures are
-reported with the locked v0.1 diagnostic vocabulary. If a footprint is
-written with any `error`-severity diagnostic, the CLI exits `1`. If the CLI
-cannot produce or write a footprint at all, it prints a generic
-prospect-safe error and exits `2`.
+reported with the locked v0.1 diagnostic vocabulary. Exit-code meanings are
+CLI-surface specific: the top-level `filegdb` workspace command exits `1`
+after writing an artifact with any `error`-severity diagnostic and exits `2`
+when it cannot produce or write a footprint. Older `scan ...` and `report`
+surfaces also return nonzero on command-level failures, but callers should
+treat `diagnostics[]` in the artifact as the authoritative failure surface
+whenever an artifact exists.
 
 ## Pointers
 

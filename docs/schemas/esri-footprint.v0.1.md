@@ -242,12 +242,18 @@ Required iff `source.kind == "filegdb"`; forbidden otherwise (see [Discriminator
 | `featureClassCount` | yes      | integer ≥ 0                       | Number of feature classes discovered.                                |
 | `version`           | no       | string                            | FileGDB format version reported by the reader, when available.       |
 
-For FileGDB artifacts produced by the CLI, `source.locator` and
-`filegdb.pathHash` carry the same salted path hash. Stable hashes require the
-caller to provide the same salt across runs; otherwise the producer may use a
-per-run random salt and the hash is only stable within that artifact. The raw
-workspace path is never part of the artifact. `featureClassCount` is the
-number of `filegdb-feature-class` inventory records emitted and matches
+For FileGDB artifacts produced by this tool, `source.locator` and
+`filegdb.pathHash` carry the same `sha256:<64 hex>` path hash. The schema
+validates the `sha256:<64 hex>` shape of each field independently;
+within-artifact parity between `source.locator` and `filegdb.pathHash`, and
+cross-run hash stability, are producer behaviors rather than schema-enforced
+constraints — consumers that require validator-enforced parity must layer a
+custom conformance check on top of the schema. The top-level `filegdb`
+workspace command accepts `--path-hash-salt` or
+`HONUA_ESRI_ASSESS_PATH_HASH_SALT` for stable hashes across runs; otherwise it
+uses a per-run random salt and the hash is only stable within that artifact.
+The raw workspace path is never part of the artifact. `featureClassCount` is
+the number of `filegdb-feature-class` inventory records emitted and matches
 `counts.featureClasses`.
 
 ### EsriItem
@@ -300,8 +306,11 @@ dependency edges across types are deliberately out of scope at v0.1 (see
 
 Current FileGDB scanner behavior:
 
-- Lists layers with the optional `pyogrio`/GDAL backend and reads per-layer
-  metadata through read-only calls.
+- The production top-level `filegdb` command lists layers with the optional
+  `pyogrio`/GDAL backend and reads per-layer metadata through read-only calls.
+- The compatibility `scan filegdb --target ...` surface remains available for
+  fixture-backed descriptor scans and emits the same v0.1 FileGDB artifact
+  shape.
 - Normalizes common OGR geometry labels to Esri geometry tags. Tables,
   unknown geometry, and unsupported geometry are emitted with
   `geometryType: null`; unsupported geometry also gets an

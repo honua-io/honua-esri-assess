@@ -150,7 +150,7 @@ def test_terminal_service_diagnostics_omit_unreadable_inventory_record() -> None
                 code="server.service.rate-limited",
                 severity="warning",
                 message="deep scan of 'Throttled' failed: Rate limit exceeded.",
-                field="services/Throttled",
+                field="services/_root/Throttled/MapServer",
             ),
         ),
     )
@@ -160,6 +160,49 @@ def test_terminal_service_diagnostics_omit_unreadable_inventory_record() -> None
     assert fp["counts"]["items"]["server-service"] == 0
     assert fp["server"]["serviceCounts"] == {"MapServer": 1}
     assert fp["diagnostics"][0]["code"] == "rate-limited"
+
+
+def test_terminal_service_omission_does_not_collapse_same_named_siblings() -> None:
+    """A terminal diagnostic against one Parcels service must not drop the sibling."""
+
+    planning = ServiceRecord(
+        name="Parcels",
+        folder="Planning",
+        service_type="MapServer",
+        kind="mapService",
+        url="https://gis.example.com/arcgis/rest/services/Planning/Parcels/MapServer",
+    )
+    utilities = ServiceRecord(
+        name="Parcels",
+        folder="Utilities",
+        service_type="MapServer",
+        kind="mapService",
+        url="https://gis.example.com/arcgis/rest/services/Utilities/Parcels/MapServer",
+    )
+    result = ServerScanResult(
+        info=ServerInfo(url="https://gis.example.com/arcgis/rest/services"),
+        auth_mode="anonymous",
+        deep=True,
+        folders=(
+            FolderRecord(name="Planning", service_count=1),
+            FolderRecord(name="Utilities", service_count=1),
+        ),
+        services=(planning, utilities),
+        diagnostics=(
+            ScanDiagnostic(
+                code="server.service.rate-limited",
+                severity="warning",
+                message="deep scan of 'Parcels' failed in Planning",
+                field="services/Planning/Parcels/MapServer",
+            ),
+        ),
+    )
+
+    fp = to_footprint_v0_1(result, tool_version="0.0.0")
+    folders_in_inventory = {item["folder"] for item in fp["inventory"]}
+    assert folders_in_inventory == {"Utilities"}
+    assert fp["counts"]["items"]["server-service"] == 1
+    assert fp["server"]["serviceCounts"] == {"MapServer": 2}
 
 
 def test_footprint_contains_no_credential_text() -> None:

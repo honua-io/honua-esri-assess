@@ -63,6 +63,22 @@ def test_validate_footprint_uses_packaged_schema_when_repo_paths_are_absent(
     assert schema_module.validate_footprint(sample) is True
 
 
+def test_validate_footprint_prefers_packaged_schema_over_cwd_candidate(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    sample = json.loads(
+        (REPO_ROOT / "tests" / "fixtures" / "esri-footprint-sample.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    shadow = tmp_path / "esri-footprint-v0.1.json"
+    shadow.write_text(json.dumps({"type": "null"}), encoding="utf-8")
+    monkeypatch.setattr(schema_module, "_SCHEMA_DIR_CANDIDATES", (tmp_path,))
+
+    assert schema_module.validate_footprint(sample) is True
+
+
 def test_validate_footprint_fails_closed_when_schema_unavailable(
     monkeypatch: MonkeyPatch,
 ) -> None:

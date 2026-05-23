@@ -116,6 +116,7 @@ class ServerScanner:
             ServerConnectionError,
             ServerForbiddenError,
             ServerNotFoundError,
+            ServerRateLimitedError,
             ServerApiError,
         ) as exc:
             diagnostics.append(
@@ -160,6 +161,26 @@ class ServerScanner:
                     code="server.folder.forbidden",
                     severity="warning",
                     message=f"skipped folder {folder_name!r}: {exc.message}",
+                    field=f"folders/{folder_name}",
+                )
+            )
+            return FolderRecord(name=folder_name, service_count=0), services, diagnostics
+        except ServerRateLimitedError as exc:
+            diagnostics.append(
+                ScanDiagnostic(
+                    code="server.folder.rate-limited",
+                    severity="warning",
+                    message=f"folder {folder_name!r} was rate-limited: {exc.message}",
+                    field=f"folders/{folder_name}",
+                )
+            )
+            return FolderRecord(name=folder_name, service_count=0), services, diagnostics
+        except ServerConnectionError as exc:
+            diagnostics.append(
+                ScanDiagnostic(
+                    code="server.folder.connection",
+                    severity="warning",
+                    message=f"folder {folder_name!r} could not be reached: {exc.message}",
                     field=f"folders/{folder_name}",
                 )
             )
@@ -233,13 +254,14 @@ class ServerScanner:
         single_fused_map_cache: bool | None = None
         deep_scanned = False
         diagnostic: ScanDiagnostic | None = None
+        identity_field = _service_identity_field(folder, bare_name, raw_type)
 
         if kind == UNKNOWN_KIND:
             diagnostic = ScanDiagnostic(
                 code="server.service.unknown-type",
                 severity="info",
                 message=f"unrecognized service type {raw_type!r} mapped to 'other'",
-                field=f"services/{bare_name}",
+                field=identity_field,
             )
 
         if self.deep and raw_type in DEEP_PROBE_TYPES:
@@ -261,7 +283,7 @@ class ServerScanner:
                     code=_deep_failure_code(exc),
                     severity="warning",
                     message=f"deep scan of {bare_name!r} failed: {exc.message}",
-                    field=f"services/{bare_name}",
+                    field=identity_field,
                 )
             else:
                 description = _stringify(body.get("description")) or None
@@ -355,6 +377,17 @@ def _build_service_url(root: str, folder: str | None, name: str, service_type: s
     if folder:
         return f"{root}/{folder}/{name}/{service_type}"
     return f"{root}/{name}/{service_type}"
+
+
+def _service_identity_field(folder: str | None, name: str, service_type: str) -> str:
+    """Stable diagnostic scope keyed by full service identity.
+
+    The emitter filters the inventory by these triples, so two services
+    sharing a bare name (e.g. ``Planning/Parcels`` and ``Utilities/Parcels``)
+    are not collapsed by a terminal diagnostic against either one.
+    """
+
+    return f"services/{folder or '_root'}/{name}/{service_type}"
 
 
 __all__ = ["ServerScanner"]

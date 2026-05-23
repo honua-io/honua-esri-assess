@@ -159,7 +159,7 @@ def _server_to_footprint(
     inventory = [
         _server_service_to_dict(service)
         for service in result.services
-        if _service_identity(service) not in omitted and service.name not in omitted
+        if _service_identity(service) not in omitted
     ]
     diagnostics = [
         _server_diagnostic_to_dict(diagnostic)
@@ -232,6 +232,37 @@ def _portal_diagnostic_to_dict(diagnostic: Diagnostic) -> dict[str, Any]:
             "organization resources."
         )
     return payload
+
+
+_ROOT_FOLDER_SENTINEL = "_root"
+
+
+def _service_identity(service: ServiceRecord) -> tuple[str, str, str]:
+    return (service.folder or _ROOT_FOLDER_SENTINEL, service.name, service.service_type)
+
+
+def _services_omitted_from_inventory(
+    diagnostics: tuple[ScanDiagnostic, ...],
+) -> set[tuple[str, str, str]]:
+    terminal_codes = {
+        "server.auth",
+        "server.forbidden",
+        "server.rate-limited",
+        "server.service.missing-permission",
+        "server.service.rate-limited",
+    }
+    omitted: set[tuple[str, str, str]] = set()
+    prefix = "services/"
+    for diag in diagnostics:
+        if diag.code not in terminal_codes or not diag.field:
+            continue
+        if not diag.field.startswith(prefix):
+            continue
+        parts = diag.field[len(prefix) :].split("/")
+        if len(parts) >= 3:
+            folder, name, service_type = parts[0], parts[1], parts[2]
+            omitted.add((folder or _ROOT_FOLDER_SENTINEL, name, service_type))
+    return omitted
 
 
 def _server_service_to_dict(service: ServiceRecord) -> dict[str, Any]:

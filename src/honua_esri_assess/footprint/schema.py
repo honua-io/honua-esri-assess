@@ -74,13 +74,13 @@ def _packaged_schema_text(version: str) -> str | None:
 
 
 def _load_schema(version: str) -> dict[str, Any]:
-    path = find_schema_path(version)
-    if path is not None:
-        return json.loads(path.read_text(encoding="utf-8"))
-
     schema_text = _packaged_schema_text(version)
     if schema_text is not None:
         return json.loads(schema_text)
+
+    path = find_schema_path(version)
+    if path is not None:
+        return json.loads(path.read_text(encoding="utf-8"))
 
     raise FootprintSchemaNotFoundError(
         f"schema for footprint version {version!r} was not found"

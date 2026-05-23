@@ -281,3 +281,164 @@ def test_anonymous_partial_info_failure_does_not_abort() -> None:
     result = ServerScanner().scan(client)
     assert result.info.current_version is None
     assert any(d.code == "server.info.partial" for d in result.diagnostics)
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_code"),
+    [
+        (429, "server.folder.rate-limited"),
+    ],
+)
+@responses.activate
+def test_folder_rate_limit_does_not_abort_sibling_folders(
+    status: int,
+    expected_code: str,
+) -> None:
+    _register_info()
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services",
+        json={"folders": ["A", "B"], "services": []},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/A",
+        body="",
+        status=status,
+    )
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/B",
+        json={"folders": [], "services": [{"name": "B/Topo", "type": "MapServer"}]},
+        status=200,
+    )
+
+    client = ServerClient(
+        "https://gis.example.com/arcgis",
+        retry=RetryPolicy(max_attempts=1),
+    )
+    result = ServerScanner().scan(client)
+
+    # Folder B's services are still inventoried, despite folder A being throttled.
+    by_folder = {(s.folder, s.name) for s in result.services}
+    assert ("B", "Topo") in by_folder
+    assert {f.name for f in result.folders} == {"A", "B"}
+    diag_codes = {d.code for d in result.diagnostics}
+    assert expected_code in diag_codes
+
+
+@responses.activate
+def test_folder_connection_error_emits_partial_coverage_diagnostic() -> None:
+    import requests
+
+    _register_info()
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services",
+        json={"folders": ["A", "B"], "services": []},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/A",
+        body=requests.exceptions.ConnectionError("simulated network drop"),
+    )
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/B",
+        json={"folders": [], "services": [{"name": "B/Topo", "type": "MapServer"}]},
+        status=200,
+    )
+
+    client = ServerClient(
+        "https://gis.example.com/arcgis",
+        retry=RetryPolicy(max_attempts=1),
+    )
+    result = ServerScanner().scan(client)
+
+    by_folder = {(s.folder, s.name) for s in result.services}
+    assert ("B", "Topo") in by_folder
+    assert any(d.code == "server.folder.connection" for d in result.diagnostics)
+
+
+@responses.activate
+def test_info_rate_limit_does_not_abort_scan() -> None:
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/info",
+        body="",
+        status=429,
+    )
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services",
+        json={"folders": [], "services": []},
+        status=200,
+    )
+
+    client = ServerClient(
+        "https://gis.example.com/arcgis",
+        retry=RetryPolicy(max_attempts=1),
+    )
+    result = ServerScanner().scan(client)
+    assert result.info.current_version is None
+    assert any(d.code == "server.info.partial" for d in result.diagnostics)
+
+
+@responses.activate
+def test_deep_failure_diagnostic_uses_full_service_identity() -> None:
+    """A 403 against Planning/Parcels must not also omit Utilities/Parcels."""
+
+    _register_info()
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services",
+        json={"folders": ["Planning", "Utilities"], "services": []},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/Planning",
+        json={
+            "folders": [],
+            "services": [{"name": "Planning/Parcels", "type": "MapServer"}],
+        },
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/Utilities",
+        json={
+            "folders": [],
+            "services": [{"name": "Utilities/Parcels", "type": "MapServer"}],
+        },
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/Planning/Parcels/MapServer",
+        body="",
+        status=403,
+    )
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/Utilities/Parcels/MapServer",
+        json={"layers": [{"id": 0, "name": "Parcels"}]},
+        status=200,
+    )
+
+    client = ServerClient(
+        "https://gis.example.com/arcgis",
+        retry=RetryPolicy(max_attempts=1),
+    )
+    result = ServerScanner(deep=True).scan(client)
+
+    planning_diag = next(
+        d
+        for d in result.diagnostics
+        if d.code == "server.service.missing-permission"
+    )
+    # Folder, name, and type are all encoded in the identity field so the emitter
+    # can filter only the affected service, not its same-named sibling.
+    assert planning_diag.field == "services/Planning/Parcels/MapServer"

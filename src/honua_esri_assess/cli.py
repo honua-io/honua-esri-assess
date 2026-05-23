@@ -56,6 +56,7 @@ from .portal import (
 )
 from .report import RenderOptions, render
 from .report.validation import validate_footprint_v01
+from .scanners import agol as agol_scanner
 from .scanners import filegdb as filegdb_scanner
 from .scanners import server as server_scanner
 from .server.auth import (
@@ -65,6 +66,7 @@ from .server.auth import (
 from .server.client import RetryPolicy, ServerClient
 from .server.scanner import ServerScanner
 
+_LEGACY_AGOL_SCAN = agol_scanner.scan
 _LEGACY_SERVER_SCAN = server_scanner.scan
 
 _EXIT_USAGE = 2
@@ -363,11 +365,19 @@ def _dispatch_scan(
 
 
 def _run_agol(args: argparse.Namespace) -> int:
-    credential = PortalTokenCredential(args.token) if args.token else PortalAnonymousCredential()
+    if agol_scanner.scan is not _LEGACY_AGOL_SCAN:
+        return _run_legacy_agol_scan(args)
+
+    credential = (
+        PortalTokenCredential(args.token)
+        if args.token
+        else PortalAnonymousCredential()
+    )
     client = PortalClient(args.target, credential, timeout=args.timeout)
     result = PortalScanner(client, deep=args.deep).scan()
     footprint = to_footprint_v0_1(result, tool_version=__version__)
-    validate_footprint(footprint)
+    if not _validate_before_write(footprint):
+        return _EXIT_GENERIC
     rendered = footprint_to_json(footprint)
 
     if args.output == "-":
@@ -382,6 +392,28 @@ def _run_agol(args: argparse.Namespace) -> int:
 
     _emit_diagnostics_to_stderr(footprint)
     print(f"scanned {len(result.items)} item(s) from {result.org.portal_url}", file=sys.stderr)
+    return 0
+
+
+def _run_legacy_agol_scan(args: argparse.Namespace) -> int:
+    try:
+        result = agol_scanner.scan(args.target)
+    except Exception:
+        return _emit_typed_failure("AGOL scan failed before producing an inventory.")
+    footprint = build_footprint(
+        source_kind="arcgis-online",
+        target=args.target,
+        inventory=result["inventory"],
+        diagnostics=result["diagnostics"],
+        portal=result["portal"],
+    )
+    if not _validate_before_write(footprint):
+        return _EXIT_GENERIC
+    if args.output == "-":
+        print(footprint_to_json(footprint), end="")
+    elif not _write_footprint_safely(footprint, Path(args.output)):
+        return _EXIT_GENERIC
+    _emit_diagnostics_to_stderr(footprint)
     return 0
 
 
@@ -509,6 +541,8 @@ def _run_filegdb_descriptor(target: str, output: Path) -> int:
         diagnostics=result["diagnostics"],
         filegdb=result["filegdb"],
     )
+    if not _validate_before_write(footprint):
+        return _EXIT_GENERIC
     if not _write_footprint_safely(footprint, output):
         return _EXIT_GENERIC
     _emit_diagnostics_to_stderr(footprint)
@@ -643,6 +677,34 @@ def _write_footprint_safely(footprint: dict[str, Any], output: Path) -> bool:
         write_footprint(footprint, output)
     except OSError:
         _emit_typed_failure("Could not write the EsriFootprint.json output.")
+        return False
+    return True
+
+
+def _validate_before_write(footprint: dict) -> bool:
+    """Validate *footprint* against the declared schema before persisting.
+
+    AGOL and FileGDB scans cannot raise ``AssessmentError`` from this layer,
+    so failures are converted to the same prospect-safe ``partial-coverage``
+    diagnostic surface that the rest of the CLI uses for non-typed faults.
+    """
+
+    try:
+        validation_ran = validate_footprint(footprint)
+    except FootprintSchemaNotFoundError:
+        _emit_typed_failure(
+            "emitted footprint schema was unavailable; no artifact was written"
+        )
+        return False
+    except Exception:
+        _emit_typed_failure(
+            "emitted footprint failed schema validation; no artifact was written"
+        )
+        return False
+    if not validation_ran:
+        _emit_typed_failure(
+            "emitted footprint schema was unavailable; no artifact was written"
+        )
         return False
     return True
 

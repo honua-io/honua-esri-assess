@@ -40,13 +40,19 @@ def _assert_no_secrets(value: Any, *extra: str) -> None:
 
 def test_footprint_builder_sanitizes_source_target_credentials() -> None:
     footprint = build_footprint(
-        source_kind="agol",
+        source_kind="arcgis-online",
         target=SECRET_TARGET,
         inventory=[],
         diagnostics=[],
+        portal={
+            "orgId": "fixture-org",
+            "orgUrl": "https://fixture.local",
+            "itemCounts": {},
+        },
     )
 
-    assert footprint["source"]["target"] == "https://fixture.local/sharing/rest"
+    assert footprint["source"]["locator"] == "fixture.local/fixture-org"
+    assert footprint["portal"]["orgUrl"] == "https://fixture.local"
     _assert_no_secrets(footprint)
 
 
@@ -60,7 +66,15 @@ def test_scan_cli_uses_raw_target_but_writes_sanitized_handoff(
 
     def _fake_agol_scan(target: str) -> dict[str, Any]:
         seen["target"] = target
-        return {"portalName": "Demo", "inventory": [], "diagnostics": []}
+        return {
+            "portal": {
+                "orgId": "fixture-org",
+                "orgUrl": "https://fixture.local",
+                "itemCounts": {},
+            },
+            "inventory": [],
+            "diagnostics": [],
+        }
 
     def _fake_server_scan(target: str) -> dict[str, Any]:
         seen["target"] = target
@@ -81,7 +95,10 @@ def test_scan_cli_uses_raw_target_but_writes_sanitized_handoff(
     assert exit_code == 0
     assert seen["target"] == SECRET_TARGET
     footprint = json.loads(output.read_text(encoding="utf-8"))
-    assert footprint["source"]["target"] == "https://fixture.local/sharing/rest"
+    if backend == "agol":
+        assert footprint["source"]["locator"] == "fixture.local/fixture-org"
+    else:
+        assert footprint["source"]["locator"] == "https://fixture.local/sharing/rest"
     _assert_no_secrets(footprint)
 
 
@@ -90,7 +107,15 @@ def test_report_over_scan_output_does_not_render_target_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def _fake_scan(target: str) -> dict[str, Any]:
-        return {"portalName": "Demo", "inventory": [], "diagnostics": []}
+        return {
+            "portal": {
+                "orgId": "fixture-org",
+                "orgUrl": "https://fixture.local",
+                "itemCounts": {},
+            },
+            "inventory": [],
+            "diagnostics": [],
+        }
 
     monkeypatch.setattr(cli_module.agol_scanner, "scan", _fake_scan)
     footprint_path = tmp_path / "EsriFootprint.json"
@@ -104,7 +129,7 @@ def test_report_over_scan_output_does_not_render_target_credentials(
 
     assert report_exit == 0
     markdown = report_path.read_text(encoding="utf-8")
-    assert "https://fixture.local/sharing/rest" in markdown
+    assert "fixture.local/fixture-org" in markdown
     _assert_no_secrets(markdown)
 
 
@@ -161,7 +186,7 @@ class _AgolSession:
 def test_agol_scanner_sanitizes_item_urls_copied_from_esri_payloads() -> None:
     result = agol_scanner.scan("https://fixture.local/sharing/rest", session=_AgolSession())
 
-    assert result["inventory"][0]["url"] == "https://services.fixture.local/Parcels/FeatureServer"
+    assert "url" not in result["inventory"][0]
     _assert_no_secrets(result, "search-token", "probe-token", "probe-password", "probe:secret")
 
 
@@ -187,7 +212,7 @@ def test_server_scanner_sanitizes_inventory_urls_derived_from_raw_target() -> No
     )
 
     assert any("alice:superpass@" in url for url in session.urls)
-    assert result["inventory"][0]["url"] == (
+    assert result["inventory"][0]["serviceUrl"] == (
         "https://fixture.local/server/rest/services/Parcels/FeatureServer"
     )
     _assert_no_secrets(result)

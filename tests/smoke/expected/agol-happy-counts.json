@@ -1,8 +1,9 @@
 {
-  "total": 3,
-  "byKind": {
-    "feature-service": 1,
-    "map-service": 1,
-    "web-map": 1
-  }
+  "items": {
+    "portal-item": 3,
+    "server-service": 0,
+    "filegdb-feature-class": 0
+  },
+  "layers": 0,
+  "featureClasses": 0
 }

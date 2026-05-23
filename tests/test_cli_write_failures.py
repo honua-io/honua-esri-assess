@@ -35,9 +35,16 @@ def _assert_prospect_safe(stderr: str) -> None:
 def _stub_filegdb(monkeypatch: pytest.MonkeyPatch) -> None:
     def _fake_scan(target: Any) -> dict[str, Any]:
         return {
-            "inventory": [{"kind": "feature-class", "name": "Parcels"}],
+            "inventory": [
+                {
+                    "kind": "filegdb-feature-class",
+                    "name": "Parcels",
+                    "geometryType": "esriGeometryPolygon",
+                    "sr": {"wkid": 4326},
+                }
+            ],
             "diagnostics": [],
-            "filegdb": {"featureClassCount": 1, "path": "stub.gdb"},
+            "filegdb": {"featureClassCount": 1, "pathHash": "sha256:" + "0" * 64},
         }
 
     monkeypatch.setattr(cli_module.filegdb_scanner, "scan", _fake_scan)
@@ -76,12 +83,25 @@ def test_report_write_to_directory_emits_typed_diagnostic(
     capsys,
 ) -> None:
     footprint = {
-        "schemaVersion": "0.1.0",
-        "producer": {"name": "honua-esri-assess", "version": "0.0.0"},
-        "source": {"kind": "filegdb", "target": "stub.gdb"},
+        "schemaVersion": "v0.1",
         "generatedAt": "2026-01-01T00:00:00Z",
+        "tool": {"name": "honua-esri-assess", "version": "0.0.0"},
+        "source": {
+            "kind": "filegdb",
+            "locator": "sha256:" + "0" * 64,
+            "capturedAt": "2026-01-01T00:00:00Z",
+        },
+        "filegdb": {"featureClassCount": 0, "pathHash": "sha256:" + "0" * 64},
         "inventory": [],
-        "counts": {"total": 0, "byKind": {}},
+        "counts": {
+            "items": {
+                "portal-item": 0,
+                "server-service": 0,
+                "filegdb-feature-class": 0,
+            },
+            "layers": 0,
+            "featureClasses": 0,
+        },
         "diagnostics": [],
     }
     input_path = tmp_path / "EsriFootprint.json"

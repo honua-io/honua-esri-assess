@@ -14,8 +14,10 @@ so partial inventories still produce a valid footprint.
 
 from __future__ import annotations
 
+from collections import Counter
+from datetime import datetime, timezone
 from typing import Any, Iterable
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import requests
 
@@ -23,9 +25,9 @@ from ..diagnostics import Diagnostic
 from ..redaction import sanitize_handoff_url
 
 _SUPPORTED_KINDS = {
-    "Feature Service": "feature-service",
-    "Map Service": "map-service",
-    "Web Map": "web-map",
+    "Feature Service",
+    "Map Service",
+    "Web Map",
 }
 
 
@@ -36,11 +38,10 @@ def scan(target: str, *, session: requests.Session | None = None) -> dict[str, A
     base = _ensure_trailing_slash(target)
     diagnostics: list[Diagnostic] = []
     inventory: list[dict[str, Any]] = []
-    portal_name: str | None = None
 
     portal_self = _fetch_json(sess, urljoin(base, "portals/self"), diagnostics, "portals/self")
-    if isinstance(portal_self, dict):
-        portal_name = portal_self.get("name") or portal_self.get("portalName")
+    if not isinstance(portal_self, dict):
+        portal_self = {}
 
     # Pull users/groups for telemetry — we only need to know they're reachable.
     _fetch_json(sess, urljoin(base, "portals/self/users"), diagnostics, "portals/self/users")
@@ -53,7 +54,8 @@ def scan(target: str, *, session: requests.Session | None = None) -> dict[str, A
                 Diagnostic(
                     code="unsupported-item-type",
                     message=f"Skipped unsupported item type {kind!r}.",
-                    field=item.get("id"),
+                    scope=str(item.get("id") or "search"),
+                    severity="info",
                 )
             )
             continue
@@ -62,9 +64,9 @@ def scan(target: str, *, session: requests.Session | None = None) -> dict[str, A
             inventory.append(record)
 
     return {
-        "portalName": portal_name,
         "inventory": inventory,
         "diagnostics": diagnostics,
+        "portal": _portal_facet(target, portal_self, inventory),
     }
 
 
@@ -120,24 +122,59 @@ def _probe_item(
 
 
 def _to_record(search_item: dict[str, Any], probe: dict[str, Any]) -> dict[str, Any]:
-    kind = _SUPPORTED_KINDS[search_item["type"]]
     record: dict[str, Any] = {
-        "kind": kind,
+        "kind": "portal-item",
         "id": str(search_item.get("id", probe.get("id", ""))),
+        "type": str(search_item.get("type") or probe.get("type") or "Unknown"),
+        "owner": str(search_item.get("owner") or probe.get("owner") or "unknown"),
         "title": str(search_item.get("title") or probe.get("title") or ""),
+        "sharing": _sharing_level(search_item.get("access") or probe.get("access")),
+        "modified": _modified_timestamp(search_item.get("modified") or probe.get("modified")),
     }
-    url = probe.get("url") or search_item.get("url")
-    if isinstance(url, str) and url:
-        record["url"] = sanitize_handoff_url(url)
-    elif kind != "web-map":
-        record["url"] = ""
-    owner = search_item.get("owner") or probe.get("owner")
-    if isinstance(owner, str):
-        record["owner"] = owner
-    layers = probe.get("layers")
-    if isinstance(layers, list) and kind in {"feature-service", "map-service"}:
-        record["layerCount"] = len(layers)
+
+    if record["type"] == "Web Map":
+        deps = probe.get("dependencies")
+        if isinstance(deps, list):
+            record["dependencies"] = [str(dep) for dep in deps if isinstance(dep, str)]
     return record
+
+
+def _portal_facet(target: str, portal_self: dict[str, Any], inventory: list[dict[str, Any]]) -> dict[str, Any]:
+    org_id = str(portal_self.get("id") or "unknown")
+    item_counts = Counter(str(item.get("type", "Unknown")) for item in inventory)
+    sharing = Counter(str(item.get("sharing", "private")) for item in inventory)
+    return {
+        "orgId": org_id,
+        "orgUrl": _origin_url(target),
+        "itemCounts": dict(item_counts),
+        "sharingSummary": {
+            "private": sharing.get("private", 0),
+            "org": sharing.get("org", 0),
+            "public": sharing.get("public", 0),
+            "shared": sharing.get("shared", 0),
+        },
+    }
+
+
+def _origin_url(target: str) -> str:
+    parsed = urlsplit(sanitize_handoff_url(target))
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return "https://unknown.local"
+
+
+def _sharing_level(value: Any) -> str:
+    if value in {"org", "public", "shared", "private"}:
+        return str(value)
+    return "private"
+
+
+def _modified_timestamp(value: Any) -> str:
+    if isinstance(value, int):
+        return datetime.fromtimestamp(value / 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if isinstance(value, str) and value.endswith("Z"):
+        return value
+    return "1970-01-01T00:00:00Z"
 
 
 def _fetch_json(
@@ -156,7 +193,7 @@ def _fetch_json(
             Diagnostic(
                 code="partial-coverage",
                 message=f"Could not reach {target_label}; inventory may be incomplete.",
-                field=target_label,
+                scope=target_label,
             )
         )
         return None
@@ -166,7 +203,7 @@ def _fetch_json(
             Diagnostic(
                 code="missing-permission",
                 message=f"Access denied while reading {target_label}.",
-                field=target_label,
+                scope=target_label,
             )
         )
         return None
@@ -175,7 +212,8 @@ def _fetch_json(
             Diagnostic(
                 code="rate-limited",
                 message=f"Rate limited while reading {target_label}; partial inventory returned.",
-                field=target_label,
+                scope=target_label,
+                severity="info",
             )
         )
         return None
@@ -184,7 +222,7 @@ def _fetch_json(
             Diagnostic(
                 code="partial-coverage",
                 message=f"Upstream returned HTTP {status} for {target_label}.",
-                field=target_label,
+                scope=target_label,
             )
         )
         return None
@@ -195,7 +233,7 @@ def _fetch_json(
             Diagnostic(
                 code="partial-coverage",
                 message=f"Non-JSON response from {target_label}.",
-                field=target_label,
+                scope=target_label,
             )
         )
         return None
@@ -206,7 +244,7 @@ def _fetch_json(
                 Diagnostic(
                     code="missing-permission",
                     message=f"Access denied while reading {target_label}.",
-                    field=target_label,
+                    scope=target_label,
                 )
             )
         elif err_code == 429:
@@ -214,7 +252,8 @@ def _fetch_json(
                 Diagnostic(
                     code="rate-limited",
                     message=f"Rate limited while reading {target_label}; partial inventory returned.",
-                    field=target_label,
+                    scope=target_label,
+                    severity="info",
                 )
             )
         else:
@@ -222,7 +261,7 @@ def _fetch_json(
                 Diagnostic(
                     code="partial-coverage",
                     message=f"Esri returned an error envelope for {target_label}.",
-                    field=target_label,
+                    scope=target_label,
                 )
             )
         return None

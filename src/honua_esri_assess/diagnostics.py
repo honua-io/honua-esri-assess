@@ -16,15 +16,16 @@ DIAGNOSTIC_CODES: Final[frozenset[str]] = frozenset(
     }
 )
 
-SEVERITY_LEVELS: Final[frozenset[str]] = frozenset({"info", "warning", "error"})
+SEVERITY_LEVELS: Final[frozenset[str]] = frozenset({"info", "warn", "error"})
 
 
 @dataclass(frozen=True)
 class Diagnostic:
     code: str
     message: str
-    severity: str = "warning"
-    field: str | None = None
+    scope: str = "unknown"
+    severity: str = "warn"
+    hint: str | None = None
 
     def __post_init__(self) -> None:
         if self.code not in DIAGNOSTIC_CODES:
@@ -43,7 +44,8 @@ class Diagnostic:
             "code": self.code,
             "severity": self.severity,
             "message": self.message,
+            "scope": self.scope,
         }
-        if self.field is not None:
-            out["field"] = self.field
+        if self.hint is not None:
+            out["hint"] = self.hint
         return out

@@ -11,8 +11,8 @@ from ..diagnostics import Diagnostic
 from ..redaction import sanitize_handoff_url
 
 _SERVICE_KINDS = {
-    "FeatureServer": "feature-service",
-    "MapServer": "map-service",
+    "FeatureServer",
+    "MapServer",
 }
 
 
@@ -71,13 +71,13 @@ def _record_service(
     if not isinstance(raw_type, str) or not isinstance(name, str):
         return
     service_counts[raw_type] = service_counts.get(raw_type, 0) + 1
-    kind = _SERVICE_KINDS.get(raw_type)
-    if kind is None:
+    if raw_type not in _SERVICE_KINDS:
         diagnostics.append(
             Diagnostic(
                 code="unsupported-item-type",
                 message=f"Skipped unsupported service type {raw_type!r}.",
-                field=name,
+                scope=name,
+                severity="info",
             )
         )
         return
@@ -88,12 +88,11 @@ def _record_service(
         return
     candidate_layers = probe.get("layers")
     layers: list[Any] = candidate_layers if isinstance(candidate_layers, list) else []
-    description = probe.get("serviceDescription")
     record = {
-        "kind": kind,
-        "id": name.split("/")[-1],
-        "title": description if isinstance(description, str) else name.split("/")[-1],
-        "url": sanitize_handoff_url(probe_url),
+        "kind": "server-service",
+        "serviceUrl": sanitize_handoff_url(probe_url),
+        "serviceType": raw_type,
+        "folder": folder,
         "layerCount": len(layers),
     }
     inventory.append(record)
@@ -112,7 +111,7 @@ def _fetch_json(
             Diagnostic(
                 code="partial-coverage",
                 message=f"Could not reach {target_label}; inventory may be incomplete.",
-                field=target_label,
+                scope=target_label,
             )
         )
         return None
@@ -122,7 +121,7 @@ def _fetch_json(
             Diagnostic(
                 code="missing-permission",
                 message=f"Access denied while reading {target_label}.",
-                field=target_label,
+                scope=target_label,
             )
         )
         return None
@@ -131,7 +130,8 @@ def _fetch_json(
             Diagnostic(
                 code="rate-limited",
                 message=f"Rate limited while reading {target_label}; partial inventory returned.",
-                field=target_label,
+                scope=target_label,
+                severity="info",
             )
         )
         return None
@@ -140,7 +140,7 @@ def _fetch_json(
             Diagnostic(
                 code="partial-coverage",
                 message=f"Upstream returned HTTP {status} for {target_label}.",
-                field=target_label,
+                scope=target_label,
             )
         )
         return None
@@ -151,7 +151,7 @@ def _fetch_json(
             Diagnostic(
                 code="partial-coverage",
                 message=f"Non-JSON response from {target_label}.",
-                field=target_label,
+                scope=target_label,
             )
         )
         return None
@@ -162,7 +162,7 @@ def _fetch_json(
                 Diagnostic(
                     code="missing-permission",
                     message=f"Access denied while reading {target_label}.",
-                    field=target_label,
+                    scope=target_label,
                 )
             )
         elif err_code == 429:
@@ -170,7 +170,8 @@ def _fetch_json(
                 Diagnostic(
                     code="rate-limited",
                     message=f"Rate limited while reading {target_label}; partial inventory returned.",
-                    field=target_label,
+                    scope=target_label,
+                    severity="info",
                 )
             )
         else:
@@ -178,7 +179,7 @@ def _fetch_json(
                 Diagnostic(
                     code="partial-coverage",
                     message=f"Esri returned an error envelope for {target_label}.",
-                    field=target_label,
+                    scope=target_label,
                 )
             )
         return None

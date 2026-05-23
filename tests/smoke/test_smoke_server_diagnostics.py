@@ -41,7 +41,11 @@ def test_server_diagnostics_scan(
     schema_validator.validate(footprint)
 
     expected = expected_counts["arcgis-server-diagnostics-counts"]
-    assert footprint["counts"] == {"total": expected["total"], "byKind": expected["byKind"]}
+    assert footprint["counts"] == {
+        "items": expected["items"],
+        "layers": expected["layers"],
+        "featureClasses": expected["featureClasses"],
+    }
     assert footprint["server"]["serviceCounts"] == expected["serviceCounts"]
     assert footprint["server"]["folders"] == expected["folders"]
     assert footprint["inventory"] == []

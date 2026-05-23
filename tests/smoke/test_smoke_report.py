@@ -49,9 +49,9 @@ def test_report_renders_against_agol_happy_footprint(
         assert heading in markdown, f"required heading missing: {heading!r}"
 
     footprint = json.loads(footprint_path.read_text(encoding="utf-8"))
-    for kind, count in footprint["counts"]["byKind"].items():
+    for kind, count in footprint["counts"]["items"].items():
         assert f"| {kind} | {count} |" in markdown, (
             f"counts row mismatch for kind={kind}: expected {count}"
         )
-    total = footprint["counts"]["total"]
+    total = sum(footprint["counts"]["items"].values())
     assert f"Total inventory items: **{total}**" in markdown

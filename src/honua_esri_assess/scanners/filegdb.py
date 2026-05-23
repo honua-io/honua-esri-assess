@@ -16,13 +16,14 @@ from pathlib import Path
 from typing import Any
 
 from ..diagnostics import Diagnostic
+from ..footprint import path_hash
 
 _GEOMETRY_NORMALIZATION = {
-    "point": "point",
-    "multipoint": "multipoint",
-    "line": "line",
-    "polyline": "line",
-    "polygon": "polygon",
+    "point": "esriGeometryPoint",
+    "multipoint": "esriGeometryMultipoint",
+    "line": "esriGeometryPolyline",
+    "polyline": "esriGeometryPolyline",
+    "polygon": "esriGeometryPolygon",
 }
 
 
@@ -36,13 +37,13 @@ def scan(target: str | Path) -> dict[str, Any]:
             Diagnostic(
                 code="partial-coverage",
                 message="No FileGDB inventory descriptor found at the supplied path.",
-                field=str(path.name),
+                scope=str(path.name),
             )
         )
         return {
             "inventory": inventory,
             "diagnostics": diagnostics,
-            "filegdb": {"featureClassCount": 0, "path": path.name},
+            "filegdb": {"featureClassCount": 0, "pathHash": path_hash(path)},
         }
 
     try:
@@ -52,13 +53,13 @@ def scan(target: str | Path) -> dict[str, Any]:
             Diagnostic(
                 code="partial-coverage",
                 message="FileGDB inventory descriptor could not be parsed.",
-                field=descriptor_path.name,
+                scope=descriptor_path.name,
             )
         )
         return {
             "inventory": inventory,
             "diagnostics": diagnostics,
-            "filegdb": {"featureClassCount": 0, "path": path.name},
+            "filegdb": {"featureClassCount": 0, "pathHash": path_hash(path)},
         }
 
     feature_classes = payload.get("featureClasses") if isinstance(payload, dict) else None
@@ -67,7 +68,7 @@ def scan(target: str | Path) -> dict[str, Any]:
             Diagnostic(
                 code="partial-coverage",
                 message="FileGDB inventory descriptor missing 'featureClasses'.",
-                field=descriptor_path.name,
+                scope=descriptor_path.name,
             )
         )
         feature_classes = []
@@ -82,7 +83,7 @@ def scan(target: str | Path) -> dict[str, Any]:
     return {
         "inventory": inventory,
         "diagnostics": diagnostics,
-        "filegdb": {"featureClassCount": len(inventory), "path": path.name},
+        "filegdb": {"featureClassCount": len(inventory), "pathHash": path_hash(path)},
     }
 
 
@@ -100,10 +101,16 @@ def _to_record(fc: dict[str, Any], diagnostics: list[Diagnostic]) -> dict[str, A
             Diagnostic(
                 code="partial-coverage",
                 message="Feature class missing a name; skipped.",
+                scope="filegdb",
             )
         )
         return None
-    record: dict[str, Any] = {"kind": "feature-class", "name": name}
+    record: dict[str, Any] = {
+        "kind": "filegdb-feature-class",
+        "name": name,
+        "geometryType": None,
+        "sr": {"wkid": 4326},
+    }
     geom = fc.get("geometryType")
     if isinstance(geom, str):
         normalized = _GEOMETRY_NORMALIZATION.get(geom.lower())
@@ -112,10 +119,11 @@ def _to_record(fc: dict[str, Any], diagnostics: list[Diagnostic]) -> dict[str, A
                 Diagnostic(
                     code="unsupported-item-type",
                     message=f"Unrecognized geometry type {geom!r}; recorded as-is.",
-                    field=name,
+                    scope=name,
+                    severity="info",
                 )
             )
-            normalized = geom
+            normalized = None
         record["geometryType"] = normalized
     count = fc.get("featureCount")
     if isinstance(count, int) and count >= 0:

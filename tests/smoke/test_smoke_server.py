@@ -37,7 +37,11 @@ def test_server_happy_scan(
     assert footprint["source"]["kind"] == "arcgis-server"
 
     expected = expected_counts["arcgis-server-happy-counts"]
-    assert footprint["counts"] == {"total": expected["total"], "byKind": expected["byKind"]}
+    assert footprint["counts"] == {
+        "items": expected["items"],
+        "layers": expected["layers"],
+        "featureClasses": expected["featureClasses"],
+    }
     assert footprint["server"]["serviceCounts"] == expected["serviceCounts"]
     assert footprint["server"]["folders"] == expected["folders"]
 

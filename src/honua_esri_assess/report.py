@@ -18,16 +18,14 @@ def render(footprint: dict[str, Any]) -> str:
     lines.append("")
     source = footprint.get("source", {})
     lines.append(f"- **Source kind:** {source.get('kind', 'unknown')}")
-    lines.append(f"- **Target:** {source.get('target', 'unknown')}")
-    if "portalName" in source:
-        lines.append(f"- **Portal name:** {source['portalName']}")
+    lines.append(f"- **Locator:** {source.get('locator', 'unknown')}")
     lines.append(f"- **Generated at:** {footprint.get('generatedAt', 'unknown')}")
-    lines.append(f"- **Tool version:** {footprint.get('producer', {}).get('version', 'unknown')}")
+    lines.append(f"- **Tool version:** {footprint.get('tool', {}).get('version', 'unknown')}")
     lines.append("")
 
     counts = footprint.get("counts", {})
-    by_kind = counts.get("byKind", {}) or {}
-    total = counts.get("total", 0)
+    by_kind = counts.get("items", {}) or {}
+    total = sum(value for value in by_kind.values() if isinstance(value, int))
     lines.append("## Inventory Summary")
     lines.append("")
     lines.append(f"Total inventory items: **{total}**.")
@@ -55,7 +53,7 @@ def render(footprint: dict[str, Any]) -> str:
                 lines.append(f"- Folders: {', '.join(folders)}")
         if isinstance(filegdb, dict):
             lines.append(f"- Feature classes: {filegdb.get('featureClassCount', 0)}")
-            lines.append(f"- Source path: {filegdb.get('path', 'unknown')}")
+            lines.append(f"- Path hash: {filegdb.get('pathHash', 'unknown')}")
         lines.append("")
 
     diagnostics: Iterable[dict[str, Any]] = footprint.get("diagnostics", []) or []
@@ -68,8 +66,8 @@ def render(footprint: dict[str, Any]) -> str:
         for diag in diagnostics:
             code = diag.get("code", "unknown")
             message = diag.get("message", "")
-            field = diag.get("field")
-            suffix = f" (field: {field})" if field else ""
+            scope = diag.get("scope")
+            suffix = f" (scope: {scope})" if scope else ""
             lines.append(f"- **{code}** — {message}{suffix}")
     lines.append("")
     return "\n".join(lines)

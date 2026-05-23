@@ -35,10 +35,14 @@ def test_filegdb_happy_scan(
     assert footprint["source"]["kind"] == "filegdb"
 
     expected = expected_counts["filegdb-happy-counts"]
-    assert footprint["counts"] == {"total": expected["total"], "byKind": expected["byKind"]}
+    assert footprint["counts"] == {
+        "items": expected["items"],
+        "layers": expected["layers"],
+        "featureClasses": expected["featureClasses"],
+    }
     assert footprint["filegdb"]["featureClassCount"] == expected["featureClassCount"]
-    assert footprint["filegdb"]["path"] == "sample.gdb"
+    assert footprint["filegdb"]["pathHash"].startswith("sha256:")
 
     for record in footprint["inventory"]:
-        assert record["kind"] == "feature-class"
+        assert record["kind"] == "filegdb-feature-class"
         assert "name" in record

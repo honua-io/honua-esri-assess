@@ -87,8 +87,10 @@ jobs:
           cp -R tests/smoke "$SMOKE_DIR/tests/smoke"
           cp -R schemas "$SMOKE_DIR/schemas"
       - run: python -m venv "$SMOKE_DIR/.smoke"
-      - run: "$SMOKE_DIR/.smoke/bin/pip" install "$DIST_DIR"/*.whl "pytest>=8,<9" "responses>=0.25"
-      - run: "$SMOKE_DIR/.smoke/bin/pytest" "$SMOKE_DIR/tests/smoke" -q
+      - run: |
+          "$SMOKE_DIR/.smoke/bin/pip" install "$DIST_DIR"/*.whl "pytest>=8,<9" "responses>=0.25"
+      - run: |
+          "$SMOKE_DIR/.smoke/bin/pytest" "$SMOKE_DIR/tests/smoke" -q
       - run: >
           "$SMOKE_DIR/.smoke/bin/honua-esri-assess" scan filegdb
           --target "$SMOKE_DIR/tests/smoke/fixtures/filegdb/happy/sample.gdb"

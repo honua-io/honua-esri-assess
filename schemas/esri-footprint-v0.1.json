@@ -304,6 +304,10 @@
             "public": { "type": "integer", "minimum": 0 },
             "shared": { "type": "integer", "minimum": 0 }
           }
+        },
+        "licensing": {
+          "$ref": "#/$defs/PortalLicensing",
+          "description": "Read-only license entitlement observations from documented Portal Sharing endpoints."
         }
       }
     },
@@ -325,6 +329,120 @@
         "version": {
           "type": "string",
           "description": "Reported ArcGIS Server version (e.g. \"11.2\")."
+        },
+        "licensing": {
+          "$ref": "#/$defs/ServerLicensing",
+          "description": "Read-only license entitlement observations from documented ArcGIS Server REST/admin endpoints."
+        }
+      }
+    },
+    "ExtensionEntitlement": {
+      "type": "object",
+      "description": "One Esri extension or add-on observed during read-only entitlement enumeration.",
+      "additionalProperties": false,
+      "required": ["code", "name", "status", "source"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Esri extension code as reported by the source, or the catalog-normalized equivalent."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable extension name."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["licensed", "evaluation", "expired", "unknown"]
+        },
+        "source": {
+          "type": "string",
+          "enum": ["server-admin-licenses", "service-extensions", "portal-subscription"]
+        }
+      }
+    },
+    "UserTypeCount": {
+      "type": "object",
+      "description": "Portal user-type entitlement count. Seat counts are omitted when the endpoint does not expose them for the scanner credential.",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "total": { "type": "integer", "minimum": 0 },
+        "assigned": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "PortalPremiumContent": {
+      "type": "object",
+      "description": "Portal premium content and add-on entitlement summary. Credit balances are intentionally reduced to a boolean.",
+      "additionalProperties": false,
+      "required": ["allowedAddOns"],
+      "properties": {
+        "creditsEnabled": { "type": "boolean" },
+        "allowedAddOns": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "PortalLicensing": {
+      "type": "object",
+      "description": "Portal / ArcGIS Online licensing observations from read-only Sharing API endpoints.",
+      "additionalProperties": false,
+      "required": ["userTypes", "premiumContent", "extensionsObserved"],
+      "properties": {
+        "tier": { "type": "string", "minLength": 1 },
+        "subscriptionType": { "type": "string", "minLength": 1 },
+        "userTypes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/UserTypeCount" }
+        },
+        "premiumContent": { "$ref": "#/$defs/PortalPremiumContent" },
+        "extensionsObserved": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ExtensionEntitlement" }
+        }
+      }
+    },
+    "ServiceExtensionRecord": {
+      "type": "object",
+      "description": "SOEs and SOIs enabled on one ArcGIS Server service.",
+      "additionalProperties": false,
+      "required": ["serviceUrl", "soes", "sois"],
+      "properties": {
+        "serviceUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$",
+          "description": "Credentials-stripped service URL. Query strings, fragments, and userinfo are forbidden."
+        },
+        "soes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "sois": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "ServerLicensing": {
+      "type": "object",
+      "description": "ArcGIS Server licensing observations from read-only REST/admin endpoints.",
+      "additionalProperties": false,
+      "required": ["extensions", "serviceExtensions"],
+      "properties": {
+        "productName": { "type": "string", "minLength": 1 },
+        "currentVersion": { "type": "string", "minLength": 1 },
+        "edition": { "type": "string", "minLength": 1 },
+        "extensions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ExtensionEntitlement" }
+        },
+        "serviceExtensions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ServiceExtensionRecord" }
         }
       }
     },

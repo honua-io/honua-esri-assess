@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": 498,
+    "messageCode": "GWM_0003",
+    "message": "Invalid token.",
+    "details": []
+  }
+}

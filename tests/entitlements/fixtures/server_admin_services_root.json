@@ -1,0 +1,6 @@
+{
+  "folders": ["Hosted"],
+  "services": [
+    {"serviceName": "World", "type": "MapServer"}
+  ]
+}

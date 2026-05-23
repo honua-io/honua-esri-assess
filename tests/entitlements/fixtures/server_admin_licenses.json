@@ -1,0 +1,10 @@
+{
+  "edition": "Advanced",
+  "extensions": [
+    {"name": "Spatial", "status": "Good"},
+    {"name": "Network", "status": "Good"},
+    {"name": "ImageServer", "status": "Evaluation"},
+    {"name": "DataReviewer", "status": "Expired"},
+    {"name": "ContosoCustomExt", "status": "Good"}
+  ]
+}

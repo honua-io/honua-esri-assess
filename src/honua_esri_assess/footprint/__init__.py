@@ -1,4 +1,4 @@
-"""EsriFootprint v0.1 builder utilities."""
+"""EsriFootprint v0.1 builder and licensing facet utilities."""
 
 from __future__ import annotations
 
@@ -9,9 +9,14 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 
-from . import __version__
-from .diagnostics import Diagnostic
-from .redaction import sanitize_handoff_url
+from .. import __version__
+from ..diagnostics import Diagnostic
+from ..redaction import sanitize_handoff_url
+from .v0_1 import (
+    licensing_facet_to_dict,
+    portal_licensing_to_dict,
+    server_licensing_to_dict,
+)
 
 SCHEMA_VERSION = "v0.1"
 TOOL_NAME = "honua-esri-assess"
@@ -33,7 +38,9 @@ def build_footprint(
     items = list(inventory)
     now = generated_at or datetime.now(timezone.utc)
     captured = captured_at or now
-    source = _source_block(source_kind, target, portal=portal, filegdb=filegdb, captured_at=captured)
+    source = _source_block(
+        source_kind, target, portal=portal, filegdb=filegdb, captured_at=captured
+    )
     footprint: dict[str, Any] = {
         "schemaVersion": SCHEMA_VERSION,
         "generatedAt": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -54,7 +61,9 @@ def build_footprint(
 
 def write_footprint(footprint: dict[str, Any], output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(footprint, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    output.write_text(
+        json.dumps(footprint, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def path_hash(value: str | Path) -> str:
@@ -122,3 +131,16 @@ def _counts(items: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "featureClasses": item_counts["filegdb-feature-class"],
     }
+
+
+__all__ = [
+    "ITEM_KINDS",
+    "SCHEMA_VERSION",
+    "TOOL_NAME",
+    "build_footprint",
+    "licensing_facet_to_dict",
+    "path_hash",
+    "portal_licensing_to_dict",
+    "server_licensing_to_dict",
+    "write_footprint",
+]

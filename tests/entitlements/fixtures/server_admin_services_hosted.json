@@ -1,0 +1,6 @@
+{
+  "folders": [],
+  "services": [
+    {"serviceName": "Parcels", "type": "MapServer"}
+  ]
+}

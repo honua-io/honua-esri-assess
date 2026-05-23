@@ -1,0 +1,9 @@
+{
+  "name": "Acme Geo",
+  "portalName": "ArcGIS Online",
+  "portalMode": "multitenant",
+  "isPortal": false,
+  "subscriptionInfo": {
+    "type": "online"
+  }
+}

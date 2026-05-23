@@ -1,0 +1,10 @@
+{
+  "id": "0123456789ABCDEF",
+  "type": "online",
+  "subscriptionType": "Subscription",
+  "allowedAddOns": ["premiumContent", "spatialAnalysis", "hub"],
+  "userLicenseTypes": [
+    {"id": "creatorUT", "name": "Creator", "numberOfSeats": 50, "assignedSeats": 32},
+    {"id": "viewerUT", "name": "Viewer", "numberOfSeats": 200, "assignedSeats": 187}
+  ]
+}

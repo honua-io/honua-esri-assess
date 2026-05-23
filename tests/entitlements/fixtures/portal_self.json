@@ -1,0 +1,18 @@
+{
+  "id": "0123456789ABCDEF",
+  "name": "Acme Geo",
+  "portalName": "ArcGIS Online",
+  "portalMode": "multitenant",
+  "isPortal": false,
+  "availableCredits": 2500.0,
+  "subscriptionInfo": {
+    "type": "online",
+    "subscriptionType": "Subscription",
+    "allowedAddOns": ["premiumContent", "spatialAnalysis"],
+    "availableCredits": 2500.0,
+    "extensions": [
+      {"code": "Spatial", "name": "ArcGIS Spatial Analyst"},
+      {"code": "BusinessAnalyst", "name": "ArcGIS Business Analyst"}
+    ]
+  }
+}

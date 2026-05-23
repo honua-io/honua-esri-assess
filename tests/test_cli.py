@@ -14,6 +14,7 @@ import pytest
 import responses
 from typer.testing import CliRunner
 
+from honua_esri_assess import __version__
 from honua_esri_assess.app import cli_app
 from honua_esri_assess.commands.common import ScanOptions, ScanResult
 from honua_esri_assess.commands.scan_handlers import HANDLERS, ScanHandler, register
@@ -361,7 +362,7 @@ def test_version_command_mentions_tool_and_schema_versions(runner: CliRunner) ->
     result = runner.invoke(cli_app, ["version"])
 
     assert result.exit_code == 0
-    assert "honua-esri-assess 0.1.0" in result.output
+    assert f"honua-esri-assess {__version__}" in result.output
     assert "EsriFootprint schema v0.1" in result.output
 
 
@@ -371,7 +372,7 @@ def test_root_version_option_mentions_tool_and_schema_versions(
     result = runner.invoke(cli_app, ["--version"])
 
     assert result.exit_code == 0
-    assert "honua-esri-assess 0.1.0" in result.output
+    assert f"honua-esri-assess {__version__}" in result.output
     assert "EsriFootprint schema v0.1" in result.output
 
 

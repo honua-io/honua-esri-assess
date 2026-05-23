@@ -242,11 +242,13 @@ Required iff `source.kind == "filegdb"`; forbidden otherwise (see [Discriminator
 | `featureClassCount` | yes      | integer ≥ 0                       | Number of feature classes discovered.                                |
 | `version`           | no       | string                            | FileGDB format version reported by the reader, when available.       |
 
-For FileGDB artifacts, the producer emits `source.locator` and
-`filegdb.pathHash` as the same salted path hash. Stable hashes require the
+For FileGDB artifacts produced by the CLI, `source.locator` and
+`filegdb.pathHash` carry the same salted path hash. Stable hashes require the
 caller to provide the same salt across runs; otherwise the producer may use a
 per-run random salt and the hash is only stable within that artifact. The raw
-workspace path is never part of the contract.
+workspace path is never part of the artifact. `featureClassCount` is the
+number of `filegdb-feature-class` inventory records emitted and matches
+`counts.featureClasses`.
 
 ### EsriItem
 
@@ -290,19 +292,26 @@ dependency edges across types are deliberately out of scope at v0.1 (see
 
 | Field          | Required | Type                              | Description                                                       |
 |----------------|----------|-----------------------------------|-------------------------------------------------------------------|
-| `name`         | yes      | string                            | Feature class name as stored in the FileGDB.                      |
-| `geometryType` | yes      | [`GeometryType`](#geometrytype)   | Feature class geometry type. `null` for tables.                   |
-| `sr`           | yes      | [`SpatialReference`](#spatialreference) | Feature class spatial reference.                            |
-| `featureCount` | no       | integer ≥ 0                       | Row count, when the reader can compute it cheaply.                |
-| `fields`       | no       | [`FieldDescriptor[]`](#fielddescriptor) | Minimal field metadata.                                     |
+| `name`         | yes      | string                            | Layer or feature class name as listed by the FileGDB reader.      |
+| `geometryType` | yes      | [`GeometryType`](#geometrytype)   | Feature class geometry type. `null` for tables or unmodeled geometry. |
+| `sr`           | yes      | [`SpatialReference`](#spatialreference) | Feature class spatial reference; unknown CRS is represented as `{"wkt": "UNKNOWN"}`. |
+| `featureCount` | no       | integer ≥ 0                       | Row count, when the reader returns it. The CLI can request more expensive counts with `--force-feature-count`. |
+| `fields`       | no       | [`FieldDescriptor[]`](#fielddescriptor) | Minimal field metadata returned by the reader.               |
 
-The current FileGDB producer maps read-only `pyogrio`/GDAL metadata into this
-variant. `featureCount` is optional because counting can be expensive or
-unavailable for a layer; the CLI `--force-feature-count` flag asks the backend
-to compute it anyway. `fields` contains minimal schema metadata when the
-backend reports it. Unsupported geometry labels are emitted as
-`geometryType: null` with an `unsupported-item-type` diagnostic rather than raw
-reader output.
+Current FileGDB scanner behavior:
+
+- Lists layers with the optional `pyogrio`/GDAL backend and reads per-layer
+  metadata through read-only calls.
+- Normalizes common OGR geometry labels to Esri geometry tags. Tables,
+  unknown geometry, and unsupported geometry are emitted with
+  `geometryType: null`; unsupported geometry also gets an
+  `unsupported-item-type` diagnostic.
+- Emits field descriptors from reader-provided `fields`, OGR type, dtype,
+  fid column, and nullability metadata. Field metadata is omitted only if
+  a producer disables field inclusion.
+- Surfaces reader, dependency, and per-layer failures as typed
+  diagnostics. Raw exception text, stack traces, and raw workspace paths
+  are not copied into the footprint.
 
 ### Counts
 
@@ -392,10 +401,10 @@ v0.2 bump; clarifying an existing code is a v0.1.x doc bump.
 | Code                    | Typical severity | When to emit                                                                                  |
 |-------------------------|------------------|-----------------------------------------------------------------------------------------------|
 | `rate-limited`          | info / warn      | The source throttled the scanner; coverage may be partial when the throttled endpoint cannot be read. |
-| `partial-coverage`      | warn             | The scanner could not enumerate a region of the source (timeout, pagination ceiling, etc.).   |
+| `partial-coverage`      | warn / error     | The scanner could not enumerate a region of the source, or a required read-only backend/workspace could not be used. |
 | `missing-permission`    | warn             | The scanner credential cannot read part of the source. Surface a hint with the required role. |
 | `unresolved-reference`  | warn             | An item references another item that the scanner could not find or could not read.            |
-| `unsupported-item-type` | info             | The source exposes an item type the scanner does not model at v0.1.                           |
+| `unsupported-item-type` | info / error     | The source exposes an item type or workspace shape the scanner does not model at v0.1.        |
 | `redacted-field`        | info             | The scanner deliberately omitted a field to keep the artifact prospect-safe.                  |
 
 Expected FileGDB diagnostic cases at v0.1:

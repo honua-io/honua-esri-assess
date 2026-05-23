@@ -359,31 +359,39 @@ def _geometry_type_to_esri(geometry_type: Any) -> tuple[str | None, bool]:
         return None, True
 
     normalized = normalized.replace("25d", "")
-    normalized = re.sub(r"\b[zm]\b", "", normalized)
+    normalized = re.sub(r"\b(?:3d|measured|[zm])\b", "", normalized)
     normalized = normalized.replace("_", "").replace(" ", "")
+    while True:
+        prefixed = normalized.removeprefix("3d").removeprefix("measured")
+        if prefixed == normalized:
+            break
+        normalized = prefixed
 
-    if normalized == "point":
-        return "esriGeometryPoint", True
-    if normalized == "multipoint":
-        return "esriGeometryMultipoint", True
-    if normalized in {
-        "linestring",
-        "multilinestring",
-        "linearring",
-        "curve",
-        "compoundcurve",
-    }:
-        return "esriGeometryPolyline", True
-    if normalized in {
-        "polygon",
-        "multipolygon",
-        "curvepolygon",
-        "surface",
-        "multisurface",
-    }:
-        return "esriGeometryPolygon", True
-    if normalized == "envelope":
-        return "esriGeometryEnvelope", True
+    geometry_aliases = {
+        "point": "esriGeometryPoint",
+        "multipoint": "esriGeometryMultipoint",
+        "linestring": "esriGeometryPolyline",
+        "multilinestring": "esriGeometryPolyline",
+        "linearring": "esriGeometryPolyline",
+        "curve": "esriGeometryPolyline",
+        "compoundcurve": "esriGeometryPolyline",
+        "polygon": "esriGeometryPolygon",
+        "multipolygon": "esriGeometryPolygon",
+        "curvepolygon": "esriGeometryPolygon",
+        "surface": "esriGeometryPolygon",
+        "multisurface": "esriGeometryPolygon",
+        "envelope": "esriGeometryEnvelope",
+    }
+    if normalized not in geometry_aliases:
+        for suffix in ("zm", "mz", "z", "m"):
+            candidate = normalized.removesuffix(suffix)
+            if candidate != normalized and candidate in geometry_aliases:
+                normalized = candidate
+                break
+
+    esri_geometry = geometry_aliases.get(normalized)
+    if esri_geometry is not None:
+        return esri_geometry, True
     return None, False
 
 

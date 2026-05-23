@@ -163,6 +163,51 @@ def test_filegdb_scanner_emits_schema_valid_filegdb_footprint(tmp_path: Path) ->
     assert "customer.gdb" not in serialized
 
 
+def test_filegdb_scanner_normalizes_measured_geometry_types(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "customer.gdb"
+    workspace.mkdir()
+    reader = FakeFileGdbReader(
+        layers=[
+            FileGdbLayer("Meters", "Point M"),
+            FileGdbLayer("Routes", "Measured Line String"),
+            FileGdbLayer("Breakpoints", "MultiPointZM"),
+            FileGdbLayer("Boundaries", "3D Measured Polygon"),
+        ],
+        info_by_layer={
+            "Meters": {"crs": "EPSG:4326", "geometry_type": "Point M"},
+            "Routes": {
+                "crs": "EPSG:4326",
+                "geometry_type": "Measured Line String",
+            },
+            "Breakpoints": {
+                "crs": "EPSG:4326",
+                "geometry_type": "MultiPointZM",
+            },
+            "Boundaries": {
+                "crs": "EPSG:4326",
+                "geometry_type": "3D Measured Polygon",
+            },
+        },
+    )
+
+    artifact = scan_filegdb_workspace(
+        workspace,
+        options=_fixed_options(),
+        reader=reader,
+    )
+
+    _assert_schema_valid(artifact)
+    assert [item["geometryType"] for item in artifact["inventory"]] == [
+        "esriGeometryPoint",
+        "esriGeometryPolyline",
+        "esriGeometryMultipoint",
+        "esriGeometryPolygon",
+    ]
+    assert artifact["diagnostics"] == []
+
+
 def test_filegdb_scanner_surfaces_layer_failures_as_safe_diagnostics(
     tmp_path: Path,
 ) -> None:

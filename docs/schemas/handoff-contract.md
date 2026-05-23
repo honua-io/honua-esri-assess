@@ -116,22 +116,23 @@ python -m pip install -e ".[filegdb]"
 honua-esri-assess filegdb /path/to/customer.gdb --output EsriFootprint.json
 ```
 
-The emitted `source.kind` is `"filegdb"`. The raw workspace path is never
-published; `source.locator` and `filegdb.pathHash` carry the same salted
-`sha256:<64 hex>` value. Set `HONUA_ESRI_ASSESS_PATH_HASH_SALT` or pass
-`--path-hash-salt` when stable path hashes are needed across runs. Without a
-salt, the scanner uses a random in-memory salt for that run.
+The command writes `EsriFootprint.json` by default; `--output -` writes the
+same artifact to stdout. `--force-feature-count` asks the read-only backend
+to compute `featureCount` values even when counting may be expensive.
 
-The FileGDB facet and aggregate counts describe the emitted inventory:
+The emitted `source.kind` is `"filegdb"` and the only source-specific facet
+is `filegdb`; `portal` and `server` facets are schema-rejected. The raw
+workspace path is never published. `source.locator` and
+`filegdb.pathHash` carry the same salted `sha256:<64 hex>` value. Set
+`HONUA_ESRI_ASSESS_PATH_HASH_SALT` or pass `--path-hash-salt` when stable
+path hashes are needed across runs; otherwise the CLI uses a per-run random
+salt.
 
-- `filegdb.featureClassCount`, `counts.featureClasses`, and
-  `counts.items.filegdb-feature-class` all count emitted
-  `filegdb-feature-class` records.
-- `inventory[]` contains only `filegdb-feature-class` records for a FileGDB
-  artifact. Each record carries `name`, `geometryType`, `sr`, optional
-  `featureCount`, and optional minimal `fields` metadata.
-- `--force-feature-count` asks the read-only backend to compute
-  `featureCount` values even when the backend considers them expensive.
+FileGDB inventory records use `kind == "filegdb-feature-class"` and include
+the reader's layer name, normalized Esri geometry type, spatial reference,
+and any returned field or feature-count metadata. `filegdb.featureClassCount`,
+`counts.items["filegdb-feature-class"]`, and `counts.featureClasses` all
+count emitted FileGDB inventory records.
 
 ## Read-only stance
 
@@ -157,6 +158,13 @@ message on stderr and no stack trace. The artifact diagnostic shape is fixed by
 the [versioning policy](./versioning.md#diagnostics-surface); the vocabulary is
 closed per release line. At v0.1 the catalog is locked to six codes; see the
 [v0.1 diagnostic code catalog](./esri-footprint.v0.1.md#diagnostic-code-catalog).
+
+For the FileGDB path, missing optional reader dependencies, invalid
+workspaces, layer-listing failures, and per-layer metadata failures are
+reported with the locked v0.1 diagnostic vocabulary. If a footprint is
+written with any `error`-severity diagnostic, the CLI exits `1`. If the CLI
+cannot produce or write a footprint at all, it prints a generic
+prospect-safe error and exits `2`.
 
 ## Pointers
 

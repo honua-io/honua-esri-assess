@@ -13,14 +13,17 @@ fixtures/
     diagnostics/   # 429 on a paginated search page + 403 on an item probe
   arcgis-server/
     happy/         # /services?f=json + one folder traversal + service probes
+    diagnostics/   # 200 error-envelope probes for rate-limit/permission paths
   filegdb/
     happy/sample.gdb/_inventory.json   # stub the driver consumes
 ```
 
-Each backend directory contains a `_routes.json` enumerating URL → fixture-file
-mappings. The smoke `conftest.py` loads it into the `responses` registry and
-asserts there were **no unmatched requests** at teardown — any drift in scanner
-URL construction will surface as a hard test failure rather than a silent skip.
+Each HTTP corpus directory contains a `_routes.json` enumerating URL →
+fixture-file mappings. The smoke `conftest.py` loads it into the `responses`
+registry and asserts there were **no unmatched requests** at teardown — any
+drift in scanner URL construction will surface as a hard test failure rather
+than a silent skip. The FileGDB corpus is filesystem-only and uses
+`sample.gdb/_inventory.json` directly.
 
 ## Refreshing against a real org (out of CI)
 

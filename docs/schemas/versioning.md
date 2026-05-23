@@ -187,8 +187,8 @@ third-party reader) MUST:
 
 ## Diagnostics surface
 
-Errors and warnings observed during scanning are surfaced inside the
-footprint, not as raw exceptions or stack traces. The shape is a top-level
+Recoverable errors and warnings observed during scanning are surfaced inside
+the footprint, not as raw exceptions or stack traces. The shape is a top-level
 array of typed entries:
 
 ```json
@@ -220,9 +220,12 @@ Each diagnostic carries:
   `source.kind`, a folder, or an `EsriItem` id).
 - `hint` (optional) — remediation hint surfaced to the prospect.
 
-The CLI never prints raw Python tracebacks to a customer; unrecoverable
-failures still emit a footprint with `diagnostics[]` and a terminating
-`error`-severity entry whenever the producer can do so safely.
+The CLI never prints raw Python tracebacks to a customer. If a scanner returns
+a result, the CLI exits `0`, writes `EsriFootprint.json`, and mirrors each
+diagnostic to stderr as a typed line, even when the resulting inventory is
+empty or partial. If a scanner fails before returning a result, or if the CLI
+cannot read/write the requested artifact, it exits nonzero with a single
+prospect-safe `partial-coverage: ...` line on stderr.
 
 ## Network telemetry
 

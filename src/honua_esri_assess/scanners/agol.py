@@ -20,6 +20,7 @@ from urllib.parse import urljoin
 import requests
 
 from ..diagnostics import Diagnostic
+from ..redaction import sanitize_handoff_url
 
 _SUPPORTED_KINDS = {
     "Feature Service": "feature-service",
@@ -127,7 +128,7 @@ def _to_record(search_item: dict[str, Any], probe: dict[str, Any]) -> dict[str, 
     }
     url = probe.get("url") or search_item.get("url")
     if isinstance(url, str) and url:
-        record["url"] = url
+        record["url"] = sanitize_handoff_url(url)
     elif kind != "web-map":
         record["url"] = ""
     owner = search_item.get("owner") or probe.get("owner")

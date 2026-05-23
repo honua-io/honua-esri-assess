@@ -75,9 +75,8 @@ Per release line, the closed product receives:
    deprecations and their planned removal window.
 4. At least one canonical sample footprint under
    [`tests/fixtures/`](../../tests/fixtures/esri-footprint-sample.json)
-   that the closed product can use as a conformance check. Per-source
-   samples (ArcGIS Server, FileGDB) follow with the corresponding scanner
-   tickets.
+   and fixture corpora plus golden expectations under `tests/smoke/` that
+   exercise emitted footprints as conformance checks.
 
 ## Verifying a footprint before handoff
 
@@ -112,12 +111,13 @@ artifact:
 
 ## Diagnostics, not stack traces
 
-Failures during scanning are surfaced as typed entries in `diagnostics[]`
-inside the artifact, not as Python tracebacks in the CLI output or the
-footprint. The shape is fixed by the
-[versioning policy](./versioning.md#diagnostics-surface); the vocabulary
-is closed per release line. At v0.1 the catalog is locked to six codes;
-see the
+Recoverable failures during scanning are surfaced as typed entries in
+`diagnostics[]` inside the artifact, not as Python tracebacks in the CLI output
+or the footprint. If the CLI cannot produce or write the artifact, it exits
+nonzero with one prospect-safe `partial-coverage: ...` line on stderr. The
+artifact diagnostic shape is fixed by the
+[versioning policy](./versioning.md#diagnostics-surface); the vocabulary is
+closed per release line. At v0.1 the catalog is locked to six codes; see the
 [v0.1 diagnostic code catalog](./esri-footprint.v0.1.md#diagnostic-code-catalog).
 
 ## Pointers

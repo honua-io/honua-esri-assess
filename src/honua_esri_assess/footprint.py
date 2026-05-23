@@ -10,6 +10,7 @@ from typing import Any, Iterable
 
 from . import __version__
 from .diagnostics import Diagnostic
+from .redaction import sanitize_handoff_url
 
 SCHEMA_VERSION = "0.1.0"
 PRODUCER_NAME = "honua-esri-assess"
@@ -28,7 +29,7 @@ def build_footprint(
 ) -> dict[str, Any]:
     items = list(inventory)
     by_kind: Counter[str] = Counter(item["kind"] for item in items)
-    source: dict[str, Any] = {"kind": source_kind, "target": target}
+    source: dict[str, Any] = {"kind": source_kind, "target": sanitize_handoff_url(target)}
     if portal_name is not None:
         source["portalName"] = portal_name
 

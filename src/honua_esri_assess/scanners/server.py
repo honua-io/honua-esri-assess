@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 import requests
 
 from ..diagnostics import Diagnostic
+from ..redaction import sanitize_handoff_url
 
 _SERVICE_KINDS = {
     "FeatureServer": "feature-service",
@@ -92,7 +93,7 @@ def _record_service(
         "kind": kind,
         "id": name.split("/")[-1],
         "title": description if isinstance(description, str) else name.split("/")[-1],
-        "url": probe_url,
+        "url": sanitize_handoff_url(probe_url),
         "layerCount": len(layers),
     }
     inventory.append(record)

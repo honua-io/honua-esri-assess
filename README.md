@@ -61,13 +61,14 @@ instead of an inventory.
 
 ### Exit codes and failure surface
 
-- Exit `0` — the scanner produced an inventory. Any per-endpoint failure
-  (HTTP 403/429, unreachable host, unsupported item type) is downgraded to a
-  typed entry in `diagnostics[]` and also mirrored to stderr as
-  `<code>: <message> [scope=<label>]`. Partial inventories are still a
-  successful run.
-- Exit `1` — the scanner could not return a result before writing an
-  artifact, or the artifact/report could not be written. A single
+- Exit `0` — the scanner completed and the CLI wrote `EsriFootprint.json`.
+  Any per-endpoint failure (HTTP 403/429, unreachable host, unsupported item
+  type) is downgraded to a typed entry in `diagnostics[]` and also mirrored to
+  stderr as `<code>: <message> [scope=<label>]`. Empty or partial inventories
+  are still successful runs.
+- Exit `1` — the scanner failed before returning a result or could not write
+  the output file, such as on a read-only filesystem or permission-denied
+  path. A single
   `partial-coverage: <typed message>` line is printed to stderr; no stack
   trace, internal path, or credential is leaked.
 - Exit `2` — missing or invalid arguments (e.g., `scan` without a backend).
@@ -131,9 +132,10 @@ python -m pip install -e ".[smoke]"
 pytest tests/smoke -v
 ```
 
-The suite covers AGOL happy + diagnostics, ArcGIS Server happy + diagnostics,
-FileGDB happy, report rendering, no-network enforcement, and console-script
-packaging. It finishes in well under a second on a developer laptop; the
+There are 9 tests covering the three scanner backends (AGOL happy +
+diagnostics, ArcGIS Server happy + diagnostics, FileGDB happy), the Markdown
+report renderer, the no-network guard, and a console-script smoke check. The
+current corpus runs in well under a second on a developer laptop — the
 sub-30-second wall-clock budget is the CI ceiling, not the target.
 
 The suite uses `responses` to intercept the `requests` session and
@@ -144,8 +146,8 @@ default" project constraint — fixtures alone would catch a scanner that hit
 the wrong URL, but only the socket guard catches a scanner that bypassed the
 mocked session entirely.
 
-The CI workflow runs the smoke job as a separate matrix entry so a smoke
-failure is distinguishable from a unit-test failure in the PR status. See
+The CI workflow runs the smoke suite as a separate job so a smoke failure is
+distinguishable from a unit-test failure in the PR status. See
 [`tests/smoke/fixtures/README.md`](tests/smoke/fixtures/README.md) for the
 fixture layout and refresh protocol.
 

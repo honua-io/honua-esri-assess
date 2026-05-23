@@ -16,6 +16,7 @@ Shipped in the current contract line:
 | Schema | `EsriFootprint.json` v0.1 schema and reference docs | Sole handoff artifact |
 | Fixture sample | Canonical sample footprint and schema validation tests | `tests/fixtures/esri-footprint-sample.json` |
 | Scanner CLI | Fixture-backed AGOL, ArcGIS Server, and FileGDB scans | Full `EsriFootprint.json` |
+| FileGDB workspace CLI | Read-only `pyogrio`/GDAL inventory of a local `.gdb` | Full `EsriFootprint.json` |
 | Report CLI | Markdown readiness report renderer smoke coverage | Human-readable report |
 | Smoke CI | Separate fixture-backed job without live Esri access | Local contract guard |
 | Entitlements | Read-only library and interim `entitlements` CLI for Portal and Server licensing | Facet-compatible JSON fragment |
@@ -30,13 +31,27 @@ Still out of scope for this line:
   and the interim `entitlements` CLI validates that shape until scanner
   integration lands.
 
+## Supported sources
+
+| Source | CLI surface | Extra dependencies | Notes |
+|--------|-------------|--------------------|-------|
+| ArcGIS Online | `scan agol --target <sharing-rest-url> --output EsriFootprint.json` | none | Uses the Portal Sharing REST base read-only. |
+| ArcGIS Server | `scan server --target <rest-url> --output EsriFootprint.json` | none | Uses ArcGIS Server REST service metadata read-only. |
+| FileGDB | `filegdb <workspace.gdb> --output EsriFootprint.json` | `filegdb` extra | Uses `pyogrio`/GDAL metadata calls against a local `.gdb` directory. |
+
+Compatibility note: `scan filegdb --target <path> --output <file>` remains
+available for the fixture-backed descriptor scanner used by the smoke harness.
+It reads `<path>/_inventory.json` when `<path>` is a directory, or treats
+`<path>` as the descriptor file when it is a file. For real FileGDB
+inventories, use the top-level `filegdb` command above.
+
 ## Command-line usage
 
 The `honua-esri-assess` console script (and `python -m honua_esri_assess`)
-exposes `scan`, `report`, and interim `entitlements` subcommands. The tool is
-read-only against Esri systems: the scanner and entitlement collectors issue
-GET requests only, never write to ArcGIS Online / Enterprise Portal or
-ArcGIS Server, and never contact a Honua-operated service.
+exposes `scan`, `filegdb`, `report`, and interim `entitlements` subcommands.
+The tool is read-only against Esri systems: the scanner and entitlement
+collectors issue GET requests only, never write to ArcGIS Online / Enterprise
+Portal or ArcGIS Server, and never contact a Honua-operated service.
 
 ```bash
 # ArcGIS Online (Portal Sharing REST base - the scanner appends portals/self,
@@ -50,7 +65,15 @@ honua-esri-assess scan server \
   --target https://gis.example.com/arcgis/rest \
   --output EsriFootprint.json
 
-# FileGDB inventory (directory containing `_inventory.json`, or a descriptor file).
+# FileGDB inventory from a local .gdb directory.
+python -m pip install -e ".[filegdb]"
+honua-esri-assess filegdb ./sample.gdb \
+  --output EsriFootprint.json
+
+# FileGDB inventory to stdout.
+honua-esri-assess filegdb ./sample.gdb --output -
+
+# Fixture/descriptor compatibility path used by the smoke harness.
 honua-esri-assess scan filegdb \
   --target ./sample.gdb \
   --output EsriFootprint.json
@@ -65,6 +88,22 @@ The AGOL `scan` target must be the Portal Sharing REST base (typically the URL
 ending in `/sharing/rest`). The scanner appends endpoint paths directly to
 that base, so passing a higher-level portal URL will produce
 `partial-coverage` diagnostics instead of an inventory.
+
+The top-level `filegdb` command requires a local directory whose name ends in
+`.gdb`. The raw workspace path is never published. `source.locator` and
+`filegdb.pathHash` are the same salted `sha256:<64 hex>` value. Set
+`HONUA_ESRI_ASSESS_PATH_HASH_SALT` or pass `--path-hash-salt` when stable
+hashes are needed across runs; without a salt, the command uses a random
+in-memory salt for that run. Pass `--force-feature-count` to ask the
+read-only backend to calculate feature counts even when the backend considers
+that expensive.
+
+FileGDB inventory records use `kind: "filegdb-feature-class"` and include the
+feature class `name`, `geometryType`, spatial reference (`sr`), optional
+`featureCount`, and optional minimal `fields` metadata. Reader dependency,
+workspace, and per-layer failures are emitted as typed, prospect-safe
+`diagnostics[]`; raw paths, credentials, stack traces, and raw exception text
+are not copied into the artifact.
 
 ## Entitlement enumeration
 
@@ -145,14 +184,20 @@ Detailed endpoint coverage and developer integration notes are in
 
 ### Exit codes and failure surface
 
+Exit codes are an operator convenience, not the handoff contract. The closed
+product should inspect `EsriFootprint.json` and `diagnostics[]`, not infer
+contract state from a shell status.
+
 - Exit `0` - the scanner completed and wrote `EsriFootprint.json`, the report
   renderer wrote Markdown, or the entitlement collector wrote JSON to stdout.
   Recoverable per-endpoint failures are downgraded to typed diagnostics.
-- Exit `1` - the scanner or report command failed before returning a result or
-  could not read/write the requested artifact. Entitlements also use `1` for
-  unexpected failures. Stderr stays prospect-safe.
-- Exit `2` - missing or invalid arguments, such as `scan` without a backend or
-  `entitlements` without `agol` or `server`.
+- Exit `1` - a command-level failure occurred, or the top-level `filegdb`
+  command wrote an artifact that contains at least one `error`-severity
+  diagnostic. Entitlements also use `1` for unexpected failures. Stderr stays
+  prospect-safe.
+- Exit `2` - missing or invalid arguments (for example, `scan` without a
+  backend or `entitlements` without `agol`/`server`), or the top-level
+  `filegdb` command could not produce or write a footprint.
 - Exit `3` - entitlement collection hit a typed hard failure such as auth,
   forbidden, not found, rate limit, connection, API, or schema parse failure.
   The message is prospect-safe; `--debug` re-raises for local development.
@@ -241,6 +286,9 @@ fixture layout and refresh protocol.
 - Language: Python.
 - License: Apache-2.0.
 - Runtime writes to customer Esri systems are out of scope.
+- FileGDB metadata reads use the optional `pyogrio` backend (`MIT` license)
+  through GDAL/OGR read-only metadata calls; no ELv2 closed-product code is
+  vendored.
 - `EsriFootprint.json` follows semver, with a pre-1.0 stance that lets minor
   bumps break and guarantees no breaks within a minor line. See
   [`docs/schemas/versioning.md`](docs/schemas/versioning.md).

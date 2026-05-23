@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,7 +28,13 @@ from .entitlements import (
     ServerEntitlementsCollector,
     ServiceRef,
 )
-from .footprint import build_footprint, licensing_facet_to_dict, write_footprint
+from .footprint import (
+    build_footprint,
+    footprint_to_json,
+    licensing_facet_to_dict,
+    write_footprint,
+    write_footprint_json,
+)
 from .scanners import agol as agol_scanner
 from .scanners import filegdb as filegdb_scanner
 from .scanners import server as server_scanner
@@ -81,14 +88,39 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", required=True, type=Path, help="Path to write EsriFootprint.json."
     )
 
-    filegdb = scan_sub.add_parser(
+    filegdb_scan = scan_sub.add_parser(
         "filegdb", help="Inventory a FileGDB on disk (read-only)."
     )
-    filegdb.add_argument(
+    filegdb_scan.add_argument(
         "--target", required=True, help="Path to the FileGDB or inventory descriptor."
     )
-    filegdb.add_argument(
+    filegdb_scan.add_argument(
         "--output", required=True, type=Path, help="Path to write EsriFootprint.json."
+    )
+
+    filegdb = subparsers.add_parser(
+        "filegdb",
+        help="Scan a local FileGDB workspace and emit EsriFootprint.json.",
+    )
+    filegdb.add_argument("workspace", help="Local .gdb directory to scan read-only.")
+    filegdb.add_argument(
+        "-o",
+        "--output",
+        default="EsriFootprint.json",
+        help="Output path for the footprint JSON, or '-' for stdout.",
+    )
+    filegdb.add_argument(
+        "--path-hash-salt",
+        default=os.environ.get("HONUA_ESRI_ASSESS_PATH_HASH_SALT"),
+        help=(
+            "Salt for the prospect-safe FileGDB path hash. Defaults to "
+            "HONUA_ESRI_ASSESS_PATH_HASH_SALT; if unset, a per-run random salt is used."
+        ),
+    )
+    filegdb.add_argument(
+        "--force-feature-count",
+        action="store_true",
+        help="Ask the read-only backend to calculate feature counts even when expensive.",
     )
 
     report = subparsers.add_parser(
@@ -196,6 +228,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "scan":
         return _dispatch_scan(args)
+    if args.command == "filegdb":
+        return _run_filegdb_workspace(
+            args.workspace,
+            args.output,
+            path_hash_salt=args.path_hash_salt,
+            force_feature_count=args.force_feature_count,
+        )
     if args.command == "report":
         return _dispatch_report(args)
     if args.command == "entitlements":
@@ -212,7 +251,7 @@ def _dispatch_scan(args: argparse.Namespace) -> int:
     if backend == "server":
         return _run_server(args.target, args.output)
     if backend == "filegdb":
-        return _run_filegdb(args.target, args.output)
+        return _run_filegdb_descriptor(args.target, args.output)
     print("error: scan requires a backend (agol|server|filegdb).", file=sys.stderr)
     return _EXIT_USAGE
 
@@ -253,7 +292,7 @@ def _run_server(target: str, output: Path) -> int:
     return 0
 
 
-def _run_filegdb(target: str, output: Path) -> int:
+def _run_filegdb_descriptor(target: str, output: Path) -> int:
     try:
         result = filegdb_scanner.scan(target)
     except Exception:
@@ -269,6 +308,47 @@ def _run_filegdb(target: str, output: Path) -> int:
         return _EXIT_GENERIC
     _emit_diagnostics_to_stderr(footprint)
     return 0
+
+
+def _run_filegdb_workspace(
+    workspace: str,
+    output: str | Path,
+    *,
+    path_hash_salt: str | None,
+    force_feature_count: bool,
+) -> int:
+    from .filegdb import FileGdbScanOptions, scan_filegdb_workspace
+
+    options = FileGdbScanOptions(
+        path_hash_salt=path_hash_salt,
+        force_feature_count=force_feature_count,
+    )
+    try:
+        footprint = scan_filegdb_workspace(workspace, options=options)
+    except Exception:
+        return _emit_typed_error(
+            "FileGDB scan failed before a footprint could be written.",
+            status=2,
+        )
+
+    if str(output) == "-":
+        print(footprint_to_json(footprint), end="")
+    else:
+        try:
+            write_footprint_json(footprint, Path(output))
+        except OSError:
+            return _emit_typed_error(
+                "Could not write EsriFootprint.json output.",
+                status=2,
+            )
+
+    _emit_diagnostics_to_stderr(footprint)
+    has_error = any(
+        diagnostic.get("severity") == "error"
+        for diagnostic in footprint.get("diagnostics", [])
+        if isinstance(diagnostic, dict)
+    )
+    return 1 if has_error else 0
 
 
 def _dispatch_report(args: argparse.Namespace) -> int:
@@ -294,6 +374,8 @@ def _write_footprint_safely(footprint: dict, output: Path) -> bool:
 
 def _emit_diagnostics_to_stderr(footprint: dict) -> None:
     for diag in footprint.get("diagnostics", []) or []:
+        if not isinstance(diag, dict):
+            continue
         code = diag.get("code", "unknown")
         message = diag.get("message", "")
         scope = diag.get("scope")
@@ -302,8 +384,12 @@ def _emit_diagnostics_to_stderr(footprint: dict) -> None:
 
 
 def _emit_typed_failure(message: str) -> int:
+    return _emit_typed_error(message, status=_EXIT_GENERIC)
+
+
+def _emit_typed_error(message: str, *, status: int) -> int:
     print(f"partial-coverage: {message}", file=sys.stderr)
-    return _EXIT_GENERIC
+    return status
 
 
 def _dispatch_entitlements(args: argparse.Namespace) -> int:
@@ -403,3 +489,7 @@ _ERROR_CATEGORY: dict[type[EntitlementsError], str] = {
     EntitlementsApiError: "Esri endpoint error",
     EntitlementsSchemaError: "could not parse response",
 }
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

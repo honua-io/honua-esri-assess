@@ -15,15 +15,20 @@ fixtures/
     happy/         # /services?f=json + one folder traversal + service probes
     diagnostics/   # 200 error-envelope probes for rate-limit/permission paths
   filegdb/
-    happy/sample.gdb/_inventory.json   # stub the driver consumes
+    happy/sample.gdb/                  # synthetic local .gdb-shaped fixture
 ```
 
 Each HTTP corpus directory contains a `_routes.json` enumerating URL →
 fixture-file mappings. The smoke `conftest.py` loads it into the `responses`
 registry and asserts there were **no unmatched requests** at teardown — any
 drift in scanner URL construction will surface as a hard test failure rather
-than a silent skip. The FileGDB corpus is filesystem-only and uses
-`sample.gdb/_inventory.json` directly.
+than a silent skip. The FileGDB corpus is filesystem-only. Production FileGDB
+scans use the optional `pyogrio`/GDAL metadata backend against a real `.gdb`
+directory; synthetic fixture files are only test scaffolding and are not part
+of the `EsriFootprint.json` handoff contract. The smoke suite exercises the
+legacy `scan filegdb --target ...` descriptor path so fixture tests stay
+dependency-light; production usage should prefer the top-level
+`honua-esri-assess filegdb <workspace.gdb>` command.
 
 ## Refreshing against a real org (out of CI)
 

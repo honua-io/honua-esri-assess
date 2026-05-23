@@ -83,8 +83,9 @@ Per release line, the closed product receives:
    deprecations and their planned removal window.
 4. At least one canonical sample footprint under
    [`tests/fixtures/`](../../tests/fixtures/esri-footprint-sample.json)
-   and fixture corpora plus golden expectations under `tests/smoke/` that
-   exercise emitted footprints as conformance checks.
+   that the closed product can use as a conformance check, plus fixture
+   corpora and golden expectations under `tests/smoke/` for scanner surfaces
+   shipped in that line.
 
 ## Verifying a footprint before handoff
 
@@ -105,6 +106,40 @@ A prospect or the closed product can verify a footprint locally:
 
 No part of this verification requires contacting a Honua-operated service.
 
+## FileGDB footprint path
+
+The FileGDB scanner reads a local `.gdb` directory through the optional
+`pyogrio`/GDAL metadata backend and writes the same sole handoff artifact:
+
+```bash
+python -m pip install -e ".[filegdb]"
+honua-esri-assess filegdb /path/to/customer.gdb --output EsriFootprint.json
+```
+
+The command writes `EsriFootprint.json` by default; `--output -` writes the
+same artifact to stdout. `--force-feature-count` asks the read-only backend
+to compute `featureCount` values even when counting may be expensive.
+
+The older `scan filegdb --target <path> --output <file>` surface is retained
+for the fixture-backed descriptor scanner used by the smoke tests. It reads a
+local `_inventory.json` descriptor and emits the same v0.1 FileGDB artifact
+shape, but the production FileGDB metadata path is the top-level `filegdb`
+command above.
+
+The emitted `source.kind` is `"filegdb"` and the only source-specific facet
+is `filegdb`; `portal` and `server` facets are schema-rejected. The raw
+workspace path is never published. `source.locator` and
+`filegdb.pathHash` carry the same salted `sha256:<64 hex>` value. Set
+`HONUA_ESRI_ASSESS_PATH_HASH_SALT` or pass `--path-hash-salt` when stable
+path hashes are needed across runs; otherwise the CLI uses a per-run random
+salt.
+
+FileGDB inventory records use `kind == "filegdb-feature-class"` and include
+the reader's layer name, normalized Esri geometry type, spatial reference,
+and any returned field or feature-count metadata. `filegdb.featureClassCount`,
+`counts.items["filegdb-feature-class"]`, and `counts.featureClasses` all
+count emitted FileGDB inventory records.
+
 ## Read-only stance
 
 The producer is read-only against the customer's Esri systems. This is a
@@ -121,12 +156,24 @@ artifact:
 
 Recoverable failures during scanning are surfaced as typed entries in
 `diagnostics[]` inside the artifact, not as Python tracebacks in the CLI output
-or the footprint. If the CLI cannot produce or write the artifact, it exits
-nonzero with one prospect-safe `partial-coverage: ...` line on stderr. The
-artifact diagnostic shape is fixed by the
-[versioning policy](./versioning.md#diagnostics-surface); the vocabulary is
+or the footprint. A command can exit nonzero after writing an artifact when
+the artifact contains `error`-severity diagnostics; the artifact remains the
+handoff contract and should be inspected locally before upload. If the CLI
+cannot produce or write the artifact, it exits nonzero with a prospect-safe
+message on stderr and no stack trace. The artifact diagnostic shape is fixed by
+the [versioning policy](./versioning.md#diagnostics-surface); the vocabulary is
 closed per release line. At v0.1 the catalog is locked to six codes; see the
 [v0.1 diagnostic code catalog](./esri-footprint.v0.1.md#diagnostic-code-catalog).
+
+For the FileGDB path, missing optional reader dependencies, invalid
+workspaces, layer-listing failures, and per-layer metadata failures are
+reported with the locked v0.1 diagnostic vocabulary. Exit-code meanings are
+CLI-surface specific: the top-level `filegdb` workspace command exits `1`
+after writing an artifact with any `error`-severity diagnostic and exits `2`
+when it cannot produce or write a footprint. Older `scan ...` and `report`
+surfaces also return nonzero on command-level failures, but callers should
+treat `diagnostics[]` in the artifact as the authoritative failure surface
+whenever an artifact exists.
 
 ## Pointers
 

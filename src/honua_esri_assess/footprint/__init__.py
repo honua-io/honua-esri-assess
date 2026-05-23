@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from hashlib import sha256
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 from urllib.parse import urlsplit
 
 from .. import __version__
@@ -21,6 +22,25 @@ from .v0_1 import (
 SCHEMA_VERSION = "v0.1"
 TOOL_NAME = "honua-esri-assess"
 ITEM_KINDS = ("portal-item", "server-service", "filegdb-feature-class")
+
+
+def installed_tool_version() -> str:
+    """Return the installed package version, falling back in editable checkouts."""
+
+    try:
+        return version(TOOL_NAME)
+    except PackageNotFoundError:
+        return __version__
+
+
+def utc_timestamp() -> str:
+    """Return an RFC3339 UTC timestamp accepted by the v0.1 schema."""
+
+    return (
+        datetime.now(timezone.utc)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
+    )
 
 
 def build_footprint(
@@ -44,7 +64,7 @@ def build_footprint(
     footprint: dict[str, Any] = {
         "schemaVersion": SCHEMA_VERSION,
         "generatedAt": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "tool": {"name": TOOL_NAME, "version": __version__},
+        "tool": {"name": TOOL_NAME, "version": installed_tool_version()},
         "source": source,
         "inventory": items,
         "counts": _counts(items),
@@ -59,11 +79,22 @@ def build_footprint(
     return footprint
 
 
-def write_footprint(footprint: dict[str, Any], output: Path) -> None:
+def footprint_to_json(footprint: Mapping[str, Any]) -> str:
+    """Serialize a footprint with stable, human-readable formatting."""
+
+    return json.dumps(footprint, indent=2, sort_keys=True) + "\n"
+
+
+def write_footprint(footprint: Mapping[str, Any], output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(footprint, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    output.write_text(footprint_to_json(footprint), encoding="utf-8")
+
+
+def write_footprint_json(footprint: Mapping[str, Any], output_path: Path) -> None:
+    """Write an EsriFootprint.json artifact."""
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(footprint_to_json(footprint), encoding="utf-8")
 
 
 def path_hash(value: str | Path) -> str:
@@ -138,9 +169,13 @@ __all__ = [
     "SCHEMA_VERSION",
     "TOOL_NAME",
     "build_footprint",
+    "footprint_to_json",
+    "installed_tool_version",
     "licensing_facet_to_dict",
     "path_hash",
     "portal_licensing_to_dict",
     "server_licensing_to_dict",
+    "utc_timestamp",
     "write_footprint",
+    "write_footprint_json",
 ]

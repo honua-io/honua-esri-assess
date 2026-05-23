@@ -10,7 +10,7 @@ import sys
 import time
 import traceback
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, IO, Sequence
 
@@ -410,14 +410,14 @@ def _run_server(
             allow_nonstandard_base=args.allow_nonstandard_base,
         )
         scanner = ServerScanner(deep=args.deep, folder=args.folder)
-        captured_at = datetime.now(timezone.utc)
+        scan_started_at = datetime.now(UTC)
         started = time.monotonic()
         result = scanner.scan(client)
         elapsed = time.monotonic() - started
         footprint = to_footprint_v0_1(
             result,
             tool_version=__version__,
-            captured_at=captured_at,
+            captured_at=scan_started_at,
             target_url=args.target,
         )
         _validate_server_footprint(footprint)

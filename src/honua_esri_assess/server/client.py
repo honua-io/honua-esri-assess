@@ -31,7 +31,7 @@ from ..diagnostics import (
     sanitize_message,
 )
 from ..logging import get_logger
-from ._safe import redact_params, safe_url
+from ._safe import credential_free_url, redact_params, safe_url
 from .auth import AnonymousCredential, Credential
 
 _DEFAULT_USER_AGENT = f"honua-esri-assess/{__version__} (+https://github.com/honua-io/honua-esri-assess)"
@@ -95,9 +95,10 @@ def normalize_base_url(base_url: str, *, allow_nonstandard: bool = False) -> str
 
     if not base_url:
         raise ValueError("base_url must be a non-empty string")
-    parts = urlsplit(base_url)
+    safe_base_url = credential_free_url(base_url)
+    parts = urlsplit(safe_base_url)
     if not parts.scheme or not parts.netloc:
-        raise ValueError(f"base_url must include scheme and host, got {base_url!r}")
+        raise ValueError(f"base_url must include scheme and host, got {safe_base_url!r}")
     path = parts.path.rstrip("/")
     if allow_nonstandard:
         return urlunsplit((parts.scheme, parts.netloc, path, "", "")).rstrip("/")

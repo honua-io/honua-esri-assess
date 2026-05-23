@@ -257,16 +257,8 @@ class ServerScanner:
                 ServerConnectionError,
                 ServerApiError,
             ) as exc:
-                code = (
-                    exc.code
-                    if isinstance(
-                        exc,
-                        (ServerAuthError, ServerForbiddenError, ServerRateLimitedError),
-                    )
-                    else "server.service.deep-failed"
-                )
                 diagnostic = ScanDiagnostic(
-                    code=code,
+                    code=_deep_failure_code(exc),
                     severity="warning",
                     message=f"deep scan of {bare_name!r} failed: {exc.message}",
                     field=f"services/{bare_name}",
@@ -349,6 +341,14 @@ def _parse_layers(value: Any) -> Iterable[LayerRecord]:
             )
         )
     return parsed
+
+
+def _deep_failure_code(exc: AssessmentError) -> str:
+    if isinstance(exc, ServerRateLimitedError):
+        return "server.service.rate-limited"
+    if isinstance(exc, (ServerAuthError, ServerForbiddenError)):
+        return "server.service.missing-permission"
+    return "server.service.deep-failed"
 
 
 def _build_service_url(root: str, folder: str | None, name: str, service_type: str) -> str:

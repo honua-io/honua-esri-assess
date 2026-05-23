@@ -78,6 +78,7 @@ def test_scan_server_writes_footprint_file(tmp_path: Path) -> None:
     body = json.loads(output.read_text(encoding="utf-8"))
     assert body["schemaVersion"] == "v0.1"
     assert body["source"]["kind"] == "arcgis-server"
+    assert body["source"]["locator"] == "https://gis.example.com/arcgis/rest/services"
     # At least one service from each folder is present
     folder_names = set(body["server"]["folders"])
     assert {"Hydrology", "Basemaps", "Imagery", "Restricted"}.issubset(folder_names)
@@ -167,6 +168,45 @@ def test_scan_server_writes_to_stdout_when_no_output(
     # One-line summary lands on stderr
     assert "scanned" in captured.err
     assert "services across" in captured.err
+
+
+@responses.activate
+def test_scan_server_never_writes_raw_target_credentials(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _register_info()
+    _register_root()
+    _register_folder("Hydrology", "folder-hydrology.json")
+    _register_folder("Basemaps", "folder-basemaps.json")
+    _register_folder("Imagery", "folder-imagery.json")
+    _register_folder("Restricted", "folder-imagery.json", status=403)
+
+    exit_code = main(
+        [
+            "scan",
+            "server",
+            "--target",
+            (
+                "https://raw-user:raw-pass@gis.example.com/arcgis"
+                "?token=raw-target-token&sessionId=raw-session#frag"
+            ),
+            "--token",
+            "scanner-token",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    payload = json.loads(captured.out)
+    assert payload["source"]["locator"] == "https://gis.example.com/arcgis/rest/services"
+    combined = captured.out + captured.err
+    for secret in (
+        "raw-user",
+        "raw-pass",
+        "raw-target-token",
+        "raw-session",
+        "scanner-token",
+    ):
+        assert secret not in combined
 
 
 def test_cli_version_short_circuits(capsys: pytest.CaptureFixture[str]) -> None:

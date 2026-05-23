@@ -39,6 +39,10 @@ from honua_esri_assess.server.client import (
             "https://gis.example.com/arcgis/rest/services/",
             "https://gis.example.com/arcgis/rest/services",
         ),
+        (
+            "https://user:pass@gis.example.com/arcgis?token=secret#frag",
+            "https://gis.example.com/arcgis/rest/services",
+        ),
     ],
 )
 def test_normalize_base_url_canonicalizes(input_url: str, expected: str) -> None:
@@ -46,8 +50,9 @@ def test_normalize_base_url_canonicalizes(input_url: str, expected: str) -> None
 
 
 def test_normalize_base_url_passes_through_when_allowed() -> None:
-    custom = "https://gis.example.com/custom/mount/point"
-    assert normalize_base_url(custom, allow_nonstandard=True) == custom
+    custom = "https://user:pass@gis.example.com/custom/mount/point?token=secret#frag"
+    expected = "https://gis.example.com/custom/mount/point"
+    assert normalize_base_url(custom, allow_nonstandard=True) == expected
 
 
 def test_normalize_base_url_rejects_unparseable() -> None:

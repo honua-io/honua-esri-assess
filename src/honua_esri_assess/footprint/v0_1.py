@@ -5,17 +5,16 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 from honua_esri_assess.diagnostics import Diagnostic
-from honua_esri_assess.footprint.artifact import build_footprint
 from honua_esri_assess.footprint.licensing import (
     licensing_facet_to_dict,
     portal_licensing_to_dict,
     server_licensing_to_dict,
 )
 from honua_esri_assess.portal.models import ItemRecord, PortalScanResult
-from honua_esri_assess.redaction import sanitize_handoff_url
+from honua_esri_assess.server._safe import credential_free_url
 from honua_esri_assess.server.models import (
     ScanDiagnostic,
     ServerScanResult,
@@ -89,6 +88,7 @@ def to_footprint_v0_1(
     if isinstance(result, ServerScanResult):
         return _server_to_footprint(
             result,
+            tool_version=tool_version,
             generated_at=generated_at,
             captured_at=captured_at,
             target_url=target_url,
@@ -147,10 +147,13 @@ def _portal_to_footprint(
 def _server_to_footprint(
     result: ServerScanResult,
     *,
+    tool_version: str,
     generated_at: datetime | None = None,
     captured_at: datetime | None = None,
     target_url: str | None = None,
 ) -> dict[str, Any]:
+    generated_stamp = _utc(generated_at or datetime.now(timezone.utc))
+    captured_stamp = _utc(captured_at or generated_stamp)
     service_counts = Counter(service.service_type for service in result.services)
     omitted = _services_omitted_from_inventory(result.diagnostics)
     inventory = [
@@ -158,6 +161,11 @@ def _server_to_footprint(
         for service in result.services
         if _service_identity(service) not in omitted and service.name not in omitted
     ]
+    diagnostics = [
+        _server_diagnostic_to_dict(diagnostic)
+        for diagnostic in result.diagnostics
+    ]
+
     server: dict[str, Any] = {
         "folders": [folder.name for folder in result.folders],
         "serviceCounts": {
@@ -169,18 +177,28 @@ def _server_to_footprint(
     if version:
         server["version"] = version
 
-    return build_footprint(
-        source_kind="arcgis-server",
-        target=target_url or result.info.url,
-        inventory=inventory,
-        diagnostics=[
-            _server_diagnostic_to_contract(diagnostic)
-            for diagnostic in result.diagnostics
-        ],
-        server=server,
-        generated_at=generated_at,
-        captured_at=captured_at,
-    )
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "generatedAt": _format_rfc3339(generated_stamp),
+        "tool": {"name": PRODUCER_NAME, "version": tool_version},
+        "source": {
+            "kind": "arcgis-server",
+            "locator": _server_locator(result.info.url or target_url or ""),
+            "capturedAt": _format_rfc3339(captured_stamp),
+        },
+        "server": server,
+        "inventory": inventory,
+        "counts": {
+            "items": {
+                "portal-item": 0,
+                "server-service": len(inventory),
+                "filegdb-feature-class": 0,
+            },
+            "layers": sum(item["layerCount"] for item in inventory),
+            "featureClasses": 0,
+        },
+        "diagnostics": diagnostics,
+    }
 
 
 def _portal_item_to_dict(item: ItemRecord) -> dict[str, Any]:
@@ -219,20 +237,20 @@ def _portal_diagnostic_to_dict(diagnostic: Diagnostic) -> dict[str, Any]:
 def _server_service_to_dict(service: ServiceRecord) -> dict[str, Any]:
     return {
         "kind": "server-service",
-        "serviceUrl": sanitize_handoff_url(service.url),
+        "serviceUrl": credential_free_url(service.url),
         "serviceType": service.service_type,
         "folder": service.folder or "",
         "layerCount": len(service.layers),
     }
 
 
-def _server_diagnostic_to_contract(diagnostic: ScanDiagnostic) -> Diagnostic:
-    return Diagnostic(
-        code=SERVER_DIAGNOSTIC_CODE_MAP.get(diagnostic.code, "partial-coverage"),
-        severity=_severity(diagnostic.severity),
-        message=diagnostic.message,
-        scope=diagnostic.field or "arcgis-server",
-    )
+def _server_diagnostic_to_dict(diagnostic: ScanDiagnostic) -> dict[str, Any]:
+    return {
+        "code": SERVER_DIAGNOSTIC_CODE_MAP.get(diagnostic.code, "partial-coverage"),
+        "severity": _severity(diagnostic.severity),
+        "message": diagnostic.message,
+        "scope": diagnostic.field or "arcgis-server",
+    }
 
 
 def _services_omitted_from_inventory(
@@ -263,6 +281,24 @@ def _services_omitted_from_inventory(
 
 def _service_identity(service: ServiceRecord) -> tuple[str, str, str]:
     return (service.folder or "_root", service.name, service.service_type)
+
+
+def _server_locator(value: str) -> str:
+    safe = credential_free_url(value)
+    parts = urlsplit(safe)
+    if not parts.scheme or not parts.netloc:
+        return safe
+    path = parts.path.rstrip("/")
+    lowered = path.lower()
+    if lowered.endswith("/rest/services"):
+        canonical_path = path
+    elif lowered.endswith("/rest"):
+        canonical_path = f"{path}/services"
+    elif lowered.endswith("/arcgis") or lowered == "":
+        canonical_path = f"{path or '/arcgis'}/rest/services"
+    else:
+        canonical_path = path
+    return urlunsplit((parts.scheme, parts.netloc, canonical_path, "", ""))
 
 
 def _portal_locator(portal_url: str, org_id: str | None) -> str:

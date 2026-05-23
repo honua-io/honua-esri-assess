@@ -5,16 +5,81 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from importlib import resources
+from pathlib import Path
 from typing import Any
 
 from honua_esri_assess.diagnostics import PortalSchemaError
 
 SCHEMA_FILENAME = "esri-footprint-v0.1.json"
 SCHEMA_PACKAGE = "honua_esri_assess.schemas"
+_PACKAGE_ROOT = "honua_esri_assess"
+_PACKAGE_SCHEMA_DIR = "schemas"
+_SCHEMA_DIR_CANDIDATES = (
+    Path("schemas"),
+    Path("docs/schemas"),
+    Path(__file__).resolve().parents[3] / "schemas",
+    Path(__file__).resolve().parents[3] / "docs" / "schemas",
+)
 
 
 class FootprintSchemaNotFoundError(PortalSchemaError):
-    """Backward-compatible alias for fail-closed schema lookup failures."""
+    """Raised when the declared footprint schema cannot be loaded."""
+
+
+def _version_aliases(version: str) -> list[str]:
+    raw = str(version).strip()
+    if raw.startswith("v"):
+        raw = raw[1:]
+    aliases = [raw]
+    parts = raw.split(".")
+    if len(parts) >= 2:
+        aliases.append(".".join(parts[:2]))
+    return list(dict.fromkeys(alias for alias in aliases if alias))
+
+
+def _schema_file_names(version: str) -> list[str]:
+    names: list[str] = []
+    for alias in _version_aliases(version):
+        names.append(f"esri-footprint.v{alias}.json")
+        names.append(f"esri-footprint-v{alias}.json")
+    return list(dict.fromkeys(names))
+
+
+def _candidate_paths(version: str) -> list[Path]:
+    candidates: list[Path] = []
+    for base in _SCHEMA_DIR_CANDIDATES:
+        for name in _schema_file_names(version):
+            candidates.append(base / name)
+    return candidates
+
+
+def find_schema_path(version: str) -> Path | None:
+    for candidate in _candidate_paths(version):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _packaged_schema_text(version: str) -> str | None:
+    try:
+        schema_dir = resources.files(_PACKAGE_ROOT).joinpath(_PACKAGE_SCHEMA_DIR)
+    except (FileNotFoundError, ModuleNotFoundError):
+        return None
+    for name in _schema_file_names(version):
+        candidate = schema_dir.joinpath(name)
+        if candidate.is_file():
+            return candidate.read_text(encoding="utf-8")
+    return None
+
+
+def _load_schema(version: str) -> dict[str, Any]:
+    path = find_schema_path(version)
+    if path is not None:
+        return json.loads(path.read_text(encoding="utf-8"))
+    packaged = _packaged_schema_text(version)
+    if packaged is not None:
+        return json.loads(packaged)
+    raise FootprintSchemaNotFoundError(f"schema for {version!r} was not found")
 
 
 @lru_cache(maxsize=1)
@@ -47,15 +112,11 @@ def load_schema() -> dict[str, Any]:
 
 
 def validate_footprint(footprint: dict[str, Any], *, version: str | None = None) -> bool:
-    """Validate ``footprint`` against the bundled v0.1 schema."""
+    """Validate *footprint* against its declared JSON Schema."""
 
-    if version not in (None, "v0.1", "0.1", "0.1.0", "v0.1.0"):
-        raise PortalSchemaError(
-            "Unsupported EsriFootprint.json schema version.",
-            context={"schema": str(version)},
-        )
+    schema_version = str(version or footprint.get("schemaVersion") or "")
+    schema = _load_schema(schema_version) if schema_version else load_schema()
 
-    schema = load_schema()
     try:
         import jsonschema
     except ImportError as exc:
@@ -81,6 +142,7 @@ __all__ = [
     "FootprintSchemaNotFoundError",
     "SCHEMA_FILENAME",
     "SCHEMA_PACKAGE",
+    "find_schema_path",
     "load_schema",
     "validate_footprint",
 ]

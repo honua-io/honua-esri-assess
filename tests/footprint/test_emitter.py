@@ -1,8 +1,9 @@
-"""``EsriFootprint.json`` v0.1 emitter — shape and producer guarantees."""
+"""``EsriFootprint.json`` v0.1 emitter shape and safety guarantees."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 
 import pytest
 
@@ -68,39 +69,58 @@ def _make_result(*, deep: bool = False) -> ServerScanResult:
 
 
 def test_footprint_has_required_header_fields() -> None:
-    result = _make_result()
     fp = to_footprint_v0_1(
-        result,
+        _make_result(),
         tool_version="0.1.0-test",
         generated_at=datetime(2026, 1, 1, 12, 30, 0, tzinfo=UTC),
-        target_url="https://gis.example.com/arcgis",
+        captured_at=datetime(2026, 1, 1, 12, 29, 58, tzinfo=UTC),
+        target_url="https://target-user:target-pass@gis.example.com/arcgis?token=target-token",
     )
-    assert fp["schemaVersion"] == SCHEMA_VERSION
-    assert fp["tool"] == {"name": "honua-esri-assess", "version": "0.0.0"}
+
+    assert fp["schemaVersion"] == SCHEMA_VERSION == "v0.1"
+    assert fp["tool"] == {"name": "honua-esri-assess", "version": "0.1.0-test"}
     assert fp["generatedAt"] == "2026-01-01T12:30:00Z"
-    assert fp["source"]["kind"] == "arcgis-server"
-    assert fp["source"]["locator"] == "https://gis.example.com/arcgis"
+    assert fp["source"] == {
+        "kind": "arcgis-server",
+        "locator": "https://gis.example.com/arcgis/rest/services",
+        "capturedAt": "2026-01-01T12:29:58Z",
+    }
     assert "producer" not in fp
 
 
-def test_footprint_aggregates_service_counts_by_bucket() -> None:
+def test_footprint_aggregates_service_counts_by_raw_type() -> None:
     fp = to_footprint_v0_1(_make_result(), tool_version="0.0.0")
-    assert fp["server"]["serviceCounts"] == {"FeatureServer": 1, "MapServer": 1}
-    assert fp["counts"]["items"]["server-service"] == 2
+    assert fp["server"] == {
+        "folders": ["Hydrology", "Basemaps"],
+        "serviceCounts": {"FeatureServer": 1, "MapServer": 1},
+        "version": "11.2",
+    }
+    assert fp["counts"] == {
+        "items": {
+            "portal-item": 0,
+            "server-service": 2,
+            "filegdb-feature-class": 0,
+        },
+        "layers": 1,
+        "featureClasses": 0,
+    }
 
 
-def test_footprint_inventory_includes_layers_when_deep() -> None:
+def test_footprint_inventory_includes_layer_count_when_deep() -> None:
     fp = to_footprint_v0_1(_make_result(deep=True), tool_version="0.0.0")
-    inventory = fp["inventory"]
-    deep_record = next(item for item in inventory if "Watersheds" in item["serviceUrl"])
-    assert deep_record["kind"] == "server-service"
-    assert deep_record["layerCount"] == 1
+    deep_record = next(item for item in fp["inventory"] if "Watersheds" in item["serviceUrl"])
+    assert deep_record == {
+        "kind": "server-service",
+        "serviceUrl": "https://gis.example.com/arcgis/rest/services/Hydrology/Watersheds/FeatureServer",
+        "serviceType": "FeatureServer",
+        "folder": "Hydrology",
+        "layerCount": 1,
+    }
 
 
-def test_footprint_diagnostics_preserve_codes_and_severities() -> None:
+def test_footprint_diagnostics_preserve_v01_vocabulary() -> None:
     fp = to_footprint_v0_1(_make_result(), tool_version="0.0.0")
-    diags = fp["diagnostics"]
-    assert diags == [
+    assert fp["diagnostics"] == [
         {
             "code": "unsupported-item-type",
             "severity": "info",
@@ -110,67 +130,118 @@ def test_footprint_diagnostics_preserve_codes_and_severities() -> None:
     ]
 
 
+def test_terminal_service_diagnostics_omit_unreadable_inventory_record() -> None:
+    result = ServerScanResult(
+        info=ServerInfo(url="https://gis.example.com/arcgis/rest/services"),
+        auth_mode="anonymous",
+        deep=True,
+        folders=(),
+        services=(
+            ServiceRecord(
+                name="Throttled",
+                folder=None,
+                service_type="MapServer",
+                kind="mapService",
+                url="https://gis.example.com/arcgis/rest/services/Throttled/MapServer",
+            ),
+        ),
+        diagnostics=(
+            ScanDiagnostic(
+                code="server.service.rate-limited",
+                severity="warning",
+                message="deep scan of 'Throttled' failed: Rate limit exceeded.",
+                field="services/Throttled",
+            ),
+        ),
+    )
+
+    fp = to_footprint_v0_1(result, tool_version="0.0.0")
+    assert fp["inventory"] == []
+    assert fp["counts"]["items"]["server-service"] == 0
+    assert fp["server"]["serviceCounts"] == {"MapServer": 1}
+    assert fp["diagnostics"][0]["code"] == "rate-limited"
+
+
 def test_footprint_contains_no_credential_text() -> None:
-    info = ServerInfo(url="https://gis.example.com/arcgis/rest/services?token=abc")
+    info = ServerInfo(url="https://fallback-user:fallback-pass@gis.example.com/arcgis/rest/services")
+    service = ServiceRecord(
+        name="Sensitive",
+        folder=None,
+        service_type="MapServer",
+        kind="mapService",
+        url="https://svc-user:svc-pass@gis.example.com/arcgis/rest/services/Sensitive/MapServer?token=abc",
+    )
     result = ServerScanResult(
         info=info,
         auth_mode="token",
         deep=False,
         folders=(),
-        services=(),
+        services=(service,),
         diagnostics=(),
     )
-    fp = to_footprint_v0_1(result, tool_version="0.0.0", target_url="https://gis.example.com/arcgis")
-    import json
+    fp = to_footprint_v0_1(
+        result,
+        tool_version="0.0.0",
+        target_url="https://target-user:target-pass@gis.example.com/arcgis?token=target-token",
+    )
 
     payload = json.dumps(fp)
-    assert "token=abc" not in payload
+    for secret in (
+        "target-token",
+        "target-user",
+        "target-pass",
+        "fallback-user",
+        "fallback-pass",
+        "svc-user",
+        "svc-pass",
+        "token=abc",
+    ):
+        assert secret not in payload
+    assert fp["source"]["locator"] == "https://gis.example.com/arcgis/rest/services"
+    assert fp["inventory"][0]["serviceUrl"] == (
+        "https://gis.example.com/arcgis/rest/services/Sensitive/MapServer"
+    )
 
 
 def test_emitted_footprint_is_pure_json() -> None:
-    import json
-
-    fp = to_footprint_v0_1(_make_result(deep=True), tool_version="0.0.0")
-    # Round-trips without error using stdlib json (no custom encoders required).
-    encoded = json.dumps(fp, sort_keys=True)
+    encoded = json.dumps(to_footprint_v0_1(_make_result(deep=True), tool_version="0.0.0"))
     decoded = json.loads(encoded)
     assert decoded["schemaVersion"] == SCHEMA_VERSION
 
 
 def test_emitter_omits_optional_fields_when_absent() -> None:
-    info = ServerInfo(url="https://gis.example.com/arcgis/rest/services")
-    sparse = ServiceRecord(
-        name="Empty",
-        folder=None,
-        service_type="MapServer",
-        kind="mapService",
-        url="https://gis.example.com/arcgis/rest/services/Empty/MapServer",
-    )
     result = ServerScanResult(
-        info=info,
+        info=ServerInfo(url="https://gis.example.com/arcgis/rest/services"),
         auth_mode="anonymous",
         deep=False,
         folders=(),
-        services=(sparse,),
+        services=(
+            ServiceRecord(
+                name="Empty",
+                folder=None,
+                service_type="MapServer",
+                kind="mapService",
+                url="https://gis.example.com/arcgis/rest/services/Empty/MapServer",
+            ),
+        ),
         diagnostics=(),
     )
-    fp = to_footprint_v0_1(result, tool_version="0.0.0")
-    record = fp["inventory"][0]
+    record = to_footprint_v0_1(result, tool_version="0.0.0")["inventory"][0]
+    assert record["folder"] == ""
+    assert record["layerCount"] == 0
     assert "layers" not in record
     assert "tables" not in record
     assert "description" not in record
     assert "capabilities" not in record
-    assert record["layerCount"] == 0
 
 
 @pytest.mark.parametrize(
-    "auth_info, expected",
-    [({"isTokenBasedSecurity": True}, True), ({"isTokenBasedSecurity": "false"}, False), ({}, None)],
+    "auth_info",
+    [{"isTokenBasedSecurity": True}, {"isTokenBasedSecurity": "false"}, {}],
 )
-def test_emitter_coerces_auth_info_bool(auth_info: dict, expected: bool | None) -> None:
-    info = ServerInfo(url="https://gis.example.com/arcgis/rest/services", auth_info=auth_info)
+def test_emitter_does_not_emit_auth_info_outside_v01_contract(auth_info: dict) -> None:
     result = ServerScanResult(
-        info=info,
+        info=ServerInfo(url="https://gis.example.com/arcgis/rest/services", auth_info=auth_info),
         auth_mode="anonymous",
         deep=False,
         folders=(),

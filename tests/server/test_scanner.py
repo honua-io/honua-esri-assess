@@ -8,7 +8,7 @@ import pytest
 import responses
 
 from honua_esri_assess.server.auth import AnonymousCredential, TokenCredential
-from honua_esri_assess.server.client import ServerClient
+from honua_esri_assess.server.client import RetryPolicy, ServerClient
 from honua_esri_assess.server.scanner import ServerScanner
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -173,6 +173,52 @@ def test_deep_walk_partial_failure_keeps_other_services() -> None:
         s for s in result.services if s.folder == "Hydrology" and s.service_type == "FeatureServer"
     )
     assert failed_service.deep_scanned is False
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_code"),
+    [
+        (403, "server.service.missing-permission"),
+        (429, "server.service.rate-limited"),
+    ],
+)
+@responses.activate
+def test_deep_walk_classifies_terminal_service_failures(
+    status: int,
+    expected_code: str,
+) -> None:
+    _register_info()
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services",
+        json={"folders": ["Hydrology"], "services": []},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/Hydrology",
+        json={
+            "folders": [],
+            "services": [{"name": "Hydrology/Watersheds", "type": "FeatureServer"}],
+        },
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/Hydrology/Watersheds/FeatureServer",
+        body="",
+        status=status,
+    )
+
+    client = ServerClient(
+        "https://gis.example.com/arcgis",
+        retry=RetryPolicy(max_attempts=1),
+    )
+    result = ServerScanner(deep=True).scan(client)
+
+    assert len(result.services) == 1
+    assert result.services[0].deep_scanned is False
+    assert any(d.code == expected_code for d in result.diagnostics)
 
 
 @responses.activate

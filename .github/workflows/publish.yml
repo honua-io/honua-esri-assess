@@ -2,6 +2,8 @@ name: Publish
 
 on:
   push:
+    branches:
+      - trunk
     tags:
       - "honua-esri-assess-v*"
   workflow_dispatch:
@@ -16,7 +18,14 @@ permissions:
   contents: read
 
 jobs:
+  branch-noop:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/trunk' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Publish workflow is a no-op for trunk pushes."
+
   pre-publish-typecheck:
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/honua-esri-assess-v') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -31,6 +40,7 @@ jobs:
       - run: mypy
 
   validate-tag:
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/honua-esri-assess-v') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

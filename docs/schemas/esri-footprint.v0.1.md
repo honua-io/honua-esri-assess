@@ -38,10 +38,13 @@ tools may read the file, but no other consumer is part of the contract.
   forbidden by project constraint and excluded from the schema.
   `diagnostics[].code` is drawn from a locked enum so prospects can audit
   the vocabulary before running the scanner.
-- **No credentials or raw on-prem paths.** `source.locator` and
-  `filegdb.pathHash` are designed so a published footprint never reveals a
-  prospect's secrets or filesystem layout. FileGDB paths are surfaced as a
-  salted `sha256:` hash.
+- **No credentials or raw on-prem paths.** `source.locator`,
+  `filegdb.pathHash`, and `ServerService.serviceUrl` are schema-pattern
+  enforced so a published footprint never reveals a prospect's secrets
+  or filesystem layout. AGOL and server locators reject `@` (userinfo),
+  `?` (query string), `#` (fragment), and whitespace; FileGDB locators
+  must match `^sha256:[0-9a-f]{64}$`; service URLs reject the same
+  unsafe components. See [Source](#source) for the per-kind patterns.
 
 ## Stability policy
 
@@ -70,13 +73,30 @@ any field outside this contract.
 | `schemaVersion` | yes      | const `"v0.1"`                    | Contract major.minor carried in-band.                                                                        |
 | `generatedAt`   | yes      | RFC3339 UTC                       | When the scanner finished producing this artifact.                                                           |
 | `tool`          | yes      | [`ToolProvenance`](#toolprovenance) | Scanner provenance.                                                                                          |
-| `source`        | yes      | [`Source`](#source)               | Identifies the scanned Esri source.                                                                          |
-| `portal`        | no       | [`PortalFacet`](#portalfacet)     | Present when `source.kind == "arcgis-online"`.                                                               |
-| `server`        | no       | [`ServerFacet`](#serverfacet)     | Present when `source.kind == "arcgis-server"`.                                                               |
-| `filegdb`       | no       | [`FileGdbFacet`](#filegdbfacet)   | Present when `source.kind == "filegdb"`.                                                                     |
-| `inventory`     | yes      | [`EsriItem[]`](#esriitem)         | Normalized records discriminated by `kind`. Empty array is valid.                                            |
+| `source`        | yes      | [`Source`](#source)               | Identifies the scanned Esri source. `source.kind` is the discriminator (see [Discriminator rules](#discriminator-rules)). |
+| `portal`        | conditional | [`PortalFacet`](#portalfacet)  | **Required** iff `source.kind == "arcgis-online"`; **forbidden** otherwise.                                  |
+| `server`        | conditional | [`ServerFacet`](#serverfacet)  | **Required** iff `source.kind == "arcgis-server"`; **forbidden** otherwise.                                  |
+| `filegdb`       | conditional | [`FileGdbFacet`](#filegdbfacet)| **Required** iff `source.kind == "filegdb"`; **forbidden** otherwise.                                        |
+| `inventory`     | yes      | [`EsriItem[]`](#esriitem)         | Normalized records. Variant is constrained by `source.kind` (see [Discriminator rules](#discriminator-rules)). Empty array is valid. |
 | `counts`        | yes      | [`Counts`](#counts)               | Aggregate roll-up.                                                                                           |
 | `diagnostics`   | yes      | [`Diagnostic[]`](#diagnostic)     | Typed, prospect-safe diagnostics. Empty array is valid.                                                      |
+
+### Discriminator rules
+
+`source.kind` is enforced by top-level `allOf` / `if`-`then` branches in
+the schema. For each value, the matching facet is required, sibling
+facets are forbidden, and `inventory[]` is constrained to the matching
+`EsriItem` variant. A single artifact describes exactly one source.
+
+| `source.kind`   | Required facet | Forbidden facets         | `inventory[]` variant                              |
+|-----------------|----------------|--------------------------|----------------------------------------------------|
+| `arcgis-online` | `portal`       | `server`, `filegdb`      | [`PortalItem`](#portalitem-kind-portal-item)       |
+| `arcgis-server` | `server`       | `portal`, `filegdb`      | [`ServerService`](#serverservice-kind-server-service) |
+| `filegdb`       | `filegdb`      | `portal`, `server`       | [`FileGdbFeatureClass`](#filegdbfeatureclass-kind-filegdb-feature-class) |
+
+Mixing facets (e.g. an `arcgis-server` artifact that still carries
+`portal`) or mixing inventory variants (e.g. a `filegdb-feature-class`
+record under an `arcgis-online` source) is a schema validation failure.
 
 ### ToolProvenance
 
@@ -87,19 +107,31 @@ any field outside this contract.
 
 ### Source
 
-`source.kind` discriminates which facet (`portal`, `server`, `filegdb`)
-should be populated and which `EsriItem` variants a scanner is expected to
-emit.
+`source.kind` is the discriminator. It pins the required facet and the
+allowed `EsriItem` variant, and it pins the `locator` pattern. See
+[Discriminator rules](#discriminator-rules) for the top-level effect.
 
 | Field        | Required | Type        | Description                                                                                                                                 |
 |--------------|----------|-------------|---------------------------------------------------------------------------------------------------------------------------------------------|
 | `kind`       | yes      | enum        | One of `arcgis-online`, `arcgis-server`, `filegdb`.                                                                                          |
-| `locator`    | yes      | string      | Prospect-safe identifier (host + org id for AGOL, base services URL for Server, `sha256:` salted hash for FileGDB). Never includes credentials. |
+| `locator`    | yes      | string      | Prospect-safe identifier; format is constrained by `kind` (see below). Never includes credentials, query strings, fragments, or raw on-prem paths. |
 | `capturedAt` | yes      | RFC3339 UTC | When the scan against this source began.                                                                                                    |
+
+`source.locator` patterns enforced by the schema:
+
+| `source.kind`   | `locator` pattern                       | Example                                            |
+|-----------------|-----------------------------------------|----------------------------------------------------|
+| `arcgis-online` | `^[^@?#\s]+$`                           | `honua.maps.arcgis.com/0123ABCDEF456789`           |
+| `arcgis-server` | `^https?://[^@?#\s]+(/[^?#\s]*)?$`      | `https://gis.example.com/arcgis/rest/services`     |
+| `filegdb`       | `^sha256:[0-9a-f]{64}$`                 | `sha256:0000…` (salted sha256 of the gdb path)     |
+
+The patterns reject `@` (userinfo), `?` (query string), `#` (fragment),
+and whitespace. They are also why a raw FileGDB filesystem path is
+schema-rejected for `filegdb` sources.
 
 ### PortalFacet
 
-Present iff `source.kind == "arcgis-online"`. Extras allowed.
+Required iff `source.kind == "arcgis-online"`; forbidden otherwise (see [Discriminator rules](#discriminator-rules)). Extras allowed.
 
 | Field            | Required | Type                                                | Description                                              |
 |------------------|----------|-----------------------------------------------------|----------------------------------------------------------|
@@ -110,7 +142,7 @@ Present iff `source.kind == "arcgis-online"`. Extras allowed.
 
 ### ServerFacet
 
-Present iff `source.kind == "arcgis-server"`. Extras allowed.
+Required iff `source.kind == "arcgis-server"`; forbidden otherwise (see [Discriminator rules](#discriminator-rules)). Extras allowed.
 
 | Field           | Required | Type                                    | Description                                                                 |
 |-----------------|----------|-----------------------------------------|-----------------------------------------------------------------------------|
@@ -120,7 +152,7 @@ Present iff `source.kind == "arcgis-server"`. Extras allowed.
 
 ### FileGdbFacet
 
-Present iff `source.kind == "filegdb"`. Extras allowed.
+Required iff `source.kind == "filegdb"`; forbidden otherwise (see [Discriminator rules](#discriminator-rules)). Extras allowed.
 
 | Field               | Required | Type                              | Description                                                          |
 |---------------------|----------|-----------------------------------|----------------------------------------------------------------------|
@@ -135,9 +167,12 @@ Discriminated union via `kind`. Three variants — `portal-item`,
 properties so scanners can attach vendor-specific extras within v0.1;
 **extras are non-load-bearing**.
 
-Consumers must `switch (item.kind)` rather than treating items uniformly.
-Per-item readiness/risk flags and explicit dependency edges across types
-are deliberately out of scope at v0.1 (see [Out of scope](#out-of-scope-at-v01)).
+Within a single artifact, `inventory[]` is constrained to one variant
+matching `source.kind` (see [Discriminator rules](#discriminator-rules)).
+Consumers must still `switch (item.kind)` to handle artifacts from
+different sources uniformly. Per-item readiness/risk flags and explicit
+dependency edges across types are deliberately out of scope at v0.1 (see
+[Out of scope](#out-of-scope-at-v01)).
 
 #### PortalItem (`kind: "portal-item"`)
 
@@ -156,7 +191,7 @@ are deliberately out of scope at v0.1 (see [Out of scope](#out-of-scope-at-v01))
 
 | Field          | Required | Type                              | Description                                                                  |
 |----------------|----------|-----------------------------------|------------------------------------------------------------------------------|
-| `serviceUrl`   | yes      | URI                               | Fully-qualified service URL. **Credentials must never appear in this field.**|
+| `serviceUrl`   | yes      | URI                               | Fully-qualified service URL. Schema pattern `^https?://[^@?#\s]+(/[^?#\s]*)?$` rejects userinfo, query strings, and fragments. **Credentials must never appear in this field.** |
 | `serviceType`  | yes      | string                            | Esri service type (e.g. `MapServer`, `FeatureServer`).                       |
 | `folder`       | yes      | string                            | Folder relative to the services root, or empty string for root services.     |
 | `layerCount`   | yes      | integer ≥ 0                       | Number of layers exposed by the service.                                     |
@@ -176,16 +211,21 @@ are deliberately out of scope at v0.1 (see [Out of scope](#out-of-scope-at-v01))
 
 ### Counts
 
-`additionalProperties: false`. Adding a new aggregate is a deliberate
-schema bump.
+`additionalProperties: false` on both `counts` and `counts.items`. Adding
+a new aggregate is a deliberate schema bump.
 
-| Field                            | Required | Type        | Description                                          |
-|----------------------------------|----------|-------------|------------------------------------------------------|
-| `items.portal-item`              | yes      | integer ≥ 0 | Count of `portal-item` records in `inventory`.       |
-| `items.server-service`           | yes      | integer ≥ 0 | Count of `server-service` records in `inventory`.    |
-| `items.filegdb-feature-class`    | yes      | integer ≥ 0 | Count of `filegdb-feature-class` records.            |
-| `layers`                         | yes      | integer ≥ 0 | Sum of `layerCount` across `server-service` items.   |
-| `featureClasses`                 | yes      | integer ≥ 0 | Count of `filegdb-feature-class` records.            |
+| Field                            | Required | Type        | Description                                                              |
+|----------------------------------|----------|-------------|--------------------------------------------------------------------------|
+| `items`                          | yes      | object      | Container for per-kind totals (`additionalProperties: false`).           |
+| `items.portal-item`              | no       | integer ≥ 0 | Count of `portal-item` records in `inventory`.                           |
+| `items.server-service`           | no       | integer ≥ 0 | Count of `server-service` records in `inventory`.                        |
+| `items.filegdb-feature-class`    | no       | integer ≥ 0 | Count of `filegdb-feature-class` records.                                |
+| `layers`                         | yes      | integer ≥ 0 | Sum of `layerCount` across `server-service` items.                       |
+| `featureClasses`                 | yes      | integer ≥ 0 | Count of `filegdb-feature-class` records.                                |
+
+Scanners SHOULD emit all three `items` sub-keys so the migration product
+can rely on per-kind totals; consumers should treat an absent sub-key as
+`0`. A future v0.1.x or v0.2 may tighten the schema to require them.
 
 ### Diagnostic
 
@@ -314,7 +354,7 @@ and is exercised by `tests/test_esri_footprint_schema.py`.
       "modified": "2026-05-01T16:40:22Z",
       "extent": {
         "bbox": [-122.49, 47.45, -122.22, 47.71],
-        "crs": { "wkid": 102100, "latestWkid": 3857 }
+        "crs": { "wkid": 4326 }
       }
     },
     {

@@ -105,9 +105,9 @@ def test_server_service_variant_validates(validator: Draft202012Validator, sampl
             "geometryType": "esriGeometryPolyline",
             "extent": {
                 "bbox": [-122.5, 47.4, -122.2, 47.8],
-                "crs": {"wkt": "PROJCS[\"WGS 84 / Pseudo-Mercator\",...]"},
+                "crs": {"wkid": 4326},
             },
-            "sr": {"wkid": 102100, "latestWkid": 3857},
+            "sr": {"wkid": 4326},
         }
     ]
     artifact["counts"] = {
@@ -188,4 +188,156 @@ def test_spatial_reference_requires_at_least_one_identifier(
 ) -> None:
     artifact = copy.deepcopy(sample)
     artifact["inventory"][0]["extent"]["crs"] = {}
+    assert not validator.is_valid(artifact)
+
+
+def test_arcgis_online_rejects_sibling_facets(
+    validator: Draft202012Validator, sample: dict
+) -> None:
+    artifact = copy.deepcopy(sample)
+    artifact["server"] = {
+        "folders": [],
+        "serviceCounts": {},
+    }
+    assert not validator.is_valid(artifact)
+
+
+def test_arcgis_online_rejects_filegdb_inventory(
+    validator: Draft202012Validator, sample: dict
+) -> None:
+    artifact = copy.deepcopy(sample)
+    artifact["inventory"].append(
+        {
+            "kind": "filegdb-feature-class",
+            "name": "Parcels",
+            "geometryType": "esriGeometryPolygon",
+            "sr": {"wkid": 4326},
+        }
+    )
+    artifact["counts"]["items"]["filegdb-feature-class"] = 1
+    artifact["counts"]["featureClasses"] = 1
+    assert not validator.is_valid(artifact)
+
+
+def test_arcgis_server_rejects_missing_facet(
+    validator: Draft202012Validator, sample: dict
+) -> None:
+    artifact = copy.deepcopy(sample)
+    artifact["source"] = {
+        "kind": "arcgis-server",
+        "locator": "https://gis.example.com/arcgis/rest/services",
+        "capturedAt": "2026-05-22T14:02:11Z",
+    }
+    artifact.pop("portal", None)
+    artifact["inventory"] = []
+    artifact["counts"] = {
+        "items": {"portal-item": 0, "server-service": 0, "filegdb-feature-class": 0},
+        "layers": 0,
+        "featureClasses": 0,
+    }
+    assert not validator.is_valid(artifact)
+
+
+def test_filegdb_locator_rejects_raw_path(
+    validator: Draft202012Validator, sample: dict
+) -> None:
+    artifact = copy.deepcopy(sample)
+    artifact["source"] = {
+        "kind": "filegdb",
+        "locator": "C:/data/parcels.gdb",
+        "capturedAt": "2026-05-22T14:02:11Z",
+    }
+    artifact.pop("portal", None)
+    artifact["filegdb"] = {
+        "pathHash": "sha256:" + "0" * 64,
+        "featureClassCount": 0,
+    }
+    artifact["inventory"] = []
+    artifact["counts"] = {
+        "items": {"portal-item": 0, "server-service": 0, "filegdb-feature-class": 0},
+        "layers": 0,
+        "featureClasses": 0,
+    }
+    assert not validator.is_valid(artifact)
+
+
+def test_arcgis_server_locator_rejects_userinfo(
+    validator: Draft202012Validator, sample: dict
+) -> None:
+    artifact = copy.deepcopy(sample)
+    artifact["source"] = {
+        "kind": "arcgis-server",
+        "locator": "https://user:pass@gis.example.com/arcgis/rest/services",
+        "capturedAt": "2026-05-22T14:02:11Z",
+    }
+    artifact.pop("portal", None)
+    artifact["server"] = {"folders": [], "serviceCounts": {}}
+    artifact["inventory"] = []
+    artifact["counts"] = {
+        "items": {"portal-item": 0, "server-service": 0, "filegdb-feature-class": 0},
+        "layers": 0,
+        "featureClasses": 0,
+    }
+    assert not validator.is_valid(artifact)
+
+
+def test_server_service_url_rejects_query_string(
+    validator: Draft202012Validator, sample: dict
+) -> None:
+    artifact = copy.deepcopy(sample)
+    artifact["source"] = {
+        "kind": "arcgis-server",
+        "locator": "https://gis.example.com/arcgis/rest/services",
+        "capturedAt": "2026-05-22T14:02:11Z",
+    }
+    artifact.pop("portal", None)
+    artifact["server"] = {
+        "folders": [],
+        "serviceCounts": {"MapServer": 1},
+    }
+    artifact["inventory"] = [
+        {
+            "kind": "server-service",
+            "serviceUrl": "https://gis.example.com/arcgis/rest/services/Water/MapServer?token=secret",
+            "serviceType": "MapServer",
+            "folder": "",
+            "layerCount": 1,
+        }
+    ]
+    artifact["counts"] = {
+        "items": {"portal-item": 0, "server-service": 1, "filegdb-feature-class": 0},
+        "layers": 1,
+        "featureClasses": 0,
+    }
+    assert not validator.is_valid(artifact)
+
+
+def test_server_service_url_rejects_userinfo(
+    validator: Draft202012Validator, sample: dict
+) -> None:
+    artifact = copy.deepcopy(sample)
+    artifact["source"] = {
+        "kind": "arcgis-server",
+        "locator": "https://gis.example.com/arcgis/rest/services",
+        "capturedAt": "2026-05-22T14:02:11Z",
+    }
+    artifact.pop("portal", None)
+    artifact["server"] = {
+        "folders": [],
+        "serviceCounts": {"MapServer": 1},
+    }
+    artifact["inventory"] = [
+        {
+            "kind": "server-service",
+            "serviceUrl": "https://user:pass@gis.example.com/arcgis/rest/services/Water/MapServer",
+            "serviceType": "MapServer",
+            "folder": "",
+            "layerCount": 1,
+        }
+    ]
+    artifact["counts"] = {
+        "items": {"portal-item": 0, "server-service": 1, "filegdb-feature-class": 0},
+        "layers": 1,
+        "featureClasses": 0,
+    }
     assert not validator.is_valid(artifact)

@@ -52,6 +52,83 @@
       "items": { "$ref": "#/$defs/Diagnostic" }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "source": {
+            "properties": { "kind": { "const": "arcgis-online" } },
+            "required": ["kind"]
+          }
+        },
+        "required": ["source"]
+      },
+      "then": {
+        "required": ["portal"],
+        "not": {
+          "anyOf": [
+            { "required": ["server"] },
+            { "required": ["filegdb"] }
+          ]
+        },
+        "properties": {
+          "inventory": {
+            "items": { "$ref": "#/$defs/PortalItem" }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "source": {
+            "properties": { "kind": { "const": "arcgis-server" } },
+            "required": ["kind"]
+          }
+        },
+        "required": ["source"]
+      },
+      "then": {
+        "required": ["server"],
+        "not": {
+          "anyOf": [
+            { "required": ["portal"] },
+            { "required": ["filegdb"] }
+          ]
+        },
+        "properties": {
+          "inventory": {
+            "items": { "$ref": "#/$defs/ServerService" }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "source": {
+            "properties": { "kind": { "const": "filegdb" } },
+            "required": ["kind"]
+          }
+        },
+        "required": ["source"]
+      },
+      "then": {
+        "required": ["filegdb"],
+        "not": {
+          "anyOf": [
+            { "required": ["portal"] },
+            { "required": ["server"] }
+          ]
+        },
+        "properties": {
+          "inventory": {
+            "items": { "$ref": "#/$defs/FileGdbFeatureClass" }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "RFC3339": {
       "type": "string",
@@ -78,7 +155,7 @@
     },
     "Source": {
       "type": "object",
-      "description": "Identifies the scanned Esri source. Discriminated by kind. locator must be a prospect-safe identifier — never credentials, never raw on-prem paths; FileGDB paths are surfaced as a salted hash.",
+      "description": "Identifies the scanned Esri source. Discriminated by kind. locator must be a prospect-safe identifier — never credentials, never raw on-prem paths; FileGDB paths are surfaced as a salted hash. locator format is constrained by kind via the allOf branches below.",
       "additionalProperties": false,
       "required": ["kind", "locator", "capturedAt"],
       "properties": {
@@ -89,13 +166,48 @@
         "locator": {
           "type": "string",
           "minLength": 1,
-          "description": "Prospect-safe identifier for the source. AGOL: host + organization id (e.g. honua.maps.arcgis.com/0123ABC). Server: base services URL with no query string. FileGDB: salted hash of the gdb path (sha256:<hex>)."
+          "description": "Prospect-safe identifier for the source. AGOL: host + organization id (e.g. honua.maps.arcgis.com/0123ABC). Server: base services URL with no query string, fragment, or userinfo. FileGDB: salted sha256 of the gdb path (sha256:<64 hex>)."
         },
         "capturedAt": {
           "$ref": "#/$defs/RFC3339",
           "description": "When the scan against this source began."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "const": "filegdb" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "locator": { "pattern": "^sha256:[0-9a-f]{64}$" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "arcgis-online" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "locator": { "pattern": "^[^@?#\\s]+$" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "arcgis-server" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "locator": { "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$" }
+            }
+          }
+        }
+      ]
     },
     "SpatialReference": {
       "type": "object",
@@ -261,7 +373,8 @@
         "serviceUrl": {
           "type": "string",
           "format": "uri",
-          "description": "Fully-qualified service URL with no query string. Credentials must never appear in this field."
+          "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$",
+          "description": "Fully-qualified service URL with no query string, fragment, or userinfo. Credentials must never appear in this field."
         },
         "serviceType": {
           "type": "string",

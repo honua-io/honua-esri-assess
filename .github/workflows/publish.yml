@@ -80,31 +80,29 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/honua-esri-assess-v') }}
     runs-on: ubuntu-latest
     needs: build
-    env:
-      DIST_DIR: ${{ runner.temp }}/dist
-      SMOKE_DIR: ${{ runner.temp }}/wheel-smoke
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: honua-esri-assess-dist
-          path: ${{ env.DIST_DIR }}
+          path: ${{ runner.temp }}/dist
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - name: Prepare isolated smoke workspace
         run: |
+          SMOKE_DIR="$RUNNER_TEMP/wheel-smoke"
           mkdir -p "$SMOKE_DIR/tests"
           cp -R tests/smoke "$SMOKE_DIR/tests/smoke"
           cp -R schemas "$SMOKE_DIR/schemas"
-      - run: python -m venv "$SMOKE_DIR/.smoke"
+      - run: python -m venv "$RUNNER_TEMP/wheel-smoke/.smoke"
       - run: |
-          "$SMOKE_DIR/.smoke/bin/pip" install "$DIST_DIR"/*.whl "pytest>=8,<9" "responses>=0.25"
+          "$RUNNER_TEMP/wheel-smoke/.smoke/bin/pip" install "$RUNNER_TEMP/dist"/*.whl "pytest>=8,<9" "responses>=0.25"
       - run: |
-          "$SMOKE_DIR/.smoke/bin/pytest" "$SMOKE_DIR/tests/smoke" -q
+          "$RUNNER_TEMP/wheel-smoke/.smoke/bin/pytest" "$RUNNER_TEMP/wheel-smoke/tests/smoke" -q
       - run: >
-          "$SMOKE_DIR/.smoke/bin/honua-esri-assess" scan filegdb
-          --target "$SMOKE_DIR/tests/smoke/fixtures/filegdb/happy/sample.gdb"
+          "$RUNNER_TEMP/wheel-smoke/.smoke/bin/honua-esri-assess" scan filegdb
+          --target "$RUNNER_TEMP/wheel-smoke/tests/smoke/fixtures/filegdb/happy/sample.gdb"
           --output /tmp/out.json
       - run: jq -e '.schemaVersion == "v0.1"' /tmp/out.json
 

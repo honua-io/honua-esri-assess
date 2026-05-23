@@ -1,0 +1,8 @@
+{
+  "currentVersion": 11.2,
+  "folders": ["Hydrology", "Basemaps", "Imagery", "Restricted"],
+  "services": [
+    {"name": "SampleWorldCities", "type": "MapServer"},
+    {"name": "Geometry", "type": "GeometryServer"}
+  ]
+}

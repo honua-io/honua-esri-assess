@@ -19,6 +19,7 @@ DIAGNOSTIC_CODES: Final[frozenset[str]] = frozenset(
 
 SEVERITY_LEVELS: Final[frozenset[str]] = frozenset({"info", "warn", "error"})
 _SEVERITY_ALIASES: Final[dict[str, str]] = {"warning": "warn"}
+_MAX_MESSAGE_LENGTH = 240
 
 
 @dataclass(frozen=True)
@@ -55,18 +56,34 @@ class Diagnostic:
         return out
 
 
-@dataclass(frozen=True)
 class AssessmentError(Exception):
     """Base class for sanitized assessment errors."""
 
-    message: str
-    code: str = "assessment.error"
-    exit_code: int = 1
-    context: Mapping[str, Any] = dataclass_field(default_factory=dict)
-    severity: str = "error"
+    code = "assessment.error"
+    exit_code = 1
+    severity = "error"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str | None = None,
+        exit_code: int | None = None,
+        context: Mapping[str, Any] | None = None,
+        severity: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.code = code or self.code
+        self.exit_code = exit_code if exit_code is not None else self.exit_code
+        self.context: Mapping[str, Any] = dict(context) if context else {}
+        self.severity = severity or self.severity
 
     def __str__(self) -> str:
         return self.message
+
+    def render(self) -> str:
+        return render_error(self)
 
     def to_diagnostic(self) -> Diagnostic:
         return Diagnostic(
@@ -89,10 +106,10 @@ class ReportInputError(AssessmentError):
         context: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__(
-            message=message,
+            message,
             code=code,
             exit_code=exit_code,
-            context=context or {},
+            context=context,
         )
 
 
@@ -106,10 +123,10 @@ class ReportSchemaValidationError(AssessmentError):
         context: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__(
-            message=message,
+            message,
             code="report.schema.invalid",
             exit_code=3,
-            context=context or {},
+            context=context,
         )
 
 
@@ -123,103 +140,152 @@ class ReportRenderError(AssessmentError):
         context: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__(
-            message=message,
+            message,
             code="report.render.internal",
             exit_code=4,
-            context=context or {},
+            context=context,
         )
 
 
-class PortalError(AssessmentError):
-    """Base class for ArcGIS Portal scanner errors."""
+class ServerError(AssessmentError):
+    code = "server.error"
+    exit_code = 10
+
+
+class ServerAuthError(ServerError):
+    code = "server.auth"
+    exit_code = 11
+
+
+class ServerForbiddenError(ServerError):
+    code = "server.forbidden"
+    exit_code = 12
+
+
+class ServerNotFoundError(ServerError):
+    code = "server.not-found"
+    exit_code = 13
+
+
+class ServerRateLimitedError(ServerError):
+    code = "server.rate-limited"
+    exit_code = 14
+
+
+class ServerConnectionError(ServerError):
+    code = "server.connection"
+    exit_code = 15
+
+
+class ServerApiError(ServerError):
+    code = "server.api"
+    exit_code = 16
 
     def __init__(
         self,
         message: str,
         *,
-        code: str = "portal.error",
-        exit_code: int = 20,
+        esri_code: int | None = None,
         context: Mapping[str, Any] | None = None,
     ) -> None:
-        super().__init__(
-            message=message,
-            code=code,
-            exit_code=exit_code,
-            context=context or {},
-        )
+        super().__init__(message, context=context)
+        self.esri_code = esri_code
+
+
+class ServerSchemaError(ServerError):
+    code = "server.schema"
+    exit_code = 17
+
+
+class PortalError(AssessmentError):
+    """Base class for ArcGIS Portal scanner errors."""
+
+    code = "portal.error"
+    exit_code = 20
 
 
 class PortalAuthError(PortalError):
-    def __init__(self, message: str, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(
-            message,
-            code="portal.auth",
-            exit_code=21,
-            context=context,
-        )
+    code = "portal.auth"
+    exit_code = 21
 
 
 class PortalForbiddenError(PortalError):
-    def __init__(self, message: str, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(
-            message,
-            code="portal.forbidden",
-            exit_code=22,
-            context=context,
-        )
+    code = "portal.forbidden"
+    exit_code = 22
 
 
 class PortalNotFoundError(PortalError):
-    def __init__(self, message: str, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(
-            message,
-            code="portal.not-found",
-            exit_code=23,
-            context=context,
-        )
+    code = "portal.not-found"
+    exit_code = 23
 
 
 class PortalRateLimitedError(PortalError):
-    def __init__(self, message: str, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(
-            message,
-            code="portal.rate-limited",
-            exit_code=24,
-            context=context,
-        )
+    code = "portal.rate-limited"
+    exit_code = 24
 
 
 class PortalConnectionError(PortalError):
-    def __init__(self, message: str, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(
-            message,
-            code="portal.connection",
-            exit_code=25,
-            context=context,
-        )
+    code = "portal.connection"
+    exit_code = 25
 
 
 class PortalApiError(PortalError):
-    def __init__(self, message: str, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(
-            message,
-            code="portal.api",
-            exit_code=26,
-            context=context,
-        )
+    code = "portal.api"
+    exit_code = 26
 
 
 class PortalSchemaError(PortalError):
-    def __init__(self, message: str, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(
-            message,
-            code="portal.schema",
-            exit_code=27,
-            context=context,
-        )
+    code = "portal.schema"
+    exit_code = 27
+
+
+def sanitize_message(message: str | None, *, fallback: str = "ArcGIS Server error") -> str:
+    """Trim and length-cap an Esri error message so it stays prospect-safe."""
+
+    if not message:
+        return fallback
+    cleaned = " ".join(str(message).split())
+    safe_parts = [
+        part
+        for part in cleaned.split(" ")
+        if not (part.startswith("http://") or part.startswith("https://"))
+    ]
+    safe = " ".join(safe_parts).strip() or fallback
+    if len(safe) > _MAX_MESSAGE_LENGTH:
+        safe = safe[: _MAX_MESSAGE_LENGTH - 1].rstrip() + "..."
+    return safe
 
 
 def render_error(error: AssessmentError) -> str:
     """Return the one-line CLI error format."""
 
     return f"error: [{error.code}] {error.message}"
+
+
+__all__ = [
+    "AssessmentError",
+    "DIAGNOSTIC_CODES",
+    "Diagnostic",
+    "PortalApiError",
+    "PortalAuthError",
+    "PortalConnectionError",
+    "PortalError",
+    "PortalForbiddenError",
+    "PortalNotFoundError",
+    "PortalRateLimitedError",
+    "PortalSchemaError",
+    "ReportInputError",
+    "ReportRenderError",
+    "ReportSchemaValidationError",
+    "SEVERITY_LEVELS",
+    "ServerApiError",
+    "ServerAuthError",
+    "ServerConnectionError",
+    "ServerError",
+    "ServerForbiddenError",
+    "ServerNotFoundError",
+    "ServerRateLimitedError",
+    "ServerSchemaError",
+    "render_error",
+    "sanitize_message",
+]

@@ -7,10 +7,12 @@ import json
 import logging
 import os
 import sys
+import time
 import traceback
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, IO, Sequence
 
 from . import __version__
 from .diagnostics import (
@@ -18,6 +20,7 @@ from .diagnostics import (
     ReportInputError,
     ReportRenderError,
     ReportSchemaValidationError,
+    ServerSchemaError,
     render_error,
 )
 from .entitlements import (
@@ -42,16 +45,29 @@ from .footprint import (
     write_footprint,
     write_footprint_json,
 )
-from .footprint.schema import validate_footprint
+from .footprint.schema import FootprintSchemaNotFoundError, validate_footprint
 from .footprint.v0_1 import to_footprint_v0_1
-from .portal import AnonymousCredential, PortalClient, PortalScanner, TokenCredential
+from .logging import configure as configure_package_logging
+from .portal import (
+    AnonymousCredential as PortalAnonymousCredential,
+    PortalClient,
+    PortalScanner,
+    TokenCredential as PortalTokenCredential,
+)
 from .report import RenderOptions, render
 from .report.validation import validate_footprint_v01
+from .scanners import agol as agol_scanner
 from .scanners import filegdb as filegdb_scanner
 from .scanners import server as server_scanner
+from .server.auth import (
+    AnonymousCredential as ServerAnonymousCredential,
+    TokenCredential as ServerTokenCredential,
+)
+from .server.client import RetryPolicy, ServerClient
+from .server.scanner import ServerScanner
 
-
-_LOG = logging.getLogger("honua_esri_assess")
+_LEGACY_AGOL_SCAN = agol_scanner.scan
+_LEGACY_SERVER_SCAN = server_scanner.scan
 
 _EXIT_USAGE = 2
 _EXIT_ENTITLEMENTS_TYPED = 3
@@ -122,8 +138,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     server.add_argument("--target", required=True, help="ArcGIS Server REST base URL.")
     server.add_argument(
-        "--output", required=True, type=Path, help="Path to write EsriFootprint.json."
+        "--token",
+        default=None,
+        help="Pre-existing ArcGIS Server token; omit for anonymous scan.",
     )
+    server.add_argument(
+        "--output",
+        default=None,
+        type=Path,
+        help="Path to write EsriFootprint.json. Default: stdout.",
+    )
+    server.set_defaults(deep=True)
+    server.add_argument("--deep", dest="deep", action="store_true", help="Probe service bodies.")
+    server.add_argument("--shallow", dest="deep", action="store_false", help="Skip service probes.")
+    server.add_argument("--folder", default=None, help="Restrict the walk to a single folder name.")
+    server.add_argument(
+        "--timeout",
+        type=_positive_float,
+        default=30.0,
+        help="Per-request HTTP timeout in seconds (must be > 0).",
+    )
+    server.add_argument("--max-retries", type=int, default=3, help="Maximum transient HTTP attempts.")
+    server.add_argument(
+        "--allow-nonstandard-base",
+        action="store_true",
+        help="Skip base-URL canonicalization.",
+    )
+    server.add_argument("--debug", action="store_true", help="Show Python tracebacks.")
+    server.add_argument("--verbose", action="store_true", help="Enable INFO-level logging.")
 
     filegdb_scan = scan_sub.add_parser(
         "filegdb", help="Inventory a FileGDB on disk (read-only)."
@@ -255,17 +297,13 @@ def _add_entitlement_common_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def configure_logging(*, verbose: bool, debug: bool) -> None:
+def _configure_logging(*, verbose: bool, debug: bool) -> None:
     level = logging.WARNING
     if verbose:
         level = logging.INFO
     if debug:
         level = logging.DEBUG
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        stream=sys.stderr,
-    )
+    configure_package_logging(level)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -281,7 +319,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         if args.command == "scan":
-            return _dispatch_scan(args)
+            return _dispatch_scan(args, stdout=sys.stdout, stderr=sys.stderr)
         if args.command == "filegdb":
             return _run_filegdb_workspace(
                 args.workspace,
@@ -309,24 +347,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _emit_typed_failure("Unexpected assessment failure before producing an output.")
 
 
-def _dispatch_scan(args: argparse.Namespace) -> int:
+def _dispatch_scan(
+    args: argparse.Namespace,
+    *,
+    stdout: IO[str],
+    stderr: IO[str],
+) -> int:
     backend = args.backend
     if backend == "agol":
         return _run_agol(args)
     if backend == "server":
-        return _run_server(args.target, args.output)
+        return _run_server(args, stdout=stdout, stderr=stderr)
     if backend == "filegdb":
         return _run_filegdb_descriptor(args.target, args.output)
-    print("error: scan requires a backend (agol|server|filegdb).", file=sys.stderr)
+    print("error: scan requires a backend (agol|server|filegdb).", file=stderr)
     return _EXIT_USAGE
 
 
 def _run_agol(args: argparse.Namespace) -> int:
-    credential = TokenCredential(args.token) if args.token else AnonymousCredential()
+    if agol_scanner.scan is not _LEGACY_AGOL_SCAN:
+        return _run_legacy_agol_scan(args)
+
+    credential = (
+        PortalTokenCredential(args.token)
+        if args.token
+        else PortalAnonymousCredential()
+    )
     client = PortalClient(args.target, credential, timeout=args.timeout)
     result = PortalScanner(client, deep=args.deep).scan()
     footprint = to_footprint_v0_1(result, tool_version=__version__)
-    validate_footprint(footprint)
+    if not _validate_before_write(footprint):
+        return _EXIT_GENERIC
     rendered = footprint_to_json(footprint)
 
     if args.output == "-":
@@ -344,20 +395,136 @@ def _run_agol(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_server(target: str, output: Path) -> int:
+def _run_legacy_agol_scan(args: argparse.Namespace) -> int:
     try:
-        result = server_scanner.scan(target)
+        result = agol_scanner.scan(args.target)
+    except Exception:
+        return _emit_typed_failure("AGOL scan failed before producing an inventory.")
+    footprint = build_footprint(
+        source_kind="arcgis-online",
+        target=args.target,
+        inventory=result["inventory"],
+        diagnostics=result["diagnostics"],
+        portal=result["portal"],
+    )
+    if not _validate_before_write(footprint):
+        return _EXIT_GENERIC
+    if args.output == "-":
+        print(footprint_to_json(footprint), end="")
+    elif not _write_footprint_safely(footprint, Path(args.output)):
+        return _EXIT_GENERIC
+    _emit_diagnostics_to_stderr(footprint)
+    return 0
+
+
+def _run_server(
+    args: argparse.Namespace,
+    *,
+    stdout: IO[str],
+    stderr: IO[str],
+) -> int:
+    _configure_logging(verbose=args.verbose, debug=args.debug)
+
+    try:
+        if server_scanner.scan is not _LEGACY_SERVER_SCAN:
+            return _run_legacy_server_scan(args, stdout=stdout)
+
+        credential = (
+            ServerTokenCredential(args.token)
+            if args.token
+            else ServerAnonymousCredential()
+        )
+        client = ServerClient(
+            args.target,
+            credential=credential,
+            timeout=args.timeout,
+            retry=RetryPolicy(max_attempts=max(1, args.max_retries)),
+            allow_nonstandard_base=args.allow_nonstandard_base,
+        )
+        scanner = ServerScanner(deep=args.deep, folder=args.folder)
+        scan_started_at = datetime.now(UTC)
+        started = time.monotonic()
+        result = scanner.scan(client)
+        elapsed = time.monotonic() - started
+        footprint = to_footprint_v0_1(
+            result,
+            tool_version=__version__,
+            captured_at=scan_started_at,
+            target_url=args.target,
+        )
+        _validate_server_footprint(footprint)
+
+        payload = json.dumps(footprint, indent=2, sort_keys=True) + "\n"
+        if args.output:
+            try:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text(payload, encoding="utf-8")
+            except OSError:
+                return _emit_typed_failure(
+                    "Could not write the EsriFootprint.json output."
+                )
+        else:
+            stdout.write(payload)
+        _emit_diagnostics_to_stderr(footprint)
+        print(
+            f"scanned {len(result.services)} services across {len(result.folders)} folders "
+            f"in {elapsed:.2f}s",
+            file=stderr,
+        )
+        return 0
+    except AssessmentError as exc:
+        if args.debug:
+            traceback.print_exc(file=stderr)
+        print(exc.render(), file=stderr)
+        return exc.exit_code
+    except Exception:
+        if args.debug:
+            traceback.print_exc(file=stderr)
+        print(
+            "error: [unexpected] internal scanner error (use --debug for details)",
+            file=stderr,
+        )
+        return 99
+
+
+def _validate_server_footprint(footprint: dict) -> None:
+    try:
+        validation_ran = validate_footprint(footprint)
+    except FootprintSchemaNotFoundError as exc:
+        raise ServerSchemaError(
+            "emitted footprint schema was unavailable; no artifact was written"
+        ) from exc
+    except Exception as exc:
+        raise ServerSchemaError(
+            "emitted footprint failed schema validation; no artifact was written"
+        ) from exc
+    if validation_ran is False:
+        raise ServerSchemaError(
+            "emitted footprint schema was unavailable; no artifact was written"
+        )
+
+
+def _run_legacy_server_scan(args: argparse.Namespace, *, stdout: IO[str]) -> int:
+    try:
+        result = server_scanner.scan(args.target)
     except Exception:
         return _emit_typed_failure("ArcGIS Server scan failed before producing an inventory.")
     footprint = build_footprint(
         source_kind="arcgis-server",
-        target=target,
+        target=args.target,
         inventory=result["inventory"],
         diagnostics=result["diagnostics"],
         server=result["server"],
     )
-    if not _write_footprint_safely(footprint, output):
-        return _EXIT_GENERIC
+    payload = json.dumps(footprint, indent=2, sort_keys=True) + "\n"
+    if args.output:
+        try:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(payload, encoding="utf-8")
+        except OSError:
+            return _emit_typed_failure("Could not write the EsriFootprint.json output.")
+    else:
+        stdout.write(payload)
     _emit_diagnostics_to_stderr(footprint)
     return 0
 
@@ -374,6 +541,8 @@ def _run_filegdb_descriptor(target: str, output: Path) -> int:
         diagnostics=result["diagnostics"],
         filegdb=result["filegdb"],
     )
+    if not _validate_before_write(footprint):
+        return _EXIT_GENERIC
     if not _write_footprint_safely(footprint, output):
         return _EXIT_GENERIC
     _emit_diagnostics_to_stderr(footprint)
@@ -512,6 +681,34 @@ def _write_footprint_safely(footprint: dict[str, Any], output: Path) -> bool:
     return True
 
 
+def _validate_before_write(footprint: dict) -> bool:
+    """Validate *footprint* against the declared schema before persisting.
+
+    AGOL and FileGDB scans cannot raise ``AssessmentError`` from this layer,
+    so failures are converted to the same prospect-safe ``partial-coverage``
+    diagnostic surface that the rest of the CLI uses for non-typed faults.
+    """
+
+    try:
+        validation_ran = validate_footprint(footprint)
+    except FootprintSchemaNotFoundError:
+        _emit_typed_failure(
+            "emitted footprint schema was unavailable; no artifact was written"
+        )
+        return False
+    except Exception:
+        _emit_typed_failure(
+            "emitted footprint failed schema validation; no artifact was written"
+        )
+        return False
+    if not validation_ran:
+        _emit_typed_failure(
+            "emitted footprint schema was unavailable; no artifact was written"
+        )
+        return False
+    return True
+
+
 def _emit_diagnostics_to_stderr(footprint: dict[str, Any]) -> None:
     for diag in footprint.get("diagnostics", []) or []:
         if not isinstance(diag, dict):
@@ -537,7 +734,7 @@ def _dispatch_entitlements(args: argparse.Namespace) -> int:
         build_parser().print_help()
         return _EXIT_USAGE
 
-    configure_logging(verbose=args.verbose, debug=args.debug)
+    _configure_logging(verbose=args.verbose, debug=args.debug)
 
     try:
         output = _run_entitlements(args)

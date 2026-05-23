@@ -31,11 +31,17 @@ smoke = [
   "responses>=0.25",
 ]
 
+[tool.setuptools]
+include-package-data = false
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
 "honua_esri_assess" = ["schemas/*.json"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["__pycache__/*", "**/__pycache__/*", "*.pyc", "**/*.pyc"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

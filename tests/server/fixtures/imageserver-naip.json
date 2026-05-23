@@ -1,0 +1,6 @@
+{
+  "currentVersion": 11.2,
+  "description": "NAIP 2024 mosaic",
+  "capabilities": "Image,Catalog,Metadata",
+  "serviceDataType": "esriImageServiceDataTypeRGB"
+}

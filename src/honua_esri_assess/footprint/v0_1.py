@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 from honua_esri_assess.diagnostics import Diagnostic
 from honua_esri_assess.footprint.licensing import (
@@ -14,6 +14,12 @@ from honua_esri_assess.footprint.licensing import (
     server_licensing_to_dict,
 )
 from honua_esri_assess.portal.models import ItemRecord, PortalScanResult
+from honua_esri_assess.server._safe import credential_free_url
+from honua_esri_assess.server.models import (
+    ScanDiagnostic,
+    ServerScanResult,
+    ServiceRecord,
+)
 
 SCHEMA_VERSION = "v0.1"
 PRODUCER_NAME = "honua-esri-assess"
@@ -44,15 +50,58 @@ DIAGNOSTIC_CODE_MAP = {
     "portal.org-id.missing": "partial-coverage",
 }
 
+SERVER_DIAGNOSTIC_CODE_MAP = {
+    "server.auth": "missing-permission",
+    "server.forbidden": "missing-permission",
+    "server.info.partial": "partial-coverage",
+    "server.folder.connection": "partial-coverage",
+    "server.folder.forbidden": "missing-permission",
+    "server.folder.error": "partial-coverage",
+    "server.folder.nested": "partial-coverage",
+    "server.folder.rate-limited": "rate-limited",
+    "server.not-found": "partial-coverage",
+    "server.rate-limited": "rate-limited",
+    "server.service.deep-failed": "partial-coverage",
+    "server.service.malformed": "unsupported-item-type",
+    "server.service.missing-permission": "missing-permission",
+    "server.service.rate-limited": "rate-limited",
+    "server.service.unknown-type": "unsupported-item-type",
+}
+
 
 def to_footprint_v0_1(
+    result: PortalScanResult | ServerScanResult,
+    *,
+    tool_version: str,
+    generated_at: datetime | None = None,
+    captured_at: datetime | None = None,
+    target_url: str | None = None,
+) -> dict[str, Any]:
+    """Return a JSON-serializable EsriFootprint.json v0.1 object."""
+
+    if isinstance(result, PortalScanResult):
+        return _portal_to_footprint(
+            result,
+            tool_version=tool_version,
+            generated_at=generated_at,
+        )
+    if isinstance(result, ServerScanResult):
+        return _server_to_footprint(
+            result,
+            tool_version=tool_version,
+            generated_at=generated_at,
+            captured_at=captured_at,
+            target_url=target_url,
+        )
+    raise TypeError(f"unsupported v0.1 footprint source: {type(result).__name__}")
+
+
+def _portal_to_footprint(
     result: PortalScanResult,
     *,
     tool_version: str,
     generated_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """Return a JSON-serializable EsriFootprint.json v0.1 object."""
-
     emitted_at = _utc(generated_at or datetime.now(timezone.utc))
     captured_at = _utc(result.captured_at)
     item_counts = Counter(item.item_type or "Unknown" for item in result.items)
@@ -89,8 +138,66 @@ def to_footprint_v0_1(
             "featureClasses": 0,
         },
         "diagnostics": [
-            _diagnostic_to_dict(diagnostic) for diagnostic in result.diagnostics
+            _portal_diagnostic_to_dict(diagnostic)
+            for diagnostic in result.diagnostics
         ],
+    }
+
+
+def _server_to_footprint(
+    result: ServerScanResult,
+    *,
+    tool_version: str,
+    generated_at: datetime | None = None,
+    captured_at: datetime | None = None,
+    target_url: str | None = None,
+) -> dict[str, Any]:
+    generated_stamp = _utc(generated_at or datetime.now(timezone.utc))
+    captured_stamp = _utc(captured_at or generated_stamp)
+    service_counts = Counter(service.service_type for service in result.services)
+    omitted = _services_omitted_from_inventory(result.diagnostics)
+    inventory = [
+        _server_service_to_dict(service)
+        for service in result.services
+        if _service_identity(service) not in omitted
+    ]
+    diagnostics = [
+        _server_diagnostic_to_dict(diagnostic)
+        for diagnostic in result.diagnostics
+    ]
+
+    server: dict[str, Any] = {
+        "folders": [folder.name for folder in result.folders],
+        "serviceCounts": {
+            service_type: service_counts[service_type]
+            for service_type in sorted(service_counts)
+        },
+    }
+    version = result.info.current_version or result.info.full_version
+    if version:
+        server["version"] = version
+
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "generatedAt": _format_rfc3339(generated_stamp),
+        "tool": {"name": PRODUCER_NAME, "version": tool_version},
+        "source": {
+            "kind": "arcgis-server",
+            "locator": _server_locator(result.info.url or target_url or ""),
+            "capturedAt": _format_rfc3339(captured_stamp),
+        },
+        "server": server,
+        "inventory": inventory,
+        "counts": {
+            "items": {
+                "portal-item": 0,
+                "server-service": len(inventory),
+                "filegdb-feature-class": 0,
+            },
+            "layers": sum(item["layerCount"] for item in inventory),
+            "featureClasses": 0,
+        },
+        "diagnostics": diagnostics,
     }
 
 
@@ -111,7 +218,7 @@ def _portal_item_to_dict(item: ItemRecord) -> dict[str, Any]:
     return payload
 
 
-def _diagnostic_to_dict(diagnostic: Diagnostic) -> dict[str, Any]:
+def _portal_diagnostic_to_dict(diagnostic: Diagnostic) -> dict[str, Any]:
     code = DIAGNOSTIC_CODE_MAP.get(diagnostic.code, "partial-coverage")
     payload: dict[str, Any] = {
         "code": code,
@@ -125,6 +232,104 @@ def _diagnostic_to_dict(diagnostic: Diagnostic) -> dict[str, Any]:
             "organization resources."
         )
     return payload
+
+
+_ROOT_FOLDER_SENTINEL = "_root"
+
+
+def _service_identity(service: ServiceRecord) -> tuple[str, str, str]:
+    return (service.folder or _ROOT_FOLDER_SENTINEL, service.name, service.service_type)
+
+
+def _services_omitted_from_inventory(
+    diagnostics: tuple[ScanDiagnostic, ...],
+) -> set[tuple[str, str, str]]:
+    terminal_codes = {
+        "server.auth",
+        "server.forbidden",
+        "server.rate-limited",
+        "server.service.missing-permission",
+        "server.service.rate-limited",
+    }
+    omitted: set[tuple[str, str, str]] = set()
+    prefix = "services/"
+    for diag in diagnostics:
+        if diag.code not in terminal_codes or not diag.field:
+            continue
+        if not diag.field.startswith(prefix):
+            continue
+        parts = diag.field[len(prefix) :].split("/")
+        if len(parts) >= 3:
+            folder, name, service_type = parts[0], parts[1], parts[2]
+            omitted.add((folder or _ROOT_FOLDER_SENTINEL, name, service_type))
+    return omitted
+
+
+def _server_service_to_dict(service: ServiceRecord) -> dict[str, Any]:
+    return {
+        "kind": "server-service",
+        "serviceUrl": credential_free_url(service.url),
+        "serviceType": service.service_type,
+        "folder": service.folder or "",
+        "layerCount": len(service.layers),
+    }
+
+
+def _server_diagnostic_to_dict(diagnostic: ScanDiagnostic) -> dict[str, Any]:
+    return {
+        "code": SERVER_DIAGNOSTIC_CODE_MAP.get(diagnostic.code, "partial-coverage"),
+        "severity": _severity(diagnostic.severity),
+        "message": diagnostic.message,
+        "scope": diagnostic.field or "arcgis-server",
+    }
+
+
+def _services_omitted_from_inventory(
+    diagnostics: tuple[ScanDiagnostic, ...],
+) -> set[tuple[str, str, str] | str]:
+    terminal_codes = {
+        "server.auth",
+        "server.forbidden",
+        "server.rate-limited",
+        "server.service.missing-permission",
+        "server.service.rate-limited",
+    }
+    omitted: set[tuple[str, str, str] | str] = set()
+    prefix = "services/"
+    for diagnostic in diagnostics:
+        if diagnostic.code not in terminal_codes or not diagnostic.field:
+            continue
+        if not diagnostic.field.startswith(prefix):
+            continue
+        parts = diagnostic.field[len(prefix) :].split("/")
+        if len(parts) >= 3:
+            folder, name, service_type = parts[0], parts[1], parts[2]
+            omitted.add((folder or "_root", name, service_type))
+        elif parts and parts[0]:
+            omitted.add(parts[0])
+    return omitted
+
+
+def _service_identity(service: ServiceRecord) -> tuple[str, str, str]:
+    return (service.folder or "_root", service.name, service.service_type)
+
+
+def _server_locator(value: str) -> str:
+    safe = credential_free_url(value)
+    parts = urlsplit(safe)
+    if not parts.scheme or not parts.netloc:
+        return safe
+    path = parts.path.rstrip("/")
+    lowered = path.lower()
+    if lowered.endswith("/rest/services"):
+        canonical_path = path
+    elif lowered.endswith("/rest"):
+        canonical_path = f"{path}/services"
+    elif lowered.endswith("/arcgis") or lowered == "":
+        canonical_path = f"{path or '/arcgis'}/rest/services"
+    else:
+        canonical_path = path
+    return urlunsplit((parts.scheme, parts.netloc, canonical_path, "", ""))
 
 
 def _portal_locator(portal_url: str, org_id: str | None) -> str:

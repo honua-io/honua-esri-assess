@@ -15,7 +15,7 @@ Shipped in the current contract line:
 | --- | --- | --- |
 | Schema | `EsriFootprint.json` v0.1 schema and reference docs | Sole handoff artifact |
 | Canonical sample | Single-source-of-truth footprint plus rendered readiness report | [`docs/samples/esri-footprint.sample.json`](docs/samples/esri-footprint.sample.json), [`docs/samples/readiness-report.sample.md`](docs/samples/readiness-report.sample.md) |
-| Scanner CLI | Fixture-backed AGOL, ArcGIS Server, and FileGDB scans | Full `EsriFootprint.json` |
+| Scanner CLI | Read-only AGOL Portal Sharing API, ArcGIS Server, and FileGDB scans | Full `EsriFootprint.json` |
 | FileGDB workspace CLI | Read-only `pyogrio`/GDAL inventory of a local `.gdb` | Full `EsriFootprint.json` |
 | Report CLI | Pure deterministic Markdown readiness report renderer with smoke coverage | Human-readable companion (no second machine contract) |
 | Smoke CI | Separate fixture-backed job without live Esri access | Local contract guard |
@@ -30,12 +30,13 @@ Still out of scope for this line:
   `scan server` outputs. The v0.1 schema supports optional licensing blocks,
   and the interim `entitlements` CLI validates that shape until scanner
   integration lands.
+- Any write, mutate, migrate, or publish operation against Esri systems.
 
 ## Supported sources
 
 | Source | CLI surface | Extra dependencies | Notes |
 |--------|-------------|--------------------|-------|
-| ArcGIS Online | `scan agol --target <sharing-rest-url> --output EsriFootprint.json` | none | Uses the Portal Sharing REST base read-only. |
+| ArcGIS Online | `scan agol --target <portal-url-or-sharing-rest-url> --output EsriFootprint.json` | none | Uses the Portal Sharing REST API read-only. |
 | ArcGIS Server | `scan server --target <rest-url> --output EsriFootprint.json` | none | Uses ArcGIS Server REST service metadata read-only. |
 | FileGDB | `filegdb <workspace.gdb> --output EsriFootprint.json` | `filegdb` extra | Uses `pyogrio`/GDAL metadata calls against a local `.gdb` directory. |
 
@@ -56,10 +57,16 @@ report subcommand is purely a local renderer; it does not contact Esri or
 Honua endpoints.
 
 ```bash
-# ArcGIS Online (Portal Sharing REST base - the scanner appends portals/self,
-# community/groups, search, and content/items/<id> directly to this URL).
+# ArcGIS Online. Target may be the org URL or its /sharing/rest URL.
 honua-esri-assess scan agol \
-  --target https://yourorg.maps.arcgis.com/sharing/rest \
+  --target https://yourorg.maps.arcgis.com \
+  --output EsriFootprint.json
+
+# ArcGIS Online with a pre-existing token and optional hosted-service probes.
+honua-esri-assess scan agol \
+  --target https://yourorg.maps.arcgis.com \
+  --token "$AGOL_TOKEN" \
+  --deep \
   --output EsriFootprint.json
 
 # ArcGIS Server REST endpoint.
@@ -94,10 +101,13 @@ honua-esri-assess report \
   --strict
 ```
 
-The AGOL `scan` target must be the Portal Sharing REST base (typically the URL
-ending in `/sharing/rest`). The scanner appends endpoint paths directly to
-that base, so passing a higher-level portal URL will produce
-`partial-coverage` diagnostics instead of an inventory.
+The AGOL `scan` target accepts either the organization base URL
+(`https://yourorg.maps.arcgis.com`) or the Portal Sharing REST base ending in
+`/sharing/rest`. The scanner normalizes that target before issuing GET-only
+requests to `portals/self`, `community/groups`, `search`, and, for token
+scans, `community/users`. With `--deep`, it may also GET hosted service URLs
+under ArcGIS Online; external service URLs are not fetched. AGOL `--output`
+defaults to stdout, and `--timeout` controls the per-request Portal timeout.
 
 The top-level `filegdb` command requires a local directory whose name ends in
 `.gdb`. The raw workspace path is never published. `source.locator` and
@@ -224,6 +234,10 @@ contract state from a shell status.
   path. A single `partial-coverage: <typed message>` line is printed to
   stderr; no stack trace, internal path, or credential is leaked.
 - Exit `2` - missing or invalid arguments, such as `scan` without a backend.
+- Exit `20`-`27` - the AGOL scanner failed before producing a footprint with
+  a typed Portal error (`portal.error`, `portal.auth`, `portal.forbidden`,
+  `portal.not-found`, `portal.rate-limited`, `portal.connection`,
+  `portal.api`, or `portal.schema`).
 
 ### FileGDB workspace exit codes and failure surface
 
@@ -296,15 +310,52 @@ Two policy docs govern the broader contract:
   prospect-facing summary of what flows between this tool and the closed
   product, and how to verify a footprint locally.
 
-The schema body for the current `0.1.x` line is tracked under
-[honua-io/honua-esri-assess#2](https://github.com/honua-io/honua-esri-assess/issues/2).
+## ArcGIS Online scan
+
+The AGOL scanner uses the documented Portal Sharing REST API in read-only mode.
+It only issues `GET` requests against Esri systems and writes the local
+`EsriFootprint.json` artifact, or stdout when `--output` is omitted or set to
+`-`.
+
+Anonymous scans enumerate publicly visible content in the target org:
+
+```shell
+honua-esri-assess scan agol \
+  --target https://example.maps.arcgis.com \
+  --output EsriFootprint.json
+```
+
+Token scans use a pre-existing ArcGIS Online token as a query-string
+credential. The token is not written to the footprint, diagnostics, cache keys,
+or logs:
+
+```shell
+honua-esri-assess scan agol \
+  --target https://example.maps.arcgis.com \
+  --token "$AGOL_TOKEN" \
+  --output EsriFootprint.json
+```
+
+The AGOL footprint emits `source.kind: "arcgis-online"`, a `portal` facet, and
+`portal-item` inventory records. The current v0.1 emitter records item id, type,
+owner, title, sharing, modified timestamp, optional extent, and an empty
+`dependencies` list for scanned items. It does not expose AGOL service or layer
+records in the artifact; `--deep` only performs read-only hosted-service probes
+for scanner coverage and diagnostics.
+
+Anonymous scans skip organization-user enumeration and can emit an informational
+`partial-coverage` diagnostic. Both anonymous and token scans attempt readable
+group enumeration for coverage checks, but group records are not exposed as a
+v0.1 artifact field. Token scans additionally attempt user counts under the
+token's readable scope.
 
 ### Diagnostic code enum (v0.1)
 
 `diagnostics[].code` is locked to the enum below in v0.1. Adding a new code
 requires a schema bump and a parallel update to
 `src/honua_esri_assess/diagnostics.py` and
-`src/honua_esri_assess/entitlements/diagnostics.py`:
+`src/honua_esri_assess/entitlements/diagnostics.py`, plus any scanner emitter
+mapping that normalizes subsystem-specific diagnostics into this vocabulary:
 
 - `rate-limited` - upstream returned HTTP 429; partial inventory returned.
 - `partial-coverage` - endpoint unreachable, non-JSON, or otherwise refused.

@@ -12,7 +12,7 @@ license = { text = "Apache-2.0" }
 authors = [{ name = "Honua" }]
 dependencies = [
   "jsonschema>=4",
-  "requests>=2.31",
+  "requests>=2.31,<3",
 ]
 
 [project.scripts]
@@ -24,9 +24,9 @@ filegdb = [
 ]
 dev = [
   "pytest>=7",
+  "responses>=0.25",
 ]
 smoke = [
-  "jsonschema>=4",
   "pytest>=8",
   "responses>=0.25",
 ]
@@ -38,4 +38,6 @@ where = ["src"]
 "honua_esri_assess" = ["schemas/*.json"]
 
 [tool.pytest.ini_options]
+pythonpath = ["src"]
 testpaths = ["tests"]
+addopts = ["--import-mode=importlib"]

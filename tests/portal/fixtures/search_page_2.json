@@ -1,0 +1,19 @@
+{
+  "total": 3,
+  "start": 3,
+  "num": 1,
+  "nextStart": -1,
+  "results": [
+    {
+      "id": "item-dashboard-1",
+      "title": "Operations Dashboard",
+      "owner": "ops",
+      "type": "Dashboard",
+      "access": "org",
+      "created": 1717372800000,
+      "modified": 1717459200000,
+      "tags": ["operations"],
+      "typeKeywords": ["Dashboard"]
+    }
+  ]
+}

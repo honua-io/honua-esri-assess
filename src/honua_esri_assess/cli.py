@@ -18,6 +18,7 @@ from .diagnostics import (
     ReportInputError,
     ReportRenderError,
     ReportSchemaValidationError,
+    render_error,
 )
 from .entitlements import (
     EntitlementsApiError,
@@ -41,9 +42,11 @@ from .footprint import (
     write_footprint,
     write_footprint_json,
 )
+from .footprint.schema import validate_footprint
+from .footprint.v0_1 import to_footprint_v0_1
+from .portal import AnonymousCredential, PortalClient, PortalScanner, TokenCredential
 from .report import RenderOptions, render
 from .report.validation import validate_footprint_v01
-from .scanners import agol as agol_scanner
 from .scanners import filegdb as filegdb_scanner
 from .scanners import server as server_scanner
 
@@ -61,6 +64,20 @@ class _EntitlementsOutput:
     diagnostics: list[dict[str, object]] = field(default_factory=list)
 
 
+def _positive_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError(
+            f"expected a positive number of seconds, got {value!r}"
+        ) from exc
+    if parsed <= 0 or parsed != parsed:
+        raise argparse.ArgumentTypeError(
+            f"timeout must be greater than 0 seconds, got {value!r}"
+        )
+    return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="honua-esri-assess")
     parser.add_argument(
@@ -74,18 +91,30 @@ def build_parser() -> argparse.ArgumentParser:
     scan_sub = scan.add_subparsers(dest="backend")
 
     agol = scan_sub.add_parser(
-        "agol", help="Scan an ArcGIS Online portal (read-only)."
+        "agol", help="Scan an ArcGIS Online portal through the Sharing REST API."
+    )
+    agol.add_argument("--target", required=True, help="ArcGIS Online portal URL.")
+    agol.add_argument("--token", help="Pre-existing ArcGIS Online token.")
+    agol.add_argument(
+        "--output",
+        default="-",
+        help="Path for EsriFootprint.json, or '-' for stdout. Defaults to stdout.",
     )
     agol.add_argument(
-        "--target",
-        required=True,
-        help=(
-            "Portal Sharing REST base URL, "
-            "e.g. https://example.maps.arcgis.com/sharing/rest"
-        ),
+        "--deep",
+        action="store_true",
+        help="Probe service layer metadata for service items.",
     )
     agol.add_argument(
-        "--output", required=True, type=Path, help="Path to write EsriFootprint.json."
+        "--timeout",
+        type=_positive_float,
+        default=30.0,
+        help="Per-request timeout in seconds (must be > 0). Defaults to 30.",
+    )
+    agol.add_argument(
+        "--debug",
+        action="store_true",
+        help="Show raw tracebacks for debugging. Default output is prospect-safe.",
     )
 
     server = scan_sub.add_parser(
@@ -211,9 +240,9 @@ def _add_entitlement_common_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--token", help="Optional token used for admin / org endpoints.")
     parser.add_argument(
         "--timeout",
-        type=float,
+        type=_positive_float,
         default=30.0,
-        help="HTTP timeout in seconds (default: 30).",
+        help="HTTP timeout in seconds (must be > 0; default: 30).",
     )
     parser.add_argument("--verbose", action="store_true", help="Log at INFO level.")
     parser.add_argument(
@@ -271,9 +300,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_assessment_error(exc, debug=getattr(args, "debug", False))
         return exc.exit_code
     except Exception:
+        if getattr(args, "debug", False):
+            raise
         if getattr(args, "command", None) == "report":
             error = ReportRenderError("Unexpected renderer failure.")
-            _print_assessment_error(error, debug=getattr(args, "debug", False))
+            _print_assessment_error(error, debug=False)
             return error.exit_code
         return _emit_typed_failure("Unexpected assessment failure before producing an output.")
 
@@ -281,7 +312,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _dispatch_scan(args: argparse.Namespace) -> int:
     backend = args.backend
     if backend == "agol":
-        return _run_agol(args.target, args.output)
+        return _run_agol(args)
     if backend == "server":
         return _run_server(args.target, args.output)
     if backend == "filegdb":
@@ -290,21 +321,26 @@ def _dispatch_scan(args: argparse.Namespace) -> int:
     return _EXIT_USAGE
 
 
-def _run_agol(target: str, output: Path) -> int:
-    try:
-        result = agol_scanner.scan(target)
-    except Exception:
-        return _emit_typed_failure("AGOL scan failed before producing an inventory.")
-    footprint = build_footprint(
-        source_kind="arcgis-online",
-        target=target,
-        inventory=result["inventory"],
-        diagnostics=result["diagnostics"],
-        portal=result["portal"],
-    )
-    if not _write_footprint_safely(footprint, output):
-        return _EXIT_GENERIC
+def _run_agol(args: argparse.Namespace) -> int:
+    credential = TokenCredential(args.token) if args.token else AnonymousCredential()
+    client = PortalClient(args.target, credential, timeout=args.timeout)
+    result = PortalScanner(client, deep=args.deep).scan()
+    footprint = to_footprint_v0_1(result, tool_version=__version__)
+    validate_footprint(footprint)
+    rendered = footprint_to_json(footprint)
+
+    if args.output == "-":
+        print(rendered, end="")
+    else:
+        output_path = Path(args.output)
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(rendered, encoding="utf-8")
+        except OSError:
+            return _emit_typed_failure("Could not write the EsriFootprint.json output.")
+
     _emit_diagnostics_to_stderr(footprint)
+    print(f"scanned {len(result.items)} item(s) from {result.org.portal_url}", file=sys.stderr)
     return 0
 
 
@@ -462,7 +498,7 @@ def _configure_report_logging(args: argparse.Namespace) -> None:
 
 
 def _print_assessment_error(exc: AssessmentError, *, debug: bool) -> None:
-    print(f"error: [{exc.code}] {exc.message}", file=sys.stderr)
+    print(render_error(exc), file=sys.stderr)
     if debug:
         traceback.print_exc()
 

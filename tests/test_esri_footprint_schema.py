@@ -13,7 +13,14 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = REPO_ROOT / "schemas" / "esri-footprint-v0.1.json"
-SAMPLE_PATH = REPO_ROOT / "tests" / "fixtures" / "esri-footprint-sample.json"
+PACKAGED_SCHEMA_PATH = (
+    REPO_ROOT
+    / "src"
+    / "honua_esri_assess"
+    / "schemas"
+    / "esri-footprint-v0.1.json"
+)
+SAMPLE_PATH = REPO_ROOT / "docs" / "samples" / "esri-footprint.sample.json"
 
 LOCKED_DIAGNOSTIC_CODES_V01 = frozenset(
     {
@@ -176,6 +183,10 @@ def test_schema_id_carries_full_semver(schema: dict) -> None:
 
 def test_schema_uses_draft_2020_12(schema: dict) -> None:
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+
+
+def test_packaged_schema_matches_published_schema(schema: dict) -> None:
+    assert _load_json(PACKAGED_SCHEMA_PATH) == schema
 
 
 def test_canonical_sample_validates(validator: Draft202012Validator, sample: dict) -> None:

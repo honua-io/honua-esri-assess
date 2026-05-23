@@ -8,7 +8,7 @@ see [versioning.md](./versioning.md). The published JSON Schema body for the
 current `0.1.x` line lives in
 [`docs/schemas/esri-footprint.v0.1.md`](./esri-footprint.v0.1.md)
 (schema file: [`schemas/esri-footprint-v0.1.json`](../../schemas/esri-footprint-v0.1.json),
-canonical sample: [`tests/fixtures/esri-footprint-sample.json`](../../tests/fixtures/esri-footprint-sample.json)).
+canonical sample: [`docs/samples/esri-footprint.sample.json`](../samples/esri-footprint.sample.json)).
 
 ## The sole handoff
 
@@ -82,10 +82,10 @@ Per release line, the closed product receives:
 3. A `CHANGELOG.md` entry summarizing what changed, including any
    deprecations and their planned removal window.
 4. At least one canonical sample footprint under
-   [`tests/fixtures/`](../../tests/fixtures/esri-footprint-sample.json)
+   [`docs/samples/`](../samples/esri-footprint.sample.json)
    that the closed product can use as a conformance check, plus fixture
-   corpora and golden expectations under `tests/smoke/` for scanner surfaces
-   shipped in that line.
+   corpora and golden expectations under `tests/smoke/` for scanner-backed
+   conformance checks.
 
 ## Verifying a footprint before handoff
 
@@ -175,11 +175,48 @@ surfaces also return nonzero on command-level failures, but callers should
 treat `diagnostics[]` in the artifact as the authoritative failure surface
 whenever an artifact exists.
 
+## Readiness report
+
+The Markdown readiness report is a human-facing companion to
+`EsriFootprint.json`, not a second machine handoff contract. It is generated
+from a parsed footprint and summarizes header metadata, schema warnings,
+service inventory, layer counts, complexity, manual-review items, migration
+ordering, and diagnostics without contacting Esri systems.
+
+The renderer is a pure deterministic API: parsed `EsriFootprint.json` dict in,
+Markdown string out. File reads, file writes, schema validation, stdout/stderr,
+and local logging are owned by the CLI layer, not by
+`honua_esri_assess.report.render()`.
+
+`honua-esri-assess report` accepts `--input` as a path or `-` for stdin.
+`--output` defaults to stdout and accepts `-` for stdout. The CLI validates
+with the packaged v0.1 schema and runtime `jsonschema` dependency. By default,
+schema validation failures or validation-unavailable notices are rendered as a
+`Schema Warnings` section so a prospect can still review the footprint;
+`--strict` fails the command with the typed `report.schema.invalid` error
+instead. Input/output and JSON parsing failures use typed `report.input.*`
+errors, and renderer failures use `report.render.internal`.
+
+The sample report is published at
+[`docs/samples/readiness-report.sample.md`](../samples/readiness-report.sample.md).
+The renderer is deterministic, performs no I/O, and the test suite compares
+the committed sample report byte-for-byte with freshly rendered output.
+
+The `honua-esri-assess report` CLI handles JSON parsing, packaged v0.1 schema
+validation, stdin/stdout, file output, local logging, and typed prospect-safe
+errors. By default, validation issues are rendered into a `Schema Warnings`
+section and the command exits successfully; with `--strict`, invalid v0.1
+input exits with `report.schema.invalid`. The report guide documents the full
+CLI response contract and the v0.1 report heuristics:
+[`docs/readiness-report.md`](../readiness-report.md).
+
 ## Pointers
 
 - Versioning policy: [versioning.md](./versioning.md)
 - Schema body for v0.1: [`docs/schemas/esri-footprint.v0.1.md`](./esri-footprint.v0.1.md)
 - Entitlement enumeration: [`../entitlements.md`](../entitlements.md)
 - JSON Schema file: [`schemas/esri-footprint-v0.1.json`](../../schemas/esri-footprint-v0.1.json)
-- Canonical sample: [`tests/fixtures/esri-footprint-sample.json`](../../tests/fixtures/esri-footprint-sample.json)
+- Canonical sample: [`docs/samples/esri-footprint.sample.json`](../samples/esri-footprint.sample.json)
+- Sample readiness report: [`docs/samples/readiness-report.sample.md`](../samples/readiness-report.sample.md)
+- Readiness report guide: [`docs/readiness-report.md`](../readiness-report.md)
 - Repository landing page: [`../../README.md`](../../README.md)

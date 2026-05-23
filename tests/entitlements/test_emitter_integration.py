@@ -128,7 +128,7 @@ def test_licensing_blocks_validate_inside_v01_schema() -> None:
         )
     )
     sample = json.loads(
-        (REPO_ROOT / "tests" / "fixtures" / "esri-footprint-sample.json").read_text(
+        (REPO_ROOT / "docs" / "samples" / "esri-footprint.sample.json").read_text(
             encoding="utf-8"
         )
     )

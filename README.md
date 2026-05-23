@@ -14,10 +14,10 @@ Shipped in the current contract line:
 | Area | Status | Contract surface |
 | --- | --- | --- |
 | Schema | `EsriFootprint.json` v0.1 schema and reference docs | Sole handoff artifact |
-| Fixture sample | Canonical sample footprint and schema validation tests | `tests/fixtures/esri-footprint-sample.json` |
+| Canonical sample | Single-source-of-truth footprint plus rendered readiness report | [`docs/samples/esri-footprint.sample.json`](docs/samples/esri-footprint.sample.json), [`docs/samples/readiness-report.sample.md`](docs/samples/readiness-report.sample.md) |
 | Scanner CLI | Fixture-backed AGOL, ArcGIS Server, and FileGDB scans | Full `EsriFootprint.json` |
 | FileGDB workspace CLI | Read-only `pyogrio`/GDAL inventory of a local `.gdb` | Full `EsriFootprint.json` |
-| Report CLI | Markdown readiness report renderer smoke coverage | Human-readable report |
+| Report CLI | Pure deterministic Markdown readiness report renderer with smoke coverage | Human-readable companion (no second machine contract) |
 | Smoke CI | Separate fixture-backed job without live Esri access | Local contract guard |
 | Entitlements | Read-only library and interim `entitlements` CLI for Portal and Server licensing | Facet-compatible JSON fragment |
 
@@ -51,7 +51,9 @@ The `honua-esri-assess` console script (and `python -m honua_esri_assess`)
 exposes `scan`, `filegdb`, `report`, and interim `entitlements` subcommands.
 The tool is read-only against Esri systems: the scanner and entitlement
 collectors issue GET requests only, never write to ArcGIS Online / Enterprise
-Portal or ArcGIS Server, and never contact a Honua-operated service.
+Portal or ArcGIS Server, and never contact a Honua-operated service. The
+report subcommand is purely a local renderer; it does not contact Esri or
+Honua endpoints.
 
 ```bash
 # ArcGIS Online (Portal Sharing REST base - the scanner appends portals/self,
@@ -78,10 +80,18 @@ honua-esri-assess scan filegdb \
   --target ./sample.gdb \
   --output EsriFootprint.json
 
-# Render the Markdown readiness report from a footprint.
+# Render the Markdown readiness report from a footprint to a file.
 honua-esri-assess report \
   --input EsriFootprint.json \
-  --output report.md
+  --output readiness-report.md
+
+# Render from stdin to stdout (default --output is `-`).
+cat EsriFootprint.json | honua-esri-assess report --input -
+
+# Fail instead of rendering schema findings as report warnings.
+honua-esri-assess report \
+  --input EsriFootprint.json \
+  --strict
 ```
 
 The AGOL `scan` target must be the Portal Sharing REST base (typically the URL
@@ -104,6 +114,20 @@ feature class `name`, `geometryType`, spatial reference (`sr`), optional
 workspace, and per-layer failures are emitted as typed, prospect-safe
 `diagnostics[]`; raw paths, credentials, stack traces, and raw exception text
 are not copied into the artifact.
+
+The `report` command accepts `--input` as a path or `-` for stdin. `--output`
+defaults to stdout and also accepts `-` for stdout. `--strict` fails when the
+input does not validate against the published v0.1 schema packaged with the
+CLI; without `--strict`, schema validation findings or validation-unavailable
+notices are rendered in a `Schema Warnings` section so the report can still be
+reviewed. `--verbose` enables local info logging. `--debug` is a local
+development switch that enables debug logging and may include tracebacks on
+errors; leave it off for prospect-facing runs. The renderer never contacts
+Esri systems or sends network telemetry.
+
+See [`docs/readiness-report.md`](docs/readiness-report.md) for the full report
+section catalog, heuristics (complexity buckets, manual-review reason codes,
+migration ordering), renderer API, and failure contract.
 
 ## Entitlement enumeration
 
@@ -188,22 +212,60 @@ Exit codes are an operator convenience, not the handoff contract. The closed
 product should inspect `EsriFootprint.json` and `diagnostics[]`, not infer
 contract state from a shell status.
 
-- Exit `0` - the scanner completed and wrote `EsriFootprint.json`, the report
-  renderer wrote Markdown, or the entitlement collector wrote JSON to stdout.
-  Recoverable per-endpoint failures are downgraded to typed diagnostics.
-- Exit `1` - a command-level failure occurred, or the top-level `filegdb`
-  command wrote an artifact that contains at least one `error`-severity
-  diagnostic. Entitlements also use `1` for unexpected failures. Stderr stays
-  prospect-safe.
-- Exit `2` - missing or invalid arguments (for example, `scan` without a
-  backend or `entitlements` without `agol`/`server`), or the top-level
-  `filegdb` command could not produce or write a footprint.
-- Exit `3` - entitlement collection hit a typed hard failure such as auth,
-  forbidden, not found, rate limit, connection, API, or schema parse failure.
-  The message is prospect-safe; `--debug` re-raises for local development.
+### Scanner exit codes and failure surface
 
-Diagnostics are always typed and prospect-safe. Customer-facing runs do not
-emit Python tracebacks, credentials, or raw filesystem paths.
+- Exit `0` - the scanner completed and wrote `EsriFootprint.json`. Recoverable
+  per-endpoint failures (HTTP 403/429, unreachable host, unsupported item
+  type) are downgraded to typed entries in `diagnostics[]` and mirrored to
+  stderr as `<code>: <message> [scope=<label>]`. Empty or partial inventories
+  are still successful runs.
+- Exit `1` - the scanner failed before returning a result or could not write
+  the output file, such as on a read-only filesystem or permission-denied
+  path. A single `partial-coverage: <typed message>` line is printed to
+  stderr; no stack trace, internal path, or credential is leaked.
+- Exit `2` - missing or invalid arguments, such as `scan` without a backend.
+
+### FileGDB workspace exit codes and failure surface
+
+- Exit `0` - the top-level `filegdb` workspace command wrote
+  `EsriFootprint.json` without `error`-severity diagnostics.
+- Exit `1` - the command wrote an artifact that contains at least one
+  `error`-severity diagnostic. The artifact remains the handoff contract.
+- Exit `2` - the command could not produce or write a footprint.
+
+### Report exit codes and failure surface
+
+The report CLI emits typed, prospect-safe stderr lines of the form
+`error: [<code>] <message>`. `--debug` is a local development switch and may
+include tracebacks; default runs never expose stack traces, credentials, or
+internal paths.
+
+- Exit `0` - the report rendered successfully. Non-strict schema findings are
+  included in the Markdown under `Schema Warnings`.
+- Exit `2` - the input footprint could not be read (`report.input.read`), the
+  input was not JSON, the top-level JSON value was not an object
+  (`report.input.parse`), or the rendered report could not be written
+  (`report.input.write`).
+- Exit `3` - `--strict` was set and v0.1 schema validation failed
+  (`report.schema.invalid`).
+- Exit `4` - rendering failed after input parsing succeeded
+  (`report.render.internal`).
+
+### Entitlements exit codes and failure surface
+
+- Exit `0` - the entitlement collector wrote JSON to stdout. Recoverable
+  observations land in `diagnostics[]` inside the fragment.
+- Exit `1` - unexpected failure before producing an output. Stderr stays
+  prospect-safe.
+- Exit `2` - missing or invalid arguments, such as `entitlements` without
+  `agol` or `server`.
+- Exit `3` - typed hard failure such as auth, forbidden, not found, rate
+  limit, connection, API, or schema parse failure. The stderr message is
+  prospect-safe; `--debug` re-raises for local development.
+
+Diagnostics are always typed and prospect-safe across all CLI surfaces.
+Customer-facing runs do not emit Python tracebacks, credentials, or raw
+filesystem paths.
 
 ## Schema and handoff
 
@@ -212,7 +274,9 @@ migration product. The v0.1 contract is published in this repository:
 
 - Schema: [`schemas/esri-footprint-v0.1.json`](schemas/esri-footprint-v0.1.json)
 - Reference: [`docs/schemas/esri-footprint.v0.1.md`](docs/schemas/esri-footprint.v0.1.md)
-- Canonical sample: [`tests/fixtures/esri-footprint-sample.json`](tests/fixtures/esri-footprint-sample.json)
+- Canonical sample: [`docs/samples/esri-footprint.sample.json`](docs/samples/esri-footprint.sample.json)
+- Sample readiness report: [`docs/samples/readiness-report.sample.md`](docs/samples/readiness-report.sample.md)
+- Readiness report guide: [`docs/readiness-report.md`](docs/readiness-report.md)
 
 `$id`: `https://schemas.honua.io/esri-footprint/v0.1.0/esri-footprint.json`
 
@@ -296,10 +360,35 @@ fixture layout and refresh protocol.
 ## Validating locally
 
 ```bash
-python -m pip install -e ".[dev]"
+python3 -m pip install -e ".[dev]"
 pytest
 ```
 
 The test suite validates the published schema, the canonical sample, the
 source-kind discriminator rules, prospect-safe URL/path constraints, strict
-RFC3339 UTC timestamps, and the fixture-backed entitlement collectors.
+RFC3339 UTC timestamps, the fixture-backed entitlement collectors, and the
+readiness report renderer (heuristics, CLI failure surface, and the
+byte-for-byte sample report golden file).
+
+## Rendering a readiness report
+
+```bash
+honua-esri-assess report --input docs/samples/esri-footprint.sample.json
+```
+
+The report is a human-readable companion to `EsriFootprint.json`, not a second
+handoff contract for the closed migration product. The renderer is pure: it
+turns a parsed footprint dictionary into deterministic Markdown and performs no
+file, network, logging, or Esri-system I/O. The CLI owns JSON parsing, packaged
+schema validation, stdin/stdout support, local logging flags, and typed
+prospect-safe errors.
+
+Use `--strict` to fail when the input does not validate against the published
+v0.1 schema packaged with the CLI. Without `--strict`, schema validation
+findings or validation-unavailable notices are rendered as a `Schema Warnings`
+section so the report can still be reviewed.
+
+The report includes a header, optional schema warnings, service inventory,
+layer count, complexity estimate, manual-review items, migration ordering, and
+diagnostics summary. See [`docs/readiness-report.md`](docs/readiness-report.md)
+for CLI exit codes, report-section details, and v0.1 heuristics.

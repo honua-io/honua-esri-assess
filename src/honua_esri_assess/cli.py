@@ -7,12 +7,18 @@ import json
 import logging
 import os
 import sys
+import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 from . import __version__
-from . import report as report_module
+from .diagnostics import (
+    AssessmentError,
+    ReportInputError,
+    ReportRenderError,
+    ReportSchemaValidationError,
+)
 from .entitlements import (
     EntitlementsApiError,
     EntitlementsAuthError,
@@ -35,6 +41,8 @@ from .footprint import (
     write_footprint,
     write_footprint_json,
 )
+from .report import RenderOptions, render
+from .report.validation import validate_footprint_v01
 from .scanners import agol as agol_scanner
 from .scanners import filegdb as filegdb_scanner
 from .scanners import server as server_scanner
@@ -123,12 +131,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ask the read-only backend to calculate feature counts even when expensive.",
     )
 
-    report = subparsers.add_parser(
-        "report", help="Render an EsriFootprint.json to a Markdown report."
+    report_parser = subparsers.add_parser(
+        "report",
+        help="Render a Markdown readiness report from an EsriFootprint.json file.",
     )
-    report.add_argument("--input", required=True, type=Path, help="Path to EsriFootprint.json.")
-    report.add_argument(
-        "--output", required=True, type=Path, help="Path to write the Markdown report."
+    report_parser.add_argument(
+        "--input", required=True, help="Path to EsriFootprint.json, or - for stdin."
+    )
+    report_parser.add_argument(
+        "--output", default="-", help="Output Markdown path, or - for stdout."
+    )
+    report_parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail if schema validation reports an invalid EsriFootprint v0.1 input.",
+    )
+    report_parser.add_argument(
+        "--verbose", action="store_true", help="Enable info logging."
+    )
+    report_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging and tracebacks. Do not enable in customer-facing runs.",
     )
 
     ent = subparsers.add_parser(
@@ -226,22 +250,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(__version__)
         return 0
 
-    if args.command == "scan":
-        return _dispatch_scan(args)
-    if args.command == "filegdb":
-        return _run_filegdb_workspace(
-            args.workspace,
-            args.output,
-            path_hash_salt=args.path_hash_salt,
-            force_feature_count=args.force_feature_count,
-        )
-    if args.command == "report":
-        return _dispatch_report(args)
-    if args.command == "entitlements":
-        return _dispatch_entitlements(args)
+    try:
+        if args.command == "scan":
+            return _dispatch_scan(args)
+        if args.command == "filegdb":
+            return _run_filegdb_workspace(
+                args.workspace,
+                args.output,
+                path_hash_salt=args.path_hash_salt,
+                force_feature_count=args.force_feature_count,
+            )
+        if args.command == "report":
+            return _dispatch_report(args)
+        if args.command == "entitlements":
+            return _dispatch_entitlements(args)
 
-    parser.print_help()
-    return 0
+        parser.print_help()
+        return 0
+    except AssessmentError as exc:
+        _print_assessment_error(exc, debug=getattr(args, "debug", False))
+        return exc.exit_code
+    except Exception:
+        if getattr(args, "command", None) == "report":
+            error = ReportRenderError("Unexpected renderer failure.")
+            _print_assessment_error(error, debug=getattr(args, "debug", False))
+            return error.exit_code
+        return _emit_typed_failure("Unexpected assessment failure before producing an output.")
 
 
 def _dispatch_scan(args: argparse.Namespace) -> int:
@@ -352,18 +386,88 @@ def _run_filegdb_workspace(
 
 
 def _dispatch_report(args: argparse.Namespace) -> int:
-    try:
-        footprint = json.loads(args.input.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return _emit_typed_failure("Could not load EsriFootprint.json for report rendering.")
-    try:
-        report_module.write(footprint, args.output)
-    except OSError:
-        return _emit_typed_failure("Could not write the Markdown report output.")
+    _configure_report_logging(args)
+    footprint = _read_footprint(args.input)
+    validation_issues = validate_footprint_v01(footprint)
+    validation_failures = [issue for issue in validation_issues if issue.is_failure]
+    if args.strict and validation_failures:
+        first = validation_failures[0]
+        raise ReportSchemaValidationError(
+            first.message,
+            context={"path": args.input, "pointer": first.pointer},
+        )
+
+    warnings = tuple(issue.message for issue in validation_issues)
+    markdown = render(footprint, options=RenderOptions(schema_warnings=warnings))
+    _write_report(args.output, markdown)
     return 0
 
 
-def _write_footprint_safely(footprint: dict, output: Path) -> bool:
+def _read_footprint(path_arg: str) -> dict[str, Any]:
+    display_path = "stdin" if path_arg == "-" else "input file"
+    try:
+        if path_arg == "-":
+            raw = sys.stdin.read()
+        else:
+            raw = Path(path_arg).read_text(encoding="utf-8")
+    except OSError:
+        raise ReportInputError(
+            f"Unable to read input footprint from {display_path}.",
+            code="report.input.read",
+            context={"path": display_path, "phase": "read"},
+        ) from None
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ReportInputError(
+            f"Input footprint is not valid JSON at line {exc.lineno}, column {exc.colno}.",
+            code="report.input.parse",
+            context={"path": display_path, "phase": "parse"},
+        ) from None
+
+    if not isinstance(parsed, dict):
+        raise ReportInputError(
+            "Input footprint JSON must be an object.",
+            code="report.input.parse",
+            context={"path": display_path, "phase": "parse"},
+        )
+    return parsed
+
+
+def _write_report(path_arg: str, markdown: str) -> None:
+    display_path = "stdout" if path_arg == "-" else "output file"
+    try:
+        if path_arg == "-":
+            sys.stdout.write(markdown)
+        else:
+            output_path = Path(path_arg)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(markdown, encoding="utf-8")
+    except OSError:
+        raise ReportInputError(
+            f"Unable to write readiness report to {display_path}.",
+            code="report.input.write",
+            context={"path": display_path, "phase": "write"},
+        ) from None
+
+
+def _configure_report_logging(args: argparse.Namespace) -> None:
+    level = logging.WARNING
+    if getattr(args, "debug", False):
+        level = logging.DEBUG
+    elif getattr(args, "verbose", False):
+        level = logging.INFO
+    logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
+
+
+def _print_assessment_error(exc: AssessmentError, *, debug: bool) -> None:
+    print(f"error: [{exc.code}] {exc.message}", file=sys.stderr)
+    if debug:
+        traceback.print_exc()
+
+
+def _write_footprint_safely(footprint: dict[str, Any], output: Path) -> bool:
     try:
         write_footprint(footprint, output)
     except OSError:
@@ -372,7 +476,7 @@ def _write_footprint_safely(footprint: dict, output: Path) -> bool:
     return True
 
 
-def _emit_diagnostics_to_stderr(footprint: dict) -> None:
+def _emit_diagnostics_to_stderr(footprint: dict[str, Any]) -> None:
     for diag in footprint.get("diagnostics", []) or []:
         if not isinstance(diag, dict):
             continue
@@ -489,6 +593,9 @@ _ERROR_CATEGORY: dict[type[EntitlementsError], str] = {
     EntitlementsApiError: "Esri endpoint error",
     EntitlementsSchemaError: "could not parse response",
 }
+
+
+__all__ = ["build_parser", "main"]
 
 
 if __name__ == "__main__":

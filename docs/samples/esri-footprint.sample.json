@@ -15,10 +15,11 @@
     "orgUrl": "https://example.maps.arcgis.com",
     "itemCounts": {
       "Feature Service": 2,
+      "Survey123 Form": 1,
       "Web Map": 1
     },
     "sharingSummary": {
-      "private": 1,
+      "private": 2,
       "org": 1,
       "public": 1,
       "shared": 0
@@ -64,11 +65,23 @@
         "a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "b2c3d4e5f6071829a3b4c5d6e7f80910"
       ]
+    },
+    {
+      "kind": "portal-item",
+      "id": "d4e5f60718293a4b5c6d7e8f90112233",
+      "type": "Survey123 Form",
+      "owner": "field.crew",
+      "title": "Field Damage Survey",
+      "sharing": "private",
+      "modified": "2026-05-12T18:30:00Z",
+      "dependencies": [
+        "b2c3d4e5f6071829a3b4c5d6e7f80910"
+      ]
     }
   ],
   "counts": {
     "items": {
-      "portal-item": 3,
+      "portal-item": 4,
       "server-service": 0,
       "filegdb-feature-class": 0
     },
@@ -82,6 +95,13 @@
       "message": "Skipped 2 items the scanner credential cannot read.",
       "scope": "arcgis-online",
       "hint": "Re-run with a credential that has read access to the GIS Admin group."
+    },
+    {
+      "code": "unresolved-reference",
+      "severity": "warn",
+      "message": "Web map references one item that was not included in the scan result.",
+      "scope": "c3d4e5f60718293a4b5c6d7e8f901122",
+      "hint": "Confirm the referenced item exists and is readable before migration."
     },
     {
       "code": "rate-limited",

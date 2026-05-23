@@ -62,11 +62,12 @@ full SemVer (`v0.1.0`) lives in `$id`. Consumers should pin on
 ## Top-level shape
 
 The top-level object uses `additionalProperties: false` — adding a new
-top-level key is a deliberate schema bump. Facet objects (`portal`,
-`server`, `filegdb`) and each `EsriItem` variant accept additional
-properties so scanners can attach vendor-specific extras within v0.1.
-**Extras are non-load-bearing.** The migration product must not require
-any field outside this contract.
+top-level key is a deliberate schema bump. Contract objects are closed at
+v0.1, including the source block, facets, inventory variants, diagnostics,
+spatial references, extents, and field descriptors. The only open maps are
+the documented count-by-type maps such as `portal.itemCounts` and
+`server.serviceCounts`; consumers must not treat unknown map keys as
+load-bearing contract fields.
 
 | Field           | Required | Type                              | Description                                                                                                  |
 |-----------------|----------|-----------------------------------|--------------------------------------------------------------------------------------------------------------|
@@ -131,7 +132,7 @@ schema-rejected for `filegdb` sources.
 
 ### PortalFacet
 
-Required iff `source.kind == "arcgis-online"`; forbidden otherwise (see [Discriminator rules](#discriminator-rules)). Extras allowed.
+Required iff `source.kind == "arcgis-online"`; forbidden otherwise (see [Discriminator rules](#discriminator-rules)). Extra facet fields are rejected at v0.1.
 
 | Field            | Required | Type                                                | Description                                              |
 |------------------|----------|-----------------------------------------------------|----------------------------------------------------------|
@@ -142,7 +143,7 @@ Required iff `source.kind == "arcgis-online"`; forbidden otherwise (see [Discrim
 
 ### ServerFacet
 
-Required iff `source.kind == "arcgis-server"`; forbidden otherwise (see [Discriminator rules](#discriminator-rules)). Extras allowed.
+Required iff `source.kind == "arcgis-server"`; forbidden otherwise (see [Discriminator rules](#discriminator-rules)). Extra facet fields are rejected at v0.1.
 
 | Field           | Required | Type                                    | Description                                                                 |
 |-----------------|----------|-----------------------------------------|-----------------------------------------------------------------------------|
@@ -152,7 +153,7 @@ Required iff `source.kind == "arcgis-server"`; forbidden otherwise (see [Discrim
 
 ### FileGdbFacet
 
-Required iff `source.kind == "filegdb"`; forbidden otherwise (see [Discriminator rules](#discriminator-rules)). Extras allowed.
+Required iff `source.kind == "filegdb"`; forbidden otherwise (see [Discriminator rules](#discriminator-rules)). Extra facet fields are rejected at v0.1.
 
 | Field               | Required | Type                              | Description                                                          |
 |---------------------|----------|-----------------------------------|----------------------------------------------------------------------|
@@ -163,9 +164,8 @@ Required iff `source.kind == "filegdb"`; forbidden otherwise (see [Discriminator
 ### EsriItem
 
 Discriminated union via `kind`. Three variants — `portal-item`,
-`server-service`, `filegdb-feature-class`. Each variant accepts additional
-properties so scanners can attach vendor-specific extras within v0.1;
-**extras are non-load-bearing**.
+`server-service`, `filegdb-feature-class`. Each variant is closed at v0.1;
+adding item fields requires the next minor line.
 
 Within a single artifact, `inventory[]` is constrained to one variant
 matching `source.kind` (see [Discriminator rules](#discriminator-rules)).
@@ -243,7 +243,9 @@ Typed, prospect-safe diagnostic record. `additionalProperties: false`.
 
 #### RFC3339
 
-`string`, format `date-time`. RFC3339 UTC timestamp.
+`string`, format `date-time`, with an explicit `Z` suffix. The local
+validation harness supplies a strict format checker so invalid calendar
+values are rejected, not only strings that miss the timestamp shape.
 
 #### SemVer
 
@@ -418,5 +420,8 @@ pytest
 ```
 
 The test suite loads the schema and the canonical sample with
-`jsonschema.Draft202012Validator`, asserts `schemaVersion == "v0.1"`, and
-asserts that every `diagnostics[].code` lives in the locked v0.1 enum.
+`jsonschema.Draft202012Validator` plus the project UTC timestamp format
+checker, asserts `schemaVersion == "v0.1"`, and asserts that every
+`diagnostics[].code` lives in the locked v0.1 enum.
+Consumers validating outside this test suite should enable `date-time`
+format assertions or an equivalent RFC3339 UTC check.

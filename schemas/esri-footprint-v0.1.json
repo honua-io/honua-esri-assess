@@ -133,7 +133,8 @@
     "RFC3339": {
       "type": "string",
       "format": "date-time",
-      "description": "RFC3339 UTC date-time string."
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?Z$",
+      "description": "RFC3339 UTC date-time string with an explicit Z suffix."
     },
     "SemVer": {
       "type": "string",
@@ -211,8 +212,8 @@
     },
     "SpatialReference": {
       "type": "object",
-      "description": "Spatial reference identification. Esri publishes wkid, latestWkid, or wkt inconsistently — at least one must be present.",
-      "additionalProperties": true,
+      "description": "Spatial reference identification. Esri publishes wkid, latestWkid, or wkt inconsistently — at least one must be present. Closed object: producers must normalize to the documented keys before emitting.",
+      "additionalProperties": false,
       "properties": {
         "wkid": { "type": "integer" },
         "latestWkid": { "type": "integer" },
@@ -258,8 +259,8 @@
     },
     "FieldDescriptor": {
       "type": "object",
-      "description": "Minimal field metadata captured for FileGDB feature classes.",
-      "additionalProperties": true,
+      "description": "Minimal field metadata captured for FileGDB feature classes. Closed object: extras require a schema bump.",
+      "additionalProperties": false,
       "required": ["name", "type"],
       "properties": {
         "name": { "type": "string" },
@@ -269,12 +270,17 @@
     },
     "PortalFacet": {
       "type": "object",
-      "description": "Optional facet present when source.kind == arcgis-online. additionalProperties true so scanners may attach vendor extras within v0.1 — extras are non-load-bearing.",
-      "additionalProperties": true,
+      "description": "Facet required iff source.kind == arcgis-online. Closed at v0.1: vendor extras, callback URLs, and credential-like fields are schema-rejected so the artifact cannot smuggle telemetry or secrets.",
+      "additionalProperties": false,
       "required": ["orgId", "orgUrl", "itemCounts"],
       "properties": {
         "orgId": { "type": "string", "minLength": 1 },
-        "orgUrl": { "type": "string", "format": "uri" },
+        "orgUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$",
+          "description": "ArcGIS Online organization base URL. Schema pattern rejects userinfo, query strings, and fragments so credentials and session tokens cannot ride along."
+        },
         "itemCounts": {
           "type": "object",
           "description": "Map of Esri item type → count (e.g. \"Feature Service\": 12).",
@@ -295,8 +301,8 @@
     },
     "ServerFacet": {
       "type": "object",
-      "description": "Optional facet present when source.kind == arcgis-server. additionalProperties true so scanners may attach vendor extras.",
-      "additionalProperties": true,
+      "description": "Facet required iff source.kind == arcgis-server. Closed at v0.1: vendor extras, callback URLs, and credential-like fields are schema-rejected so the artifact cannot smuggle telemetry or secrets.",
+      "additionalProperties": false,
       "required": ["folders", "serviceCounts"],
       "properties": {
         "folders": {
@@ -317,8 +323,8 @@
     },
     "FileGdbFacet": {
       "type": "object",
-      "description": "Optional facet present when source.kind == filegdb. additionalProperties true so scanners may attach vendor extras.",
-      "additionalProperties": true,
+      "description": "Facet required iff source.kind == filegdb. Closed at v0.1: vendor extras, callback URLs, and credential-like fields are schema-rejected so the artifact cannot smuggle telemetry or secrets.",
+      "additionalProperties": false,
       "required": ["pathHash", "featureClassCount"],
       "properties": {
         "pathHash": {
@@ -334,7 +340,7 @@
       }
     },
     "EsriItem": {
-      "description": "Discriminated union of normalized inventory records. additionalProperties true on each variant so scanners can attach vendor-specific extras within v0.1; extras are non-load-bearing.",
+      "description": "Discriminated union of normalized inventory records. Variants are closed at v0.1: extras require a schema bump so the artifact cannot smuggle credentials or telemetry fields per item.",
       "oneOf": [
         { "$ref": "#/$defs/PortalItem" },
         { "$ref": "#/$defs/ServerService" },
@@ -343,7 +349,7 @@
     },
     "PortalItem": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "required": ["kind", "id", "type", "owner", "title", "sharing", "modified"],
       "properties": {
         "kind": { "const": "portal-item" },
@@ -366,7 +372,7 @@
     },
     "ServerService": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "required": ["kind", "serviceUrl", "serviceType", "folder", "layerCount"],
       "properties": {
         "kind": { "const": "server-service" },
@@ -392,7 +398,7 @@
     },
     "FileGdbFeatureClass": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "required": ["kind", "name", "geometryType", "sr"],
       "properties": {
         "kind": { "const": "filegdb-feature-class" },

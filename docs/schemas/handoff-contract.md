@@ -4,9 +4,11 @@ This document is the short, prospect-facing summary of what flows between the
 open-source `honua-esri-assess` tool and the closed Honua migration product.
 
 For semver rules, deprecation policy, and full producer/consumer contracts,
-see [versioning.md](./versioning.md). The JSON Schema body lives in
-`docs/schemas/esri-footprint.v0.1.md` (planned, see
-honua-io/honua-esri-assess#2).
+see [versioning.md](./versioning.md). The published JSON Schema body for the
+current `0.1.x` line lives in
+[`docs/schemas/esri-footprint.v0.1.md`](./esri-footprint.v0.1.md)
+(schema file: [`schemas/esri-footprint-v0.1.json`](../../schemas/esri-footprint-v0.1.json),
+canonical sample: [`tests/fixtures/esri-footprint-sample.json`](../../tests/fixtures/esri-footprint-sample.json)).
 
 ## The sole handoff
 
@@ -32,12 +34,18 @@ it does not flow. There is no "small exception."
 
 ```json
 {
-  "schemaVersion": "0.1.0",
-  "producer": { "name": "honua-esri-assess", "version": "<cli version>" },
-  "generatedAt": "<UTC ISO-8601>",
-  "source": { "kind": "agol|arcgis-server|filegdb", "...": "..." }
+  "schemaVersion": "v0.1",
+  "tool": { "name": "honua-esri-assess", "version": "<cli version>" },
+  "generatedAt": "<RFC3339 UTC>",
+  "source": { "kind": "arcgis-online|arcgis-server|filegdb", "locator": "<prospect-safe id>", "capturedAt": "<RFC3339 UTC>" }
 }
 ```
+
+At v0.1 the in-band `schemaVersion` is the literal major.minor `"v0.1"`;
+the full SemVer for the schema build lives in the schema's `$id`. The
+producer also writes a single matching facet (`portal`, `server`, or
+`filegdb`) based on `source.kind`; sibling facets are schema-rejected
+(see [Discriminator rules](./esri-footprint.v0.1.md#discriminator-rules)).
 
 **Consumer (closed migration product)** pins to an exact `major.minor`
 while the schema is pre-1.0, with a wildcard patch:
@@ -49,8 +57,8 @@ accepted_schema = "0.1.x"
 The `x` is a literal wildcard. The consumer reads `schemaVersion` first
 and rejects documents whose major differs from its pin; pre-1.0, the same
 exact-match rule applies to `minor`, so a `0.1.x` pin rejects both higher
-(`0.2.0`) and lower (`0.0.7`) minors. Any patch within the pinned minor is
-accepted. See
+(`v0.2`) and lower (e.g. `v0.0`) minors. Any patch within the pinned minor
+is accepted; patch is not carried in-band. See
 [Closed-product pinning (v0.x)](./versioning.md#closed-product-pinning-v0x)
 for the full state machine.
 
@@ -59,13 +67,17 @@ for the full state machine.
 Per release line, the closed product receives:
 
 1. A tagged release of `honua-esri-assess` with a `schemaVersion` matching
-   the release line (e.g., the `0.1.x` line emits `0.1.*`).
-2. The JSON Schema body for that line under `docs/schemas/` (planned for
-   v0.1 via #2).
+   the release line (e.g., the `0.1.x` line emits `schemaVersion: "v0.1"`;
+   patch lives in the schema `$id` and `tool.version`).
+2. The JSON Schema body for that line under
+   [`docs/schemas/`](./esri-footprint.v0.1.md) (published for v0.1).
 3. A `CHANGELOG.md` entry summarizing what changed, including any
    deprecations and their planned removal window.
-4. Sample footprints under `tests/fixtures/` (planned per the scanner
-   tickets) that the closed product can use as conformance checks.
+4. At least one canonical sample footprint under
+   [`tests/fixtures/`](../../tests/fixtures/esri-footprint-sample.json)
+   that the closed product can use as a conformance check. Per-source
+   samples (ArcGIS Server, FileGDB) follow with the corresponding scanner
+   tickets.
 
 ## Verifying a footprint before handoff
 
@@ -73,11 +85,15 @@ A prospect or the closed product can verify a footprint locally:
 
 1. Check it parses as JSON.
 2. Check `schemaVersion` matches the line the consumer accepts.
-3. Validate against the published JSON Schema for that version (see #2).
+3. Validate against the published JSON Schema for that version
+   ([`schemas/esri-footprint-v0.1.json`](../../schemas/esri-footprint-v0.1.json)
+   for the current `0.1.x` line), with `date-time` format assertions or
+   equivalent RFC3339 checks enabled.
 4. Inspect `diagnostics[]`. Treat `error`-severity entries as a failed
-   scan; treat `warning`-severity entries (including
-   `schema.deprecation`) as actionable but non-blocking.
-5. Confirm `producer.name == "honua-esri-assess"` and the `source.kind`
+   scan; treat `warn`-severity entries as actionable but non-blocking.
+   The v0.1 vocabulary is locked — see the
+   [v0.1 diagnostic code catalog](./esri-footprint.v0.1.md#diagnostic-code-catalog).
+5. Confirm `tool.name == "honua-esri-assess"` and the `source.kind`
    matches the target system the customer expected to scan.
 
 No part of this verification requires contacting a Honua-operated service.
@@ -98,13 +114,16 @@ artifact:
 
 Failures during scanning are surfaced as typed entries in `diagnostics[]`
 inside the artifact, not as Python tracebacks in the CLI output or the
-footprint. The shape is fixed by the schema; codes are owned by the
-emitting scanner. See
-[Diagnostics surface](./versioning.md#diagnostics-surface).
+footprint. The shape is fixed by the
+[versioning policy](./versioning.md#diagnostics-surface); the vocabulary
+is closed per release line. At v0.1 the catalog is locked to six codes;
+see the
+[v0.1 diagnostic code catalog](./esri-footprint.v0.1.md#diagnostic-code-catalog).
 
 ## Pointers
 
 - Versioning policy: [versioning.md](./versioning.md)
-- Schema body for v0.1: planned, see
-  [honua-io/honua-esri-assess#2](https://github.com/honua-io/honua-esri-assess/issues/2)
+- Schema body for v0.1: [`docs/schemas/esri-footprint.v0.1.md`](./esri-footprint.v0.1.md)
+- JSON Schema file: [`schemas/esri-footprint-v0.1.json`](../../schemas/esri-footprint-v0.1.json)
+- Canonical sample: [`tests/fixtures/esri-footprint-sample.json`](../../tests/fixtures/esri-footprint-sample.json)
 - Repository landing page: [`../../README.md`](../../README.md)

@@ -30,6 +30,20 @@ def test_report_writes_output_file(tmp_path: Path, capsys) -> None:
     assert captured.err == ""
 
 
+def test_report_creates_output_parent_directories(tmp_path: Path, capsys) -> None:
+    output_path = tmp_path / "reports" / "readiness.md"
+
+    exit_code = cli.main(
+        ["report", "--input", str(SAMPLE_FOOTPRINT), "--output", str(output_path)]
+    )
+
+    assert exit_code == 0
+    assert output_path.read_text(encoding="utf-8").startswith("# Honua Esri Readiness Report")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
 def test_report_reads_stdin_and_writes_stdout(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         "sys.stdin",

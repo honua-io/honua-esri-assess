@@ -1,7 +1,11 @@
 {
   "headings": [
-    "# Esri Footprint Readiness",
-    "## Inventory Summary",
-    "## Diagnostics"
+    "# Honua Esri Readiness Report",
+    "## Service Inventory",
+    "## Layer Count",
+    "## Complexity Estimate",
+    "## Manual Review Items",
+    "## Migration Ordering",
+    "## Diagnostics Summary"
   ]
 }

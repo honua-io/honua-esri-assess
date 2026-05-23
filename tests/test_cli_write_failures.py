@@ -120,7 +120,8 @@ def test_report_write_to_directory_emits_typed_diagnostic(
     )
     captured = capsys.readouterr()
 
-    assert exit_code == 1
+    assert exit_code == 2
+    assert captured.err.startswith("error: [report.input.write]")
     _assert_prospect_safe(captured.err)
     assert str(output_dir) not in captured.err
     assert str(input_path) not in captured.err

@@ -2,7 +2,7 @@
 
 - Schema id: `https://schemas.honua.io/esri-footprint/v0.1.0/esri-footprint.json`
 - Schema file: [`schemas/esri-footprint-v0.1.json`](../../schemas/esri-footprint-v0.1.json)
-- Canonical sample: [`tests/fixtures/esri-footprint-sample.json`](../../tests/fixtures/esri-footprint-sample.json)
+- Canonical sample: [`docs/samples/esri-footprint.sample.json`](../samples/esri-footprint.sample.json)
 - JSON Schema dialect: draft-2020-12
 
 ## Purpose
@@ -23,7 +23,7 @@ tools may read the file, but no other consumer is part of the contract.
 - The stability policy for v0.x and the road to v1.0.
 - Every top-level field and `$def` in the schema.
 - A diagnostic code catalog (closed enum at v0.1).
-- A verbatim canonical sample.
+- A canonical sample footprint and rendered readiness report.
 - What is intentionally **out of scope** at v0.1.
 
 ## Promises
@@ -427,105 +427,15 @@ Expected FileGDB diagnostic cases at v0.1:
 
 ## Canonical sample
 
-This sample is identical to
-[`tests/fixtures/esri-footprint-sample.json`](../../tests/fixtures/esri-footprint-sample.json)
+The canonical sample footprint lives at
+[`docs/samples/esri-footprint.sample.json`](../samples/esri-footprint.sample.json)
 and is exercised by `tests/test_esri_footprint_schema.py`.
 
-```json
-{
-  "schemaVersion": "v0.1",
-  "generatedAt": "2026-05-22T14:08:33Z",
-  "tool": {
-    "name": "honua-esri-assess",
-    "version": "0.1.0"
-  },
-  "source": {
-    "kind": "arcgis-online",
-    "locator": "example.maps.arcgis.com/0123ABCDEF456789",
-    "capturedAt": "2026-05-22T14:02:11Z"
-  },
-  "portal": {
-    "orgId": "0123ABCDEF456789",
-    "orgUrl": "https://example.maps.arcgis.com",
-    "itemCounts": {
-      "Feature Service": 2,
-      "Web Map": 1
-    },
-    "sharingSummary": {
-      "private": 1,
-      "org": 1,
-      "public": 1,
-      "shared": 0
-    }
-  },
-  "inventory": [
-    {
-      "kind": "portal-item",
-      "id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
-      "type": "Feature Service",
-      "owner": "gis.admin",
-      "title": "Parcels",
-      "sharing": "org",
-      "modified": "2026-04-18T09:12:00Z",
-      "extent": {
-        "bbox": [-122.52, 47.43, -122.18, 47.74],
-        "crs": { "wkid": 4326 }
-      },
-      "dependencies": []
-    },
-    {
-      "kind": "portal-item",
-      "id": "b2c3d4e5f6071829a3b4c5d6e7f80910",
-      "type": "Feature Service",
-      "owner": "field.crew",
-      "title": "Hydrants",
-      "sharing": "private",
-      "modified": "2026-05-01T16:40:22Z",
-      "extent": {
-        "bbox": [-122.49, 47.45, -122.22, 47.71],
-        "crs": { "wkid": 4326 }
-      }
-    },
-    {
-      "kind": "portal-item",
-      "id": "c3d4e5f60718293a4b5c6d7e8f901122",
-      "type": "Web Map",
-      "owner": "gis.admin",
-      "title": "Public Asset Viewer",
-      "sharing": "public",
-      "modified": "2026-05-10T11:00:00Z",
-      "dependencies": [
-        "a1b2c3d4e5f60718293a4b5c6d7e8f90",
-        "b2c3d4e5f6071829a3b4c5d6e7f80910"
-      ]
-    }
-  ],
-  "counts": {
-    "items": {
-      "portal-item": 3,
-      "server-service": 0,
-      "filegdb-feature-class": 0
-    },
-    "layers": 0,
-    "featureClasses": 0
-  },
-  "diagnostics": [
-    {
-      "code": "missing-permission",
-      "severity": "warn",
-      "message": "Skipped 2 items the scanner credential cannot read.",
-      "scope": "arcgis-online",
-      "hint": "Re-run with a credential that has read access to the GIS Admin group."
-    },
-    {
-      "code": "rate-limited",
-      "severity": "info",
-      "message": "Sharing API throttled the scan for 3.2s.",
-      "scope": "arcgis-online"
-    }
-  ]
-}
-```
+The sample readiness report generated from that footprint lives at
+[`docs/samples/readiness-report.sample.md`](../samples/readiness-report.sample.md)
+and is guarded by a golden-file renderer test.
+For report CLI usage, renderer API notes, section descriptions, and heuristics,
+see [`docs/readiness-report.md`](../readiness-report.md).
 
 ## Out of scope at v0.1
 

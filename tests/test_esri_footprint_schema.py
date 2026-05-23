@@ -13,7 +13,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = REPO_ROOT / "schemas" / "esri-footprint-v0.1.json"
-SAMPLE_PATH = REPO_ROOT / "tests" / "fixtures" / "esri-footprint-sample.json"
+SAMPLE_PATH = REPO_ROOT / "docs" / "samples" / "esri-footprint.sample.json"
 
 LOCKED_DIAGNOSTIC_CODES_V01 = frozenset(
     {

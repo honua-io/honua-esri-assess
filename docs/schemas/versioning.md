@@ -2,8 +2,8 @@
 
 Status: pre-1.0 (current line: `0.1.x`).
 Companion: [Handoff contract](./handoff-contract.md).
-Schema body: `docs/schemas/esri-footprint.v0.1.md` (planned, see
-honua-io/honua-esri-assess#2).
+Schema body: [`docs/schemas/esri-footprint.v0.1.md`](./esri-footprint.v0.1.md)
+(JSON Schema at [`schemas/esri-footprint-v0.1.json`](../../schemas/esri-footprint-v0.1.json)).
 
 ## Scope
 
@@ -26,19 +26,22 @@ Those surfaces may change without a schema version bump.
 The artifact carries a mandatory top-level field:
 
 ```json
-{ "schemaVersion": "0.1.0", "...": "..." }
+{ "schemaVersion": "v0.1", "...": "..." }
 ```
 
-`schemaVersion` is a [semver](https://semver.org/) string `MAJOR.MINOR.PATCH`.
-It is set by the producer at emission time and is the single source of truth
-for what shape the rest of the document takes.
+`schemaVersion` is the contract `MAJOR.MINOR` line, carried in-band as a
+literal (e.g. `"v0.1"`). The full SemVer for the specific schema build
+(e.g. `0.1.0`) lives in the schema's `$id`; it is not duplicated in-band.
+`schemaVersion` is set by the producer at emission time and is the single
+source of truth for what shape the rest of the document takes.
 
 ### What bumps what
 
 | Change | Pre-1.0 (`0.x.y`) | Post-1.0 (`>=1.0.0`) |
 | --- | --- | --- |
 | Doc-only clarification of an existing field | PATCH | PATCH |
-| New optional field with a safe default | PATCH | MINOR |
+| New optional key inside an explicitly open map | PATCH | MINOR |
+| New field on the top-level artifact or any closed object | MINOR (breaking for strict v0.1 validators) | MINOR |
 | New enum value the consumer is already required to tolerate | PATCH | PATCH |
 | New required field | MINOR (breaking) | MAJOR |
 | Field rename | MINOR (breaking) | MAJOR |
@@ -56,7 +59,12 @@ Until the schema reaches `1.0.0`:
 - **Minor bumps may break.** A move from `0.1.x` to `0.2.0` is allowed to
   rename fields, narrow types, or add required fields.
 - **Patch bumps never break** within a minor line. `0.1.0` → `0.1.5` only
-  adds optional fields, clarifies docs, or fixes producer bugs.
+  clarifies docs, fixes producer bugs, or adds keys inside maps the v0.1
+  schema already leaves open such as count-by-type maps.
+- **Closed objects stay closed within a minor line.** Adding a new
+  top-level field, facet field, inventory field, or diagnostic field would
+  be rejected by a strict `0.1.x` validator and therefore requires the next
+  minor line.
 - **The producer guarantees no breaking changes within a minor line.** A
   consumer pinned to `0.1.x` will not be surprised by `0.1.5`.
 
@@ -80,18 +88,20 @@ breaking changes within a minor line
 
 Behavior the closed product implements:
 
-- Read `schemaVersion` from the incoming footprint.
+- Read `schemaVersion` from the incoming footprint. At v0.1 the literal
+  in-band value is `"v0.1"`; the closed product compares it to its pinned
+  major.minor directly.
 - If the document's `major.minor` does not match the pinned `major.minor`,
   reject with a typed error. Pre-1.0, any minor mismatch — higher *or*
-  lower — is incompatible: a `0.2.0` document is not acceptable to a
-  `0.1.x` pin, and neither is a `0.0.7` document. (Post-1.0, the same
-  exact-match rule applies to `major` only; consumers accept any minor at
-  or above the floor they choose.)
+  lower — is incompatible: a `v0.2` document is not acceptable to a
+  `0.1.x` pin. (Post-1.0, the same exact-match rule applies to `major`
+  only; consumers accept any minor at or above the floor they choose.)
 - Otherwise, accept the document. Patch differences are non-breaking by
-  guarantee, so no patch-level state is encoded in the pin.
+  guarantee, so no patch-level state is encoded in the pin and patch is
+  not carried in-band.
 
 If a consumer needs to require a specific producer build (for example, to
-guarantee a recent scanner-bug fix), it should read `producer.version` from
+guarantee a recent scanner-bug fix), it should read `tool.version` from
 the artifact rather than encode a patch into the schema pin. The schema pin
 is for shape compatibility only.
 
@@ -110,9 +120,12 @@ A field is deprecated, not removed, on its first negative change. Lifecycle:
    deprecation (e.g., deprecated in `0.1.4` → earliest removal is `0.3.0`,
    because `0.2.x` must carry it through).
 3. **Runtime signal.** When the scanner would have populated a deprecated
-   field, it emits a structured diagnostic with code `schema.deprecation`
-   into the footprint's `diagnostics[]` block (shape below). The field is
-   still populated until removal.
+   field, it emits a structured diagnostic into the footprint's
+   `diagnostics[]` block (shape below). The field is still populated until
+   removal. v0.1 ships with a locked vocabulary that does not yet include a
+   deprecation-specific code — see [Diagnostics surface](#diagnostics-surface);
+   a dedicated code (e.g. `schema.deprecation`) lands when the first
+   deprecation does, on the same minor bump that opens the vocabulary.
 4. **CHANGELOG entry.** Every deprecation and every removal lands as a
    dedicated `CHANGELOG.md` entry under the relevant release.
 5. **Remove.** Removal lands on a MINOR (pre-1.0) or MAJOR (post-1.0) bump.
@@ -128,14 +141,16 @@ Every `EsriFootprint.json` emitted by this tool:
 - **Validates** against the JSON Schema published in this repo for its
   declared `schemaVersion`.
 - **Identifies itself.** Top-level metadata, present on every footprint:
-  - `schemaVersion` — semver string, e.g. `"0.1.0"`.
-  - `producer` — object with `name` (always `"honua-esri-assess"`) and
-    `version` (the installed CLI version).
-  - `generatedAt` — UTC ISO-8601 timestamp of emission.
+  - `schemaVersion` — major.minor of the contract, carried in-band as a
+    literal (at v0.1, `"v0.1"`). Full SemVer is in the schema's `$id`.
+  - `tool` — object with `name` (always `"honua-esri-assess"`) and
+    `version` (the installed CLI build, as a SemVer string).
+  - `generatedAt` — RFC3339 UTC timestamp of emission.
   - `source` — object identifying the Esri system kind: `kind` is one of
-    `"agol"`, `"arcgis-server"`, `"filegdb"`, plus a non-sensitive
-    identifier (e.g., portal URL or FileGDB path basename). The block
-    never contains credentials, tokens, cookies, or session IDs.
+    `"arcgis-online"`, `"arcgis-server"`, `"filegdb"`, plus a
+    prospect-safe `locator`. The block never contains credentials,
+    tokens, cookies, session IDs, or raw on-prem paths; FileGDB locators
+    are surfaced as a salted `sha256:<64 hex>` hash.
 - **Comes from read-only access.** The producer never writes to the
   customer's Esri systems. No field in the artifact implies, records, or
   enables a write.
@@ -154,15 +169,21 @@ third-party reader) MUST:
   same exact-match rule to `minor` — any minor mismatch (higher *or* lower)
   is incompatible. See
   [Closed-product pinning (v0.x)](#closed-product-pinning-v0x).
-- **Tolerate unknown additive fields** within a supported minor line. New
-  optional fields are a PATCH-level change and may appear without notice.
-- **Treat missing optional sections as absent**, not as an error. The
-  scanner may omit sections it could not populate (e.g., `arcgisServer`
-  on an AGOL-only scan).
+- **Tolerate unknown keys only in documented open maps.** At v0.1, unknown
+  keys are allowed in count-by-type maps such as `portal.itemCounts` and
+  `server.serviceCounts`; consumers must not treat those keys as
+  load-bearing contract fields. Unknown top-level, facet, inventory,
+  diagnostic, spatial-reference, extent, or field-descriptor fields are
+  schema-rejected and require the next minor line.
+- **Honor the source discriminator.** At v0.1, `source.kind` selects
+  exactly one facet (`portal` | `server` | `filegdb`) and constrains the
+  `inventory[]` variant. Sibling facets and mismatched inventory variants
+  are schema-rejected. See
+  [Discriminator rules](./esri-footprint.v0.1.md#discriminator-rules).
 - **Not depend on object key ordering.** JSON object key order is not
   part of the contract.
-- **Honor `diagnostics[]`.** Surface deprecation and warning diagnostics
-  to its own users; do not silently drop them.
+- **Honor `diagnostics[]`.** Surface `warn`- and `error`-severity
+  diagnostics to its own users; do not silently drop them.
 
 ## Diagnostics surface
 
@@ -174,10 +195,11 @@ array of typed entries:
 {
   "diagnostics": [
     {
-      "code": "schema.deprecation",
-      "severity": "warning",
-      "message": "Field `source.portalUrl` is deprecated; use `source.portal.url`.",
-      "field": "source.portalUrl"
+      "code": "missing-permission",
+      "severity": "warn",
+      "message": "Skipped 2 items the scanner credential cannot read.",
+      "scope": "arcgis-online",
+      "hint": "Re-run with a credential that has read access to the GIS Admin group."
     }
   ]
 }
@@ -185,13 +207,18 @@ array of typed entries:
 
 Each diagnostic carries:
 
-- `code` — stable, dotted identifier (e.g., `schema.deprecation`,
-  `scan.partial`, `auth.scope.insufficient`). Codes are owned by the
-  emitting scanner ticket; this policy only fixes the **shape**.
-- `severity` — one of `"info"`, `"warning"`, `"error"`.
+- `code` — stable identifier drawn from a vocabulary fixed per release
+  line. At v0.1 the vocabulary is **closed** (six codes; see the
+  [v0.1 diagnostic code catalog](./esri-footprint.v0.1.md#diagnostic-code-catalog)).
+  Adding a code requires a minor bump (a v0.2 vocabulary expansion);
+  clarifying an existing code is a v0.1.x doc bump. This policy fixes the
+  **shape** of a diagnostic; the **vocabulary** is owned by each release
+  line's schema body.
+- `severity` — one of `"info"`, `"warn"`, `"error"`.
 - `message` — prospect-safe sentence. No tracebacks, no internal paths.
-- `field` (optional) — JSON pointer or dotted path to the affected
-  field, when applicable.
+- `scope` — required identifier of the affected area (usually
+  `source.kind`, a folder, or an `EsriItem` id).
+- `hint` (optional) — remediation hint surfaced to the prospect.
 
 The CLI never prints raw Python tracebacks to a customer; unrecoverable
 failures still emit a footprint with `diagnostics[]` and a terminating
@@ -212,10 +239,12 @@ failures still emit a footprint with `diagnostics[]` and a terminating
 
 ## Follow-ons
 
+The schema body for the current `0.1.x` line is published — see
+[`docs/schemas/esri-footprint.v0.1.md`](./esri-footprint.v0.1.md) for the
+field-by-field reference, the discriminator rules, and the locked v0.1
+diagnostic code catalog. Remaining follow-ons:
+
 - CI gate that diffs the published schema across tags and fails on an
   undeclared breaking change. Tracked for the 1.0 milestone.
 - Field-level removal-eligible window stated in calendar time once we
   have a release cadence to anchor it to.
-- The schema body itself, including the `schemaVersion` field and the
-  `diagnostics[]` JSON Schema definition, lands under
-  [honua-io/honua-esri-assess#2](https://github.com/honua-io/honua-esri-assess/issues/2).

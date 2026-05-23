@@ -221,11 +221,13 @@ Each diagnostic carries:
 - `hint` (optional) — remediation hint surfaced to the prospect.
 
 The CLI never prints raw Python tracebacks to a customer. If a scanner returns
-a result, the CLI exits `0`, writes `EsriFootprint.json`, and mirrors each
-diagnostic to stderr as a typed line, even when the resulting inventory is
-empty or partial. If a scanner fails before returning a result, or if the CLI
-cannot read/write the requested artifact, it exits nonzero with a single
-prospect-safe `partial-coverage: ...` line on stderr.
+a result, the CLI writes `EsriFootprint.json`; `diagnostics[]` inside that
+artifact is the authoritative failure surface. The CLI may exit nonzero after
+writing an artifact when the artifact contains `error`-severity diagnostics,
+and it may mirror diagnostics to stderr as typed lines for operator
+visibility. If a scanner fails before returning a result, or if the CLI cannot
+read/write the requested artifact, it exits nonzero with a prospect-safe
+message on stderr.
 
 ## Network telemetry
 

@@ -242,6 +242,12 @@ Required iff `source.kind == "filegdb"`; forbidden otherwise (see [Discriminator
 | `featureClassCount` | yes      | integer ≥ 0                       | Number of feature classes discovered.                                |
 | `version`           | no       | string                            | FileGDB format version reported by the reader, when available.       |
 
+For FileGDB artifacts, the producer emits `source.locator` and
+`filegdb.pathHash` as the same salted path hash. Stable hashes require the
+caller to provide the same salt across runs; otherwise the producer may use a
+per-run random salt and the hash is only stable within that artifact. The raw
+workspace path is never part of the contract.
+
 ### EsriItem
 
 Discriminated union via `kind`. Three variants — `portal-item`,
@@ -290,6 +296,14 @@ dependency edges across types are deliberately out of scope at v0.1 (see
 | `featureCount` | no       | integer ≥ 0                       | Row count, when the reader can compute it cheaply.                |
 | `fields`       | no       | [`FieldDescriptor[]`](#fielddescriptor) | Minimal field metadata.                                     |
 
+The current FileGDB producer maps read-only `pyogrio`/GDAL metadata into this
+variant. `featureCount` is optional because counting can be expensive or
+unavailable for a layer; the CLI `--force-feature-count` flag asks the backend
+to compute it anyway. `fields` contains minimal schema metadata when the
+backend reports it. Unsupported geometry labels are emitted as
+`geometryType: null` with an `unsupported-item-type` diagnostic rather than raw
+reader output.
+
 ### Counts
 
 `additionalProperties: false` on both `counts` and `counts.items`. Adding
@@ -308,6 +322,10 @@ Scanners SHOULD emit all three `items` sub-keys so the migration product
 can rely on per-kind totals; consumers should treat an absent sub-key as
 `0`. Tightening the schema to require those sub-keys would be a breaking
 change for strict v0.1 validators and therefore requires a v0.2 bump.
+
+For FileGDB artifacts, `filegdb.featureClassCount`,
+`counts.featureClasses`, and `counts.items.filegdb-feature-class` all count
+emitted `filegdb-feature-class` records.
 
 ### Diagnostic
 
@@ -379,6 +397,15 @@ v0.2 bump; clarifying an existing code is a v0.1.x doc bump.
 | `unresolved-reference`  | warn             | An item references another item that the scanner could not find or could not read.            |
 | `unsupported-item-type` | info             | The source exposes an item type the scanner does not model at v0.1.                           |
 | `redacted-field`        | info             | The scanner deliberately omitted a field to keep the artifact prospect-safe.                  |
+
+Expected FileGDB diagnostic cases at v0.1:
+
+- Missing optional reader dependency, missing/unreadable workspace, or layer
+  list failure: `partial-coverage` with `severity: "error"`.
+- Per-layer metadata read failure: `partial-coverage` with
+  `severity: "warn"`; the unreadable layer is skipped.
+- Unsupported geometry label: `unsupported-item-type` with
+  `severity: "info"` and `geometryType: null`.
 
 ## Canonical sample
 

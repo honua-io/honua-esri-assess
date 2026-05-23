@@ -18,6 +18,9 @@ dependencies = [
 honua-esri-assess = "honua_esri_assess.cli:main"
 
 [project.optional-dependencies]
+filegdb = [
+  "pyogrio>=0.12,<0.13",
+]
 dev = [
   "jsonschema>=4",
   "pytest>=7",

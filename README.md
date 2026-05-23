@@ -378,7 +378,7 @@ ArcGIS Server REST API in read-only mode and writes `EsriFootprint.json`:
 honua-esri-assess scan server \
     --target https://gis.example.com/arcgis \
     [--token <pre-existing-token>] \
-    [--deep] \
+    [--deep | --shallow] \
     [--folder <name>] \
     [--output EsriFootprint.json] \
     [--timeout 30] \
@@ -409,21 +409,25 @@ Behavior the scanner guarantees:
   time is capped at 30 seconds; the per-request timeout is controlled
   separately by `--timeout`. A `Retry-After` header is honored within the
   retry sleep budget.
-- **Two diagnostic surfaces.** The CLI renders top-level failures as a
-  single `error: [code] message` line on stderr with a deterministic exit
-  code (`server.auth`, `server.forbidden`, `server.not-found`,
-  `server.rate-limited`, `server.connection`, `server.api`,
-  `server.schema`). Partial failures during the walk, such as a forbidden
-  folder, malformed service entry, or failed deep probe, emit
-  prospect-safe records into the footprint's `diagnostics[]` block using
-  the locked v0.1 diagnostic vocabulary.
-- **Deep scan scope.** `--deep` follows each supported service URL to
-  populate `inventory[].layerCount` from the service body. Supported deep
-  probe types are `MapServer`, `FeatureServer`, `ImageServer`,
-  `SceneServer`, and `StreamServer`; other types are recorded from the
-  catalog walk only and emit `layerCount: 0`. The v0.1 footprint does not
-  emit service capabilities, table counts, or the internal service-kind
-  bucket.
+- **Two diagnostic surfaces.**
+  - The CLI renders top-level failures as a single `error: [code] message`
+    line on stderr with a deterministic exit code (`server.auth`,
+    `server.forbidden`, `server.not-found`, `server.rate-limited`,
+    `server.connection`, `server.api`, `server.schema`). Python tracebacks
+    stay hidden unless `--debug` is passed.
+  - Partial failures during the walk (forbidden folder, malformed
+    service entry, failed deep probe) emit prospect-safe records into the
+    footprint's `diagnostics[]` block using the locked v0.1 diagnostic
+    vocabulary (`missing-permission`, `partial-coverage`,
+    `unsupported-item-type`, `rate-limited`); the scan continues where it
+    can.
+- **Deep scan scope.** Service probes run by default to populate
+  `inventory[].layerCount`; `--shallow` records catalog entries without
+  per-service probes. Supported probe types are `MapServer`,
+  `FeatureServer`, `ImageServer`, `SceneServer`, and `StreamServer`; other
+  types are recorded from the catalog walk only and emit `layerCount: 0`.
+  The v0.1 footprint does not emit service capabilities, table counts, or
+  the internal service-kind bucket.
 - **Folder filter.** `--folder NAME` restricts the folder walk to a
   single folder name. Services at the catalog root are always
   inventoried; the filter only narrows which subfolders are visited.
@@ -436,7 +440,7 @@ Behavior the scanner guarantees:
 summary (`scanned N services across M folders in T.TTs`) is written to
 stderr.
 
-### ArcGIS Server Footprint Contract
+### ArcGIS Server footprint contract
 
 A successful server scan emits `EsriFootprint.json` v0.1 with:
 

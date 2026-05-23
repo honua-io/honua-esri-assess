@@ -46,10 +46,11 @@ _AUTH_ERROR_CODES = frozenset({498, 499})
 class RetryPolicy:
     """Cap retries on transient HTTP failures.
 
-    The defaults are intentionally conservative: three attempts capped at
-    30 seconds total wall time, with exponential backoff between tries.
-    A ``Retry-After`` header is always honored verbatim and is not
-    multiplied by the exponential factor.
+    The defaults are intentionally conservative: three attempts with a
+    30-second retry-sleep budget and exponential backoff between tries.
+    Per-request timeout is controlled separately. A ``Retry-After`` header
+    is always honored verbatim and is not multiplied by the exponential
+    factor.
     """
 
     max_attempts: int = 3

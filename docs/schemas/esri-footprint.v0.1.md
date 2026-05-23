@@ -202,10 +202,11 @@ Optional scalar fields such as `tier`, `subscriptionType`, `productName`,
 endpoint does not expose them. Portal credit balances are never emitted; the
 contract reduces that signal to `premiumContent.creditsEnabled` when available.
 
-The interim `honua-esri-assess entitlements` CLI emits
+The Python entitlement collectors (`honua_esri_assess.entitlements`) emit
 `{ target, licensing, diagnostics }`, where `licensing` contains the same
-nested facet fragment documented here. That interim JSON is a validation and
-integration surface only. The closed migration product's handoff remains full
+nested facet fragment documented here. That JSON fragment is a validation and
+integration surface only — the standalone `entitlements` CLI was retired in
+E9, and the closed migration product's handoff remains full
 `EsriFootprint.json`.
 
 ### ExtensionEntitlement
@@ -249,13 +250,14 @@ validates the `sha256:<64 hex>` shape of each field independently;
 within-artifact parity between `source.locator` and `filegdb.pathHash`, and
 cross-run hash stability, are producer behaviors rather than schema-enforced
 constraints — consumers that require validator-enforced parity must layer a
-custom conformance check on top of the schema. The top-level `filegdb`
-workspace command accepts `--path-hash-salt` or
-`HONUA_ESRI_ASSESS_PATH_HASH_SALT` for stable hashes across runs; otherwise it
-uses a per-run random salt and the hash is only stable within that artifact.
-The raw workspace path is never part of the artifact. `featureClassCount` is
-the number of `filegdb-feature-class` inventory records emitted and matches
-`counts.featureClasses`.
+custom conformance check on top of the schema. The `pyogrio`/GDAL workspace
+scanner exposed by the `honua_esri_assess.filegdb.scan_filegdb_workspace`
+library function accepts a `path_hash_salt` argument (or
+`HONUA_ESRI_ASSESS_PATH_HASH_SALT`) for stable hashes across runs; otherwise
+it uses a per-run random salt and the hash is only stable within that
+artifact. The raw workspace path is never part of the artifact.
+`featureClassCount` is the number of `filegdb-feature-class` inventory
+records emitted and matches `counts.featureClasses`.
 
 ### EsriItem
 
@@ -288,10 +290,8 @@ Current AGOL producer behavior: `honua-esri-assess scan agol` emits one
 The emitter normalizes missing `owner`, `title`, `type`, and `modified` values
 to schema-safe fallbacks rather than leaking raw exceptions. Dependency
 extraction is not implemented in v0.1, so scanned items currently carry an
-empty `dependencies` list. The optional `--deep` flag performs read-only
-hosted-service probes for scanner coverage and diagnostics; v0.1 still emits
-portal-item records only and does not add AGOL service or layer records to the
-artifact.
+empty `dependencies` list. v0.1 emits portal-item records only and does not add
+AGOL service or layer records to the artifact.
 
 #### ServerService (`kind: "server-service"`)
 
@@ -312,16 +312,17 @@ artifact.
 | `name`         | yes      | string                            | Layer or feature class name as listed by the FileGDB reader.      |
 | `geometryType` | yes      | [`GeometryType`](#geometrytype)   | Feature class geometry type. `null` for tables or unmodeled geometry. |
 | `sr`           | yes      | [`SpatialReference`](#spatialreference) | Feature class spatial reference; unknown CRS is represented as `{"wkt": "UNKNOWN"}`. |
-| `featureCount` | no       | integer ≥ 0                       | Row count, when the reader returns it. The CLI can request more expensive counts with `--force-feature-count`. |
+| `featureCount` | no       | integer ≥ 0                       | Row count, when the reader returns it. The library scanner can request more expensive counts via the `force_feature_count` option. |
 | `fields`       | no       | [`FieldDescriptor[]`](#fielddescriptor) | Minimal field metadata returned by the reader.               |
 
 Current FileGDB scanner behavior:
 
-- The production top-level `filegdb` command lists layers with the optional
-  `pyogrio`/GDAL backend and reads per-layer metadata through read-only calls.
-- The compatibility `scan filegdb --target ...` surface remains available for
-  fixture-backed descriptor scans and emits the same v0.1 FileGDB artifact
-  shape.
+- The `honua_esri_assess.filegdb.scan_filegdb_workspace` library function lists
+  layers with the optional `pyogrio`/GDAL backend and reads per-layer metadata
+  through read-only calls.
+- The `scan filegdb --target ...` CLI surface remains the fixture-backed
+  descriptor scanner; it reads `_inventory.json` and emits the same v0.1
+  FileGDB artifact shape.
 - Normalizes common OGR geometry labels to Esri geometry tags. Tables,
   unknown geometry, and unsupported geometry are emitted with
   `geometryType: null`; unsupported geometry also gets an

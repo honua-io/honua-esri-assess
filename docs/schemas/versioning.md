@@ -14,9 +14,15 @@ migration product.
 The policy does **not** govern:
 
 - CLI flags, argument names, or shell-level UX of `honua-esri-assess`.
+- The CLI process-level stderr diagnostic codes (e.g. `scanner-error`,
+  `output-write-failed`, `schema-validation-failed`, `report.input.*`,
+  `report.schema.invalid`, `report.render.internal`, `internal-error`). These
+  describe local CLI process state and are separate from the locked artifact
+  `diagnostics[].code` enum.
 - The internal Python API (anything importable from `honua_esri_assess.*`).
 - The layout, headings, or wording of the human-readable Markdown readiness
-  report.
+  report. The report is a derivative view of `EsriFootprint.json`, not a
+  second handoff contract.
 - Local log line formats.
 
 Those surfaces may change without a schema version bump.
@@ -225,17 +231,19 @@ Each diagnostic carries:
   `source.kind`, a folder, or an `EsriItem` id).
 - `hint` (optional) — remediation hint surfaced to the prospect.
 
-The CLI never prints raw Python tracebacks to a customer by default. If a
-scanner returns a result, the CLI writes `EsriFootprint.json`; `diagnostics[]`
-inside that artifact is the authoritative failure surface, even when the
-inventory is empty or partial. Scanner surfaces may exit nonzero after writing
-an artifact when `error`-severity diagnostics are present, and may mirror typed
-diagnostics to stderr for operator convenience, but stderr is not part of the
-closed-product handoff. If a scanner fails before returning a result, or if the
-CLI cannot read/write the requested artifact, it exits nonzero with a single
-prospect-safe typed error line on stderr. Raw tracebacks require an explicit
-developer debug option.
+The CLI never prints raw Python tracebacks to a customer. If a scanner returns
+a result, the CLI exits `0`, writes `EsriFootprint.json`, and mirrors each
+diagnostic to stderr as a typed line, even when the resulting inventory is
+empty or partial. If a scanner fails before returning a result, or if the CLI
+cannot read or save the requested artifact, it exits nonzero with a
+prospect-safe typed diagnostic on stderr.
 
+The stderr process-diagnostic vocabulary is deliberately separate from the
+artifact `diagnostics[].code` vocabulary. Process codes such as
+`scanner-error`, `report.input.*`, `report.schema.invalid`,
+`report.render.internal`, `output-write-failed`, `schema-validation-failed`,
+and `internal-error` describe command execution, not source inventory
+observations, and are not valid values inside `EsriFootprint.json`.
 ## Network telemetry
 
 - **Off by default.** The scanner does not phone home, beacon, or post
@@ -243,9 +251,9 @@ developer debug option.
 - **Explicit opt-in only.** Any future telemetry must be a documented
   CLI flag or environment variable, off by default, and disclosed in the
   README and this document.
-- **Local logs are allowed.** Structured local logs (stderr or
-  `reports/`) are part of the normal operating surface and are not
-  considered telemetry.
+- **Local logs are allowed.** Structured local logs on stderr and explicitly
+  requested local output files are part of the normal operating surface and are
+  not considered telemetry.
 - **No telemetry inside the artifact.** `EsriFootprint.json` never
   carries a callback URL or remote endpoint.
 

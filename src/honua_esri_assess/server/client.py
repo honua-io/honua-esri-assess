@@ -150,12 +150,14 @@ class ServerClient:
         allow_nonstandard_base: bool = False,
     ) -> None:
         self.base_url = normalize_base_url(base_url, allow_nonstandard=allow_nonstandard_base)
-        self.credential: Credential = credential or AnonymousCredential()
+        self.credential: Credential = (
+            credential if credential is not None else AnonymousCredential()
+        )
         self.timeout = timeout
         self.user_agent = user_agent
         self.retry = retry or RetryPolicy()
         self._session = session or requests.Session()
-        self._session.headers.setdefault("User-Agent", user_agent)
+        self._session.headers["User-Agent"] = user_agent
         self._sleep = sleep
         self._log = get_logger("server.client")
 
@@ -208,7 +210,6 @@ class ServerClient:
         attempt = 0
         elapsed = 0.0
         safe = safe_url(url + ("?" + urlencode(redact_params(params)) if params else ""))
-        last_status: int | None = None
         while True:
             attempt += 1
             try:
@@ -225,7 +226,6 @@ class ServerClient:
                 ) from None
 
             status = response.status_code
-            last_status = status
             if status in self.retry.retry_statuses and attempt < self.retry.max_attempts:
                 delay = self._compute_delay(response, attempt)
                 if elapsed + delay > self.retry.max_total_seconds:

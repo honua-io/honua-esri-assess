@@ -41,6 +41,7 @@ def test_scan_agol_writes_footprint_file(
 def test_scan_agol_auth_error_is_prospect_safe(
     fixture_json: Callable[[str], dict[str, Any]],
     capsys: Any,
+    monkeypatch: Any,
 ) -> None:
     responses.add(
         responses.GET,
@@ -48,6 +49,7 @@ def test_scan_agol_auth_error_is_prospect_safe(
         json=fixture_json("expired_token.json"),
         status=200,
     )
+    monkeypatch.setenv("ESRI_TOKEN", "secret-token")
 
     exit_code = main(
         [
@@ -55,14 +57,14 @@ def test_scan_agol_auth_error_is_prospect_safe(
             "agol",
             "--target",
             "https://demo.maps.arcgis.com",
-            "--token",
-            "secret-token",
+            "--token-env",
+            "ESRI_TOKEN",
         ]
     )
 
     captured = capsys.readouterr()
     assert exit_code == 21
-    assert "error: [portal.auth]" in captured.err
+    assert "error[portal.auth]" in captured.err
     assert "Traceback" not in captured.err
     assert "secret-token" not in captured.err
     assert not captured.out
@@ -112,5 +114,5 @@ def test_scan_agol_typed_error_on_bad_port(capsys: Any) -> None:
     captured = capsys.readouterr()
     # Portal API errors exit with the typed PortalApiError code (26).
     assert exit_code == 26
-    assert "error: [portal.api]" in captured.err
+    assert "error[portal.api]" in captured.err
     assert "Traceback" not in captured.err

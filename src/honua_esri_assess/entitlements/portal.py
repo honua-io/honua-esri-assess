@@ -443,13 +443,13 @@ def _merge_extensions(
 
 
 def _iter_subscription_extensions(subscription_info: dict[str, Any]) -> Iterable[str]:
-    for field in (
+    for field_name in (
         "extensions",
         "extensionCodes",
         "extensionLicenseCodes",
         "licensedExtensions",
     ):
-        explicit = subscription_info.get(field)
+        explicit = subscription_info.get(field_name)
         if not isinstance(explicit, list):
             continue
         for value in explicit:

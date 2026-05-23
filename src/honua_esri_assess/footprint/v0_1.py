@@ -284,36 +284,6 @@ def _server_diagnostic_to_dict(diagnostic: ScanDiagnostic) -> dict[str, Any]:
     }
 
 
-def _services_omitted_from_inventory(
-    diagnostics: tuple[ScanDiagnostic, ...],
-) -> set[tuple[str, str, str] | str]:
-    terminal_codes = {
-        "server.auth",
-        "server.forbidden",
-        "server.rate-limited",
-        "server.service.missing-permission",
-        "server.service.rate-limited",
-    }
-    omitted: set[tuple[str, str, str] | str] = set()
-    prefix = "services/"
-    for diagnostic in diagnostics:
-        if diagnostic.code not in terminal_codes or not diagnostic.field:
-            continue
-        if not diagnostic.field.startswith(prefix):
-            continue
-        parts = diagnostic.field[len(prefix) :].split("/")
-        if len(parts) >= 3:
-            folder, name, service_type = parts[0], parts[1], parts[2]
-            omitted.add((folder or "_root", name, service_type))
-        elif parts and parts[0]:
-            omitted.add(parts[0])
-    return omitted
-
-
-def _service_identity(service: ServiceRecord) -> tuple[str, str, str]:
-    return (service.folder or "_root", service.name, service.service_type)
-
-
 def _server_locator(value: str) -> str:
     safe = credential_free_url(value)
     parts = urlsplit(safe)

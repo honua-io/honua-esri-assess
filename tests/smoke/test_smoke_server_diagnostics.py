@@ -48,6 +48,7 @@ def test_server_diagnostics_scan(
     }
     assert footprint["server"]["serviceCounts"] == expected["serviceCounts"]
     assert footprint["server"]["folders"] == expected["folders"]
+    assert footprint["server"]["version"] == "11.1"
     assert footprint["inventory"] == []
 
     codes = [d["code"] for d in footprint["diagnostics"]]

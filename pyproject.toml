@@ -1,19 +1,40 @@
 [build-system]
-requires = ["setuptools>=69"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
 
 [project]
 name = "honua-esri-assess"
-version = "0.0.0"
+version = "0.1.0"
 description = "Read-only Esri footprint assessment CLI for Honua migration discovery."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 authors = [{ name = "Honua" }]
-dependencies = [
-  "jsonschema>=4",
-  "requests>=2.31,<3",
+keywords = ["arcgis", "esri", "filegdb", "gis", "migration", "readiness"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: GIS",
+  "Typing :: Typed",
 ]
+dependencies = [
+  "jsonschema>=4.21,<5",
+  "requests>=2.31,<3",
+  "tenacity>=8.2,<10",
+  "typer>=0.12,<1",
+]
+
+[project.urls]
+Homepage = "https://github.com/honua-io/honua-esri-assess"
+Issues = "https://github.com/honua-io/honua-esri-assess/issues"
+Repository = "https://github.com/honua-io/honua-esri-assess"
 
 [project.scripts]
 honua-esri-assess = "honua_esri_assess.cli:main"
@@ -23,27 +44,57 @@ filegdb = [
   "pyogrio>=0.12,<0.13",
 ]
 dev = [
-  "pytest>=7",
+  "build>=1.2,<2",
+  "hatch>=1.9,<2",
+  "mypy>=1.10,<2",
+  "packaging>=24,<27",
+  "pytest>=8,<9",
   "responses>=0.25",
+  "ruff>=0.5,<1",
 ]
 smoke = [
-  "pytest>=8",
+  "pytest>=8,<9",
   "responses>=0.25",
 ]
 
-[tool.setuptools]
-include-package-data = false
+[tool.hatch.build]
+reproducible = true
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/honua_esri_assess"]
 
-[tool.setuptools.package-data]
-"honua_esri_assess" = ["schemas/*.json"]
+[tool.hatch.build.targets.wheel.force-include]
+"schemas/esri-footprint-v0.1.json" = "honua_esri_assess/schemas/esri-footprint-v0.1.json"
 
-[tool.setuptools.exclude-package-data]
-"*" = ["__pycache__/*", "**/__pycache__/*", "*.pyc", "**/*.pyc"]
+[tool.hatch.build.targets.sdist]
+include = [
+  "/CHANGELOG.md",
+  "/LICENSE",
+  "/README.md",
+  "/RELEASE.md",
+  "/docs",
+  "/pyproject.toml",
+  "/schemas",
+  "/scripts",
+  "/src",
+  "/tests",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = ["--import-mode=importlib"]
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["honua_esri_assess"]
+ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
+warn_unused_configs = true
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

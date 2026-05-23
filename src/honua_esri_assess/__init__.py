@@ -1,5 +1,20 @@
 """Honua Esri assessment tooling."""
 
-__all__ = ["__version__"]
+from __future__ import annotations
 
-__version__ = "0.0.0"
+from importlib.metadata import PackageNotFoundError, version
+
+__all__ = ["SCHEMA_VERSION", "__version__", "bundled_schema_version"]
+
+SCHEMA_VERSION = "v0.1"
+
+try:
+    __version__ = version("honua-esri-assess")
+except PackageNotFoundError:
+    __version__ = "0.1.0"
+
+
+def bundled_schema_version() -> str:
+    """Return the in-band EsriFootprint schema version bundled with the tool."""
+
+    return SCHEMA_VERSION

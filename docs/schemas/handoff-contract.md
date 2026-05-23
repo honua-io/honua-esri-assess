@@ -18,6 +18,9 @@ migration product.
 - No side-channel data exchange. The closed product does not call the
   customer's Esri systems on its own, does not consume scanner logs, and does
   not read CLI exit codes as a signal.
+- No alternate entitlement handoff. The interim `entitlements` CLI prints a
+  facet-compatible JSON fragment for validation, but the closed product does
+  not ingest that fragment directly.
 - No network telemetry. The scanner does not phone home; the artifact carries
   no callback URLs. Any future telemetry will be explicit, opt-in, and
   documented.
@@ -46,6 +49,11 @@ the full SemVer for the schema build lives in the schema's `$id`. The
 producer also writes a single matching facet (`portal`, `server`, or
 `filegdb`) based on `source.kind`; sibling facets are schema-rejected
 (see [Discriminator rules](./esri-footprint.v0.1.md#discriminator-rules)).
+For Portal and Server footprints, the matching facet may include an optional
+`licensing` block with read-only entitlement observations. Missing licensing
+means the producer did not include entitlement enumeration in that footprint;
+empty required arrays inside a present licensing block mean nothing was
+observed or enumerable with the current credential.
 
 **Consumer (closed migration product)** pins to an exact `major.minor`
 while the schema is pre-1.0, with a wildcard patch:
@@ -124,6 +132,7 @@ closed per release line. At v0.1 the catalog is locked to six codes; see the
 
 - Versioning policy: [versioning.md](./versioning.md)
 - Schema body for v0.1: [`docs/schemas/esri-footprint.v0.1.md`](./esri-footprint.v0.1.md)
+- Entitlement enumeration: [`../entitlements.md`](../entitlements.md)
 - JSON Schema file: [`schemas/esri-footprint-v0.1.json`](../../schemas/esri-footprint-v0.1.json)
 - Canonical sample: [`tests/fixtures/esri-footprint-sample.json`](../../tests/fixtures/esri-footprint-sample.json)
 - Repository landing page: [`../../README.md`](../../README.md)

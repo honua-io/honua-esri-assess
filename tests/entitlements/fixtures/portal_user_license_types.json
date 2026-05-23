@@ -1,0 +1,7 @@
+{
+  "userLicenseTypes": [
+    {"id": "creatorUT", "name": "Creator", "maxUsers": 50},
+    {"id": "viewerUT", "name": "Viewer", "maxUsers": 200},
+    {"id": "fieldWorkerUT", "name": "Field Worker", "maxUsers": 10}
+  ]
+}

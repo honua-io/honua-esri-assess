@@ -1,0 +1,9 @@
+{
+  "total": 219,
+  "start": 1,
+  "num": 1,
+  "nextStart": 2,
+  "users": [
+    {"username": "alice", "fullName": "Alice Example"}
+  ]
+}

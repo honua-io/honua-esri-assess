@@ -1,0 +1,12 @@
+{
+  "serviceName": "Parcels",
+  "type": "MapServer",
+  "extensions": [
+    {"typeName": "WMSServer", "enabled": true},
+    {"typeName": "WFSServer", "enabled": false},
+    {"typeName": "FeatureServer", "enabled": true}
+  ],
+  "interceptors": [
+    {"name": "AuthSOI", "enabled": true}
+  ]
+}

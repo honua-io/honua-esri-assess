@@ -1,0 +1,12 @@
+{
+  "currentVersion": "11.3",
+  "fullVersion": "11.3.0",
+  "productName": "ArcGIS Server",
+  "soapUrl": "https://example.com/arcgis/services",
+  "secureSoapUrl": "https://example.com/arcgis/services",
+  "authInfo": {
+    "isTokenBasedSecurity": true,
+    "tokenServicesUrl": "https://example.com/arcgis/tokens/",
+    "shortLivedTokenValidity": 60
+  }
+}

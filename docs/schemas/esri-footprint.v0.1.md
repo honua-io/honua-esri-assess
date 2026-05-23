@@ -146,6 +146,7 @@ Required iff `source.kind == "arcgis-online"`; forbidden otherwise (see [Discrim
 | `orgUrl`         | yes      | URI                                                 | Organization base URL.                                   |
 | `itemCounts`     | yes      | `{ [safe itemType label]: integer }`                | Roll-up by Esri item type (e.g. `Feature Service`). Keys must match `^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,79}$`. |
 | `sharingSummary` | no       | `{ private, org, public, shared: integer }`         | Roll-up of sharing levels across portal items.           |
+| `licensing`      | no       | [`PortalLicensing`](#portallicensing)               | Read-only license entitlement observations from documented Portal Sharing endpoints. |
 
 ### ServerFacet
 
@@ -156,6 +157,80 @@ Required iff `source.kind == "arcgis-server"`; forbidden otherwise (see [Discrim
 | `folders`       | yes      | string[]                                | Top-level service folder names. Empty array if all services live at the root.|
 | `serviceCounts` | yes      | `{ [safe serviceType label]: integer }` | Roll-up by Esri service type (e.g. `MapServer`). Keys must match `^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,79}$`. |
 | `version`       | no       | string                                  | Reported ArcGIS Server version (e.g. `"11.2"`).                             |
+| `licensing`     | no       | [`ServerLicensing`](#serverlicensing)   | Read-only license entitlement observations from documented ArcGIS Server REST/admin endpoints. |
+
+### PortalLicensing
+
+Optional block under `portal.licensing`. It records only entitlement facts
+read from documented Sharing API endpoints; credit balances are reduced to
+`creditsEnabled` so commercially sensitive balances are not published.
+
+| Field                | Required | Type                         | Description                                      |
+|----------------------|----------|------------------------------|--------------------------------------------------|
+| `tier`               | no       | string                       | Portal tier observed from the source.            |
+| `subscriptionType`   | no       | string                       | Subscription type when exposed.                  |
+| `userTypes`          | yes      | [`UserTypeCount[]`](#usertypecount) | Available user-type licenses and counts.         |
+| `premiumContent`     | yes      | object                       | `{ creditsEnabled?, allowedAddOns }`.            |
+| `extensionsObserved` | yes      | [`ExtensionEntitlement[]`](#extensionentitlement) | Portal add-ons/extensions observed.              |
+
+### ServerLicensing
+
+Optional block under `server.licensing`. It records server-level extension
+licenses plus enabled per-service SOEs/SOIs from read-only REST/admin GETs.
+
+| Field               | Required | Type                         | Description                                      |
+|---------------------|----------|------------------------------|--------------------------------------------------|
+| `productName`       | no       | string                       | Product name reported by ArcGIS Server.          |
+| `currentVersion`    | no       | string                       | Server version reported by REST/admin info.      |
+| `edition`           | no       | string                       | Server edition when the admin endpoint exposes it. |
+| `extensions`        | yes      | [`ExtensionEntitlement[]`](#extensionentitlement) | Server-level extension entitlements.             |
+| `serviceExtensions` | yes      | [`ServiceExtensionRecord[]`](#serviceextensionrecord) | Enabled SOEs/SOIs by service.                    |
+
+### Entitlement emission semantics
+
+The `portal.licensing` and `server.licensing` blocks are optional. Absence
+means entitlement enumeration was not requested, was not yet wired into that
+scanner path, or was intentionally omitted by the producer. When a licensing
+block is present, its required arrays are emitted even when empty:
+`userTypes`, `extensionsObserved`, `extensions`, and `serviceExtensions`.
+An empty array means "nothing observed or enumerable with the current
+credential", not a schema error.
+
+Optional scalar fields such as `tier`, `subscriptionType`, `productName`,
+`currentVersion`, `edition`, and `creditsEnabled` are omitted when the source
+endpoint does not expose them. Portal credit balances are never emitted; the
+contract reduces that signal to `premiumContent.creditsEnabled` when available.
+
+The interim `honua-esri-assess entitlements` CLI emits
+`{ target, licensing, diagnostics }`, where `licensing` contains the same
+nested facet fragment documented here. That interim JSON is a validation and
+integration surface only. The closed migration product's handoff remains full
+`EsriFootprint.json`.
+
+### ExtensionEntitlement
+
+| Field    | Required | Type | Description |
+|----------|----------|------|-------------|
+| `code`   | yes      | string | Esri extension code, catalog-normalized when known. |
+| `name`   | yes      | string | Human-readable extension name. |
+| `status` | yes      | enum | `licensed`, `evaluation`, `expired`, or `unknown`. |
+| `source` | yes      | enum | `server-admin-licenses`, `service-extensions`, or `portal-subscription`. |
+
+### UserTypeCount
+
+| Field      | Required | Type        | Description |
+|------------|----------|-------------|-------------|
+| `name`     | yes      | string      | User-type id or stable name. |
+| `total`    | no       | integer ≥ 0 | Seats granted to the org, when exposed. |
+| `assigned` | no       | integer ≥ 0 | Seats assigned, when exposed. |
+
+### ServiceExtensionRecord
+
+| Field        | Required | Type     | Description |
+|--------------|----------|----------|-------------|
+| `serviceUrl` | yes      | URI      | Credentials-stripped service URL; query strings, fragments, and userinfo are rejected. |
+| `soes`       | yes      | string[] | Enabled server object extensions. |
+| `sois`       | yes      | string[] | Enabled server object interceptors. |
 
 ### FileGdbFacet
 

@@ -39,15 +39,18 @@ it does not flow. There is no "small exception."
 }
 ```
 
-**Consumer (closed migration product)** pins to an exact minor while the
-schema is pre-1.0:
+**Consumer (closed migration product)** pins to an exact `major.minor`
+while the schema is pre-1.0, with a wildcard patch:
 
 ```
 accepted_schema = "0.1.x"
 ```
 
-The consumer reads `schemaVersion` first and rejects documents whose major
-(or pre-1.0, minor) exceeds its pin. See
+The `x` is a literal wildcard. The consumer reads `schemaVersion` first
+and rejects documents whose major differs from its pin; pre-1.0, the same
+exact-match rule applies to `minor`, so a `0.1.x` pin rejects both higher
+(`0.2.0`) and lower (`0.0.7`) minors. Any patch within the pinned minor is
+accepted. See
 [Closed-product pinning (v0.x)](./versioning.md#closed-product-pinning-v0x)
 for the full state machine.
 

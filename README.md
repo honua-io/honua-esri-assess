@@ -36,3 +36,6 @@ The schema body for the current `0.1.x` line is tracked under
 - Language: Python.
 - License: Apache-2.0.
 - Runtime writes to customer Esri systems are out of scope.
+- `EsriFootprint.json` follows semver, with a pre-1.0 stance that lets minor
+  bumps break and guarantees no breaks within a minor line. See
+  [`docs/schemas/versioning.md`](docs/schemas/versioning.md).

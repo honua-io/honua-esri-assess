@@ -67,23 +67,33 @@ mistake.
 ## Closed-product pinning (v0.x)
 
 The closed Honua migration product declares the schema line it accepts by
-pinning to an **exact minor**:
+pinning to an **exact `major.minor`** with a wildcard patch:
 
 ```
 accepted_schema = "0.1.x"
 ```
 
+The `x` is a literal wildcard, not a placeholder for a specific patch. Any
+patch within the line is accepted, because the producer guarantees no
+breaking changes within a minor line
+(see [Pre-1.0 (v0.x) stance](#pre-10-v0x-stance)).
+
 Behavior the closed product implements:
 
 - Read `schemaVersion` from the incoming footprint.
-- If `major` is higher than the pinned major, reject with a typed error.
-  (Pre-1.0, treat `minor` mismatch the same way: a `0.2.0` document is not
-  acceptable to a `0.1.x` pin.)
-- If `major.minor` matches the pin and `patch` is `>=` the pinned patch,
-  accept.
-- If `patch` is lower than the pinned patch, accept but log a warning; the
-  producer is older than the consumer expects and may be missing optional
-  diagnostics.
+- If the document's `major.minor` does not match the pinned `major.minor`,
+  reject with a typed error. Pre-1.0, any minor mismatch — higher *or*
+  lower — is incompatible: a `0.2.0` document is not acceptable to a
+  `0.1.x` pin, and neither is a `0.0.7` document. (Post-1.0, the same
+  exact-match rule applies to `major` only; consumers accept any minor at
+  or above the floor they choose.)
+- Otherwise, accept the document. Patch differences are non-breaking by
+  guarantee, so no patch-level state is encoded in the pin.
+
+If a consumer needs to require a specific producer build (for example, to
+guarantee a recent scanner-bug fix), it should read `producer.version` from
+the artifact rather than encode a patch into the schema pin. The schema pin
+is for shape compatibility only.
 
 Adopting a new minor (`0.2.x`) is **opt-in** for the consumer; the producer
 will keep publishing the previous line until the closed product is ready.
@@ -140,8 +150,10 @@ A consumer of `EsriFootprint.json` (the closed migration product, or any
 third-party reader) MUST:
 
 - **Reject on incompatible major.** Refuse documents whose
-  `schemaVersion` major exceeds the pinned major. Pre-1.0, apply the same
-  rule to `minor`.
+  `schemaVersion` major differs from the pinned major. Pre-1.0, apply the
+  same exact-match rule to `minor` — any minor mismatch (higher *or* lower)
+  is incompatible. See
+  [Closed-product pinning (v0.x)](#closed-product-pinning-v0x).
 - **Tolerate unknown additive fields** within a supported minor line. New
   optional fields are a PATCH-level change and may appear without notice.
 - **Treat missing optional sections as absent**, not as an error. The

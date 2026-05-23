@@ -319,7 +319,7 @@
       "properties": {
         "folders": {
           "type": "array",
-          "description": "Top-level service folder names. Empty array if all services live at the root.",
+          "description": "Top-level service folder names visited by the scan. Empty array if all services live at the root; filtered scans may contain only the requested folder.",
           "items": { "type": "string" }
         },
         "serviceCounts": {
@@ -515,7 +515,11 @@
           "type": "string",
           "description": "Folder name relative to the services root, or empty string if the service lives at the root."
         },
-        "layerCount": { "type": "integer", "minimum": 0 },
+        "layerCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of layers observed for the service. Current ArcGIS Server producer output fills this from deep service probes; shallow or unprobed services emit 0."
+        },
         "geometryType": { "$ref": "#/$defs/GeometryType" },
         "extent": { "$ref": "#/$defs/Extent" },
         "sr": { "$ref": "#/$defs/SpatialReference" }

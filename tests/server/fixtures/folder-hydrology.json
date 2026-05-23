@@ -1,0 +1,9 @@
+{
+  "currentVersion": 11.2,
+  "folders": [],
+  "services": [
+    {"name": "Hydrology/Watersheds", "type": "FeatureServer"},
+    {"name": "Hydrology/Watersheds", "type": "MapServer"},
+    {"name": "Hydrology/CustomService", "type": "ZorpServer"}
+  ]
+}

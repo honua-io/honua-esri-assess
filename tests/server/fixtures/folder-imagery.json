@@ -1,0 +1,7 @@
+{
+  "currentVersion": 11.2,
+  "folders": [],
+  "services": [
+    {"name": "Imagery/NAIP2024", "type": "ImageServer"}
+  ]
+}

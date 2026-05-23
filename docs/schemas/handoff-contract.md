@@ -55,6 +55,35 @@ means the producer did not include entitlement enumeration in that footprint;
 empty required arrays inside a present licensing block mean nothing was
 observed or enumerable with the current credential.
 
+For ArcGIS Server scans in the v0.1 line, the producer records a
+credential-free services root in `source.locator` and writes the ArcGIS
+Server details in the matching `server` facet:
+
+```json
+{
+  "source": {
+    "kind": "arcgis-server",
+    "locator": "https://gis.example.com/arcgis/rest/services",
+    "capturedAt": "2026-05-22T14:02:11Z"
+  },
+  "server": {
+    "folders": ["Utilities", "Planning"],
+    "serviceCounts": { "FeatureServer": 3, "MapServer": 9 },
+    "version": "11.2"
+  }
+}
+```
+
+`source.locator` and each `ServerService.serviceUrl` strip URL userinfo,
+query strings, and fragments before they can enter the artifact. Root-level
+services are represented in `inventory[]` with `folder: ""`; folder services
+carry their folder name. Each server service inventory record has
+`kind: "server-service"`, raw `serviceType`, credential-free `serviceUrl`,
+and `layerCount`. `server.folders` contains the folder names visited by the
+scan; for a `--folder` scan this is the visited subset, not a promise that
+every folder on the server was inventoried. Version metadata sourced from
+`/arcgis/rest/info` is recorded in `server.version` when available.
+
 **Consumer (closed migration product)** pins to an exact `major.minor`
 while the schema is pre-1.0, with a wildcard patch:
 
@@ -164,7 +193,7 @@ artifact:
 
 ## Diagnostics, not stack traces
 
-Recoverable failures during scanning are surfaced as typed entries in
+Recoverable failures during a successful scan are surfaced as typed entries in
 `diagnostics[]` inside the artifact, not as Python tracebacks in the CLI output
 or the footprint. A command can exit nonzero after writing an artifact when
 the artifact contains `error`-severity diagnostics; the artifact remains the

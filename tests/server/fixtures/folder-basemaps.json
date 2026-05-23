@@ -1,0 +1,8 @@
+{
+  "currentVersion": 11.2,
+  "folders": [],
+  "services": [
+    {"name": "Basemaps/Topo", "type": "MapServer"},
+    {"name": "Basemaps/Vector", "type": "VectorTileServer"}
+  ]
+}

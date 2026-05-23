@@ -15,7 +15,7 @@ Shipped in the current contract line:
 | --- | --- | --- |
 | Schema | `EsriFootprint.json` v0.1 schema and reference docs | Sole handoff artifact |
 | Canonical sample | Single-source-of-truth footprint plus rendered readiness report | [`docs/samples/esri-footprint.sample.json`](docs/samples/esri-footprint.sample.json), [`docs/samples/readiness-report.sample.md`](docs/samples/readiness-report.sample.md) |
-| Scanner CLI | Read-only AGOL Portal Sharing API, ArcGIS Server, and FileGDB scans | Full `EsriFootprint.json` |
+| Scanner CLI | Read-only AGOL Portal Sharing API, ArcGIS Server, and FileGDB scans, including deep ArcGIS Server service probes | Full `EsriFootprint.json` |
 | FileGDB workspace CLI | Read-only `pyogrio`/GDAL inventory of a local `.gdb` | Full `EsriFootprint.json` |
 | Report CLI | Pure deterministic Markdown readiness report renderer with smoke coverage | Human-readable companion (no second machine contract) |
 | Smoke CI | Separate fixture-backed job without live Esri access | Local contract guard |
@@ -71,7 +71,7 @@ honua-esri-assess scan agol \
 
 # ArcGIS Server REST endpoint.
 honua-esri-assess scan server \
-  --target https://gis.example.com/arcgis/rest \
+  --target https://gis.example.com/arcgis \
   --output EsriFootprint.json
 
 # FileGDB inventory from a local .gdb directory.
@@ -238,6 +238,10 @@ contract state from a shell status.
   a typed Portal error (`portal.error`, `portal.auth`, `portal.forbidden`,
   `portal.not-found`, `portal.rate-limited`, `portal.connection`,
   `portal.api`, or `portal.schema`).
+- Exit `10`-`17` - the ArcGIS Server scanner failed before producing a
+  footprint with a typed Server error (`server.error`, `server.auth`,
+  `server.forbidden`, `server.not-found`, `server.rate-limited`,
+  `server.connection`, `server.api`, or `server.schema`).
 
 ### FileGDB workspace exit codes and failure surface
 
@@ -279,7 +283,7 @@ internal paths.
 
 Diagnostics are always typed and prospect-safe across all CLI surfaces.
 Customer-facing runs do not emit Python tracebacks, credentials, or raw
-filesystem paths.
+filesystem paths. For `scan server`, `--debug` is the explicit traceback opt-in.
 
 ## Schema and handoff
 
@@ -365,6 +369,119 @@ mapping that normalizes subsystem-specific diagnostics into this vocabulary:
 - `unsupported-item-type` - item or service kind not modeled by v0.1.
 - `redacted-field` - a field was withheld because it was sensitive.
 
+## Scanning an ArcGIS Server
+
+The CLI exposes a `scan server` subcommand that walks the documented
+ArcGIS Server REST API in read-only mode and writes `EsriFootprint.json`:
+
+```
+honua-esri-assess scan server \
+    --target https://gis.example.com/arcgis \
+    [--token <pre-existing-token>] \
+    [--deep] \
+    [--folder <name>] \
+    [--output EsriFootprint.json] \
+    [--timeout 30] \
+    [--max-retries 3] \
+    [--allow-nonstandard-base] \
+    [--verbose | --debug]
+```
+
+`--target` accepts any of `https://host`, `https://host/arcgis`,
+`https://host/arcgis/rest`, or `https://host/arcgis/rest/services`; the
+client canonicalizes to `<host>/arcgis/rest/services` internally.
+`--allow-nonstandard-base` skips canonicalization for servers mounted
+under unusual prefixes.
+
+Behavior the scanner guarantees:
+
+- **Read-only.** No `POST`/`PUT`/`DELETE` is issued against the target
+  server. The HTTP wrapper exposes no write helpers; every call is a
+  `GET` of the documented REST surface.
+- **Two auth modes.** Anonymous (default), or a caller-supplied
+  pre-existing ArcGIS Server token via `--token`. Tokens are appended as
+  the outbound `token=` query param, redacted from log records, and never
+  written into the footprint or stderr summary. URL userinfo, query
+  strings, and fragments are stripped before writing `source.locator` or
+  `ServerService.serviceUrl`.
+- **Bounded retries.** Transient HTTP status (`429`, `502`, `503`, `504`)
+  triggers exponential backoff up to `--max-retries` attempts. Retry sleep
+  time is capped at 30 seconds; the per-request timeout is controlled
+  separately by `--timeout`. A `Retry-After` header is honored within the
+  retry sleep budget.
+- **Two diagnostic surfaces.** The CLI renders top-level failures as a
+  single `error: [code] message` line on stderr with a deterministic exit
+  code (`server.auth`, `server.forbidden`, `server.not-found`,
+  `server.rate-limited`, `server.connection`, `server.api`,
+  `server.schema`). Partial failures during the walk, such as a forbidden
+  folder, malformed service entry, or failed deep probe, emit
+  prospect-safe records into the footprint's `diagnostics[]` block using
+  the locked v0.1 diagnostic vocabulary.
+- **Deep scan scope.** `--deep` follows each supported service URL to
+  populate `inventory[].layerCount` from the service body. Supported deep
+  probe types are `MapServer`, `FeatureServer`, `ImageServer`,
+  `SceneServer`, and `StreamServer`; other types are recorded from the
+  catalog walk only and emit `layerCount: 0`. The v0.1 footprint does not
+  emit service capabilities, table counts, or the internal service-kind
+  bucket.
+- **Folder filter.** `--folder NAME` restricts the folder walk to a
+  single folder name. Services at the catalog root are always
+  inventoried; the filter only narrows which subfolders are visited.
+- **No network telemetry.** Local logs (stderr) are structured;
+  `--verbose` enables INFO-level logging, `--debug` enables DEBUG plus
+  tracebacks. No host other than the user-supplied `--target` is ever
+  called.
+
+`stdout` carries the footprint JSON when `--output` is omitted; a one-line
+summary (`scanned N services across M folders in T.TTs`) is written to
+stderr.
+
+### ArcGIS Server Footprint Contract
+
+A successful server scan emits `EsriFootprint.json` v0.1 with:
+
+- `source.kind == "arcgis-server"`.
+- `source.locator` set to the credential-free services-root URL
+  (`https://host/arcgis/rest/services` for standard mounts) and
+  `source.capturedAt` set to the scan timestamp.
+- `server.folders[]` as the visited top-level folder names: all folders on
+  an unfiltered scan, or the matching folder when `--folder` is used.
+- `server.serviceCounts` keyed by raw ArcGIS Server service type and
+  `server.version` when `/arcgis/rest/info` exposes it.
+- `inventory[]` entries with `kind == "server-service"`, credential-free
+  canonical `serviceUrl`, raw `serviceType`, `folder` (empty string for
+  root services), and `layerCount`.
+- `counts.items["server-service"]`, `counts.layers`, and
+  `counts.featureClasses` roll-ups. `counts.featureClasses` remains `0`
+  for ArcGIS Server footprints; it is reserved for FileGDB feature-class
+  records.
+- `diagnostics[]` typed entries for partial scan issues.
+
+The scanner internally classifies raw ArcGIS Server service types for
+diagnostics and future emitters. The footprint does not include a
+`serviceKind` field; consumers should read the raw `serviceType`.
+
+| Raw service type | Internal bucket | Deep probe |
+| --- | --- | --- |
+| `MapServer` | `mapService` | yes |
+| `FeatureServer` | `featureService` | yes |
+| `ImageServer` | `imageService` | yes |
+| `SceneServer` | `sceneService` | yes |
+| `StreamServer` | `streamService` | yes |
+| `VectorTileServer` | `vectorTileService` | no |
+| `GPServer` | `geoprocessingService` | no |
+| `GeocodeServer` | `geocodeService` | no |
+| `NAServer` | `networkAnalysisService` | no |
+| `GeometryServer` | `geometryService` | no |
+| `GlobeServer` | `globeService` | no |
+| `MobileServer` | `mobileService` | no |
+| anything else | `other` | no |
+
+The emitter validates against the packaged copy of the published JSON Schema
+at [`schemas/esri-footprint-v0.1.json`](schemas/esri-footprint-v0.1.json).
+If validation rejects the output, or the declared schema cannot be loaded,
+`scan server` exits non-zero before writing an artifact.
+
 ## Running the smoke suite
 
 The fixture-backed smoke suite under `tests/smoke/` exercises the full
@@ -377,7 +494,7 @@ python -m pip install -e ".[smoke]"
 pytest tests/smoke -v
 ```
 
-There are 9 tests covering the three scanner backends (AGOL happy plus
+There are 10 tests covering the three scanner backends (AGOL happy plus
 diagnostics, ArcGIS Server happy plus diagnostics, FileGDB happy), the
 Markdown report renderer, the no-network guard, and a console-script smoke
 check. The current corpus runs in well under a second on a developer laptop;

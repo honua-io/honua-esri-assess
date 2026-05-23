@@ -1,0 +1,13 @@
+{
+  "currentVersion": 11.2,
+  "serviceDescription": "Watershed feature service",
+  "description": "Watershed feature service",
+  "capabilities": "Query,Sync,Extract",
+  "layers": [
+    {"id": 0, "name": "Watersheds", "type": "Feature Layer", "geometryType": "esriGeometryPolygon"},
+    {"id": 1, "name": "Outlets", "type": "Feature Layer", "geometryType": "esriGeometryPoint"}
+  ],
+  "tables": [
+    {"id": 2, "name": "WatershedAttributes", "type": "Table"}
+  ]
+}

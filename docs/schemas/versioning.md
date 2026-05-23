@@ -151,6 +151,11 @@ Every `EsriFootprint.json` emitted by this tool:
     prospect-safe `locator`. The block never contains credentials,
     tokens, cookies, session IDs, or raw on-prem paths; FileGDB locators
     are surfaced as a salted `sha256:<64 hex>` hash.
+    ArcGIS Server v0.1 scans additionally record visited top-level service
+    folder names and service counts by raw Esri service type in the
+    `server` facet, and credential-free canonical service URLs in
+    `inventory[].serviceUrl`. For filtered server scans, the folder list
+    reflects the visited subset.
 - **Comes from read-only access.** The producer never writes to the
   customer's Esri systems. No field in the artifact implies, records, or
   enables a write.
@@ -188,8 +193,8 @@ third-party reader) MUST:
 ## Diagnostics surface
 
 Recoverable errors and warnings observed during scanning are surfaced inside
-the footprint, not as raw exceptions or stack traces. The shape is a top-level
-array of typed entries:
+a successful footprint, not as raw exceptions or stack traces. The shape is a
+top-level array of typed entries:
 
 ```json
 {

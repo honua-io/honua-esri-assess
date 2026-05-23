@@ -155,7 +155,7 @@ Required iff `source.kind == "arcgis-server"`; forbidden otherwise (see [Discrim
 
 | Field           | Required | Type                                    | Description                                                                 |
 |-----------------|----------|-----------------------------------------|-----------------------------------------------------------------------------|
-| `folders`       | yes      | string[]                                | Top-level service folder names. Empty array if all services live at the root.|
+| `folders`       | yes      | string[]                                | Top-level service folder names visited by the scan. Empty array if all services live at the root; filtered scans may contain only the requested folder. |
 | `serviceCounts` | yes      | `{ [safe serviceType label]: integer }` | Roll-up by Esri service type (e.g. `MapServer`). Keys must match `^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,79}$`. |
 | `version`       | no       | string                                  | Reported ArcGIS Server version (e.g. `"11.2"`).                             |
 | `licensing`     | no       | [`ServerLicensing`](#serverlicensing)   | Read-only license entitlement observations from documented ArcGIS Server REST/admin endpoints. |
@@ -300,7 +300,7 @@ artifact.
 | `serviceUrl`   | yes      | URI                               | Fully-qualified service URL. Schema pattern `^https?://[^@?#\s]+(/[^?#\s]*)?$` rejects userinfo, query strings, and fragments. **Credentials must never appear in this field.** |
 | `serviceType`  | yes      | string                            | Esri service type (e.g. `MapServer`, `FeatureServer`).                       |
 | `folder`       | yes      | string                            | Folder relative to the services root, or empty string for root services.     |
-| `layerCount`   | yes      | integer ≥ 0                       | Number of layers exposed by the service.                                     |
+| `layerCount`   | yes      | integer ≥ 0                       | Number of layers observed for the service. Current ArcGIS Server producer output fills this from deep service probes; shallow or unprobed services emit `0`. |
 | `geometryType` | no       | [`GeometryType`](#geometrytype)   | Service geometry type when uniform across layers.                            |
 | `extent`       | no       | [`Extent`](#extent)               | Service full extent.                                                         |
 | `sr`           | no       | [`SpatialReference`](#spatialreference) | Service spatial reference.                                              |

@@ -1,0 +1,15 @@
+{
+  "currentVersion": 11.2,
+  "fullVersion": "11.2.0",
+  "soapUrl": "https://gis.example.com/arcgis/services",
+  "secureSoapUrl": "https://gis.example.com/arcgis/services",
+  "authInfo": {
+    "isTokenBasedSecurity": true,
+    "tokenServicesUrl": "https://gis.example.com/arcgis/tokens/",
+    "shortLivedTokenValidity": 60
+  },
+  "softwareAuthorization": {
+    "edition": "Standard",
+    "licenseLevel": "ArcGISServerStandard"
+  }
+}

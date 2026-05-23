@@ -13,14 +13,13 @@ SCHEMA_FILENAME = "esri-footprint-v0.1.json"
 SCHEMA_PACKAGE = "honua_esri_assess.schemas"
 
 
+class FootprintSchemaNotFoundError(PortalSchemaError):
+    """Backward-compatible alias for fail-closed schema lookup failures."""
+
+
 @lru_cache(maxsize=1)
 def load_schema() -> dict[str, Any]:
-    """Return the v0.1 schema bundled with the installed package.
-
-    Fails closed: if the schema cannot be located or parsed, a
-    :class:`PortalSchemaError` is raised so the CLI never emits an artifact
-    that has not been validated against the contract.
-    """
+    """Return the v0.1 schema bundled with the installed package."""
 
     try:
         traversable = resources.files(SCHEMA_PACKAGE).joinpath(SCHEMA_FILENAME)
@@ -47,12 +46,14 @@ def load_schema() -> dict[str, Any]:
     return payload
 
 
-def validate_footprint(footprint: dict[str, Any]) -> None:
-    """Validate ``footprint`` against the bundled v0.1 schema.
+def validate_footprint(footprint: dict[str, Any], *, version: str | None = None) -> bool:
+    """Validate ``footprint`` against the bundled v0.1 schema."""
 
-    Raises :class:`PortalSchemaError` on schema misses (fail-closed) or on
-    validation failures so the scanner never silently skips contract checks.
-    """
+    if version not in (None, "v0.1", "0.1", "0.1.0", "v0.1.0"):
+        raise PortalSchemaError(
+            "Unsupported EsriFootprint.json schema version.",
+            context={"schema": str(version)},
+        )
 
     schema = load_schema()
     try:
@@ -73,3 +74,13 @@ def validate_footprint(footprint: dict[str, Any]) -> None:
         message = "Generated EsriFootprint.json does not match the v0.1 schema."
         context = {"field": field} if field else {}
         raise PortalSchemaError(message, context=context) from exc
+    return True
+
+
+__all__ = [
+    "FootprintSchemaNotFoundError",
+    "SCHEMA_FILENAME",
+    "SCHEMA_PACKAGE",
+    "load_schema",
+    "validate_footprint",
+]

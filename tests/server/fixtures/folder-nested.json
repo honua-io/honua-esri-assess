@@ -1,0 +1,7 @@
+{
+  "currentVersion": 11.2,
+  "folders": ["WouldBeNested"],
+  "services": [
+    {"name": "Hydrology/Nested", "type": "MapServer"}
+  ]
+}

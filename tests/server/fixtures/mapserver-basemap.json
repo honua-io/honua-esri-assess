@@ -1,0 +1,10 @@
+{
+  "currentVersion": 11.2,
+  "description": "Topographic basemap",
+  "capabilities": "Map,Query,Data",
+  "singleFusedMapCache": true,
+  "layers": [
+    {"id": 0, "name": "States", "type": "Feature Layer", "geometryType": "esriGeometryPolygon"},
+    {"id": 1, "name": "Roads", "type": "Feature Layer", "geometryType": "esriGeometryPolyline"}
+  ]
+}

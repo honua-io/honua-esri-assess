@@ -85,6 +85,38 @@ def test_scan_server_writes_footprint_file(tmp_path: Path) -> None:
 
 
 @responses.activate
+def test_scan_server_does_not_write_artifact_when_schema_is_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _register_info()
+    _register_root()
+    _register_folder("Hydrology", "folder-hydrology.json")
+    _register_folder("Basemaps", "folder-basemaps.json")
+    _register_folder("Imagery", "folder-imagery.json")
+    _register_folder("Restricted", "folder-imagery.json", status=403)
+    monkeypatch.setattr("honua_esri_assess.cli.validate_footprint", lambda _: False)
+
+    output = tmp_path / "EsriFootprint.json"
+    exit_code = main(
+        [
+            "scan",
+            "server",
+            "--target",
+            "https://gis.example.com/arcgis",
+            "--output",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code != 0
+    assert "[server.schema]" in captured.err
+    assert not output.exists()
+
+
+@responses.activate
 def test_scan_server_renders_prospect_safe_auth_error(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

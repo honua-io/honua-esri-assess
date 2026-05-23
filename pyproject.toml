@@ -31,6 +31,9 @@ smoke = [
   "responses>=0.25",
 ]
 
+[tool.setuptools]
+include-package-data = false
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

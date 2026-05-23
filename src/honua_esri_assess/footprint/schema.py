@@ -48,8 +48,8 @@ def _schema_file_names(version: str) -> list[str]:
 def _candidate_paths(version: str) -> list[Path]:
     candidates: list[Path] = []
     for base in _SCHEMA_DIR_CANDIDATES:
-        for name in _schema_file_names(version):
-            candidates.append(base / name)
+        for filename in _schema_file_names(version):
+            candidates.append(base / filename)
     return candidates
 
 
@@ -65,8 +65,9 @@ def _packaged_schema_text(version: str) -> str | None:
         schema_dir = resources.files(_PACKAGE_ROOT).joinpath(_PACKAGE_SCHEMA_DIR)
     except (FileNotFoundError, ModuleNotFoundError):
         return None
-    for name in _schema_file_names(version):
-        candidate = schema_dir.joinpath(name)
+
+    for filename in _schema_file_names(version):
+        candidate = schema_dir.joinpath(filename)
         if candidate.is_file():
             return candidate.read_text(encoding="utf-8")
     return None
@@ -76,10 +77,14 @@ def _load_schema(version: str) -> dict[str, Any]:
     path = find_schema_path(version)
     if path is not None:
         return json.loads(path.read_text(encoding="utf-8"))
-    packaged = _packaged_schema_text(version)
-    if packaged is not None:
-        return json.loads(packaged)
-    raise FootprintSchemaNotFoundError(f"schema for {version!r} was not found")
+
+    schema_text = _packaged_schema_text(version)
+    if schema_text is not None:
+        return json.loads(schema_text)
+
+    raise FootprintSchemaNotFoundError(
+        f"schema for footprint version {version!r} was not found"
+    )
 
 
 @lru_cache(maxsize=1)
@@ -112,7 +117,7 @@ def load_schema() -> dict[str, Any]:
 
 
 def validate_footprint(footprint: dict[str, Any], *, version: str | None = None) -> bool:
-    """Validate *footprint* against its declared JSON Schema."""
+    """Validate *footprint* against the declared footprint schema."""
 
     schema_version = str(version or footprint.get("schemaVersion") or "")
     schema = _load_schema(schema_version) if schema_version else load_schema()

@@ -461,9 +461,10 @@ A successful server scan emits `EsriFootprint.json` v0.1 with:
   records.
 - `diagnostics[]` typed entries for partial scan issues.
 
-The scanner internally classifies raw ArcGIS Server service types for
-diagnostics and future emitters. The footprint does not include a
-`serviceKind` field; consumers should read the raw `serviceType`.
+The v0.1 server scanner internally classifies raw ArcGIS Server service
+types as follows for diagnostics and future emitters. The footprint does
+not include a `serviceKind` field; consumers should read the raw
+`serviceType`.
 
 | Raw service type | Internal bucket | Deep probe |
 | --- | --- | --- |

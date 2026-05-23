@@ -19,7 +19,19 @@ it against ArcGIS Online, ArcGIS Server, or FileGDB inventories.
 ## Schema and handoff
 
 `EsriFootprint.json` is the sole supported handoff into the closed Honua
-migration product. Two policy docs govern that contract:
+migration product. The v0.1 contract is published in this repository:
+
+- Schema: [`schemas/esri-footprint-v0.1.json`](schemas/esri-footprint-v0.1.json)
+- Reference: [`docs/schemas/esri-footprint.v0.1.md`](docs/schemas/esri-footprint.v0.1.md)
+- Canonical sample: [`tests/fixtures/esri-footprint-sample.json`](tests/fixtures/esri-footprint-sample.json)
+
+`$id`: `https://schemas.honua.io/esri-footprint/v0.1.0/esri-footprint.json`
+
+v0.x is unstable. Breaking changes are permitted between minor bumps; v1.0
+is the first stable promise. See the reference doc for the stability
+policy and the locked diagnostic code catalog.
+
+Two policy docs govern the broader contract:
 
 - [`docs/schemas/versioning.md`](docs/schemas/versioning.md) — semver
   interpretation, deprecation policy, producer guarantees, and consumer
@@ -27,9 +39,6 @@ migration product. Two policy docs govern that contract:
 - [`docs/schemas/handoff-contract.md`](docs/schemas/handoff-contract.md) —
   prospect-facing summary of what flows between this tool and the closed
   product, and how to verify a footprint locally.
-
-The schema body for the current `0.1.x` line is tracked under
-[honua-io/honua-esri-assess#2](https://github.com/honua-io/honua-esri-assess/issues/2).
 
 ## Decisions
 
@@ -39,3 +48,10 @@ The schema body for the current `0.1.x` line is tracked under
 - `EsriFootprint.json` follows semver, with a pre-1.0 stance that lets minor
   bumps break and guarantees no breaks within a minor line. See
   [`docs/schemas/versioning.md`](docs/schemas/versioning.md).
+
+## Validating the schema locally
+
+```bash
+python -m pip install -e ".[dev]"
+pytest
+```

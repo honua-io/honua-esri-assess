@@ -1,0 +1,23 @@
+{
+  "query": "*",
+  "total": 4,
+  "start": 1,
+  "num": 100,
+  "nextStart": 3,
+  "results": [
+    {
+      "id": "item-feature-1",
+      "title": "Restricted Feature Service",
+      "type": "Feature Service",
+      "owner": "demo.publisher",
+      "url": "https://services.fixture.local/Restricted/FeatureServer"
+    },
+    {
+      "id": "item-map-1",
+      "title": "Restricted Basemap",
+      "type": "Map Service",
+      "owner": "demo.publisher",
+      "url": "https://services.fixture.local/Restricted/MapServer"
+    }
+  ]
+}

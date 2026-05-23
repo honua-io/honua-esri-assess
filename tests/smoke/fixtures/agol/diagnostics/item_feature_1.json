@@ -1,0 +1,10 @@
+{
+  "id": "item-feature-1",
+  "title": "Restricted Feature Service",
+  "type": "Feature Service",
+  "owner": "demo.publisher",
+  "url": "https://services.fixture.local/Restricted/FeatureServer",
+  "layers": [
+    { "id": 0, "name": "Restricted" }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "routes": [
+    {
+      "url": "https://fixture.local/server/rest/services",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "services_root.json",
+      "status": 200
+    },
+    {
+      "url": "https://fixture.local/server/rest/services/Restricted/FeatureServer",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "service_restricted_403.json",
+      "status": 200
+    },
+    {
+      "url": "https://fixture.local/server/rest/services/Throttled/MapServer",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "service_throttled_429.json",
+      "status": 200
+    }
+  ]
+}

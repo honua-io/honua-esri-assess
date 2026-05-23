@@ -1,0 +1,60 @@
+{
+  "routes": [
+    {
+      "url": "https://fixture.local/sharing/rest/portals/self",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "portals_self.json",
+      "status": 200
+    },
+    {
+      "url": "https://fixture.local/sharing/rest/portals/self/users",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "portals_self_users.json",
+      "status": 200
+    },
+    {
+      "url": "https://fixture.local/sharing/rest/community/groups",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "community_groups.json",
+      "status": 200
+    },
+    {
+      "url": "https://fixture.local/sharing/rest/search",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json", "q": "*", "start": "1", "num": "100" },
+      "body_file": "search_page_1.json",
+      "status": 200
+    },
+    {
+      "url": "https://fixture.local/sharing/rest/search",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json", "q": "*", "start": "3", "num": "100" },
+      "body_file": "search_page_1_429.json",
+      "status": 429
+    },
+    {
+      "url": "https://fixture.local/sharing/rest/content/items/item-feature-1",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "item_feature_1.json",
+      "status": 200
+    },
+    {
+      "url": "https://fixture.local/sharing/rest/content/items/item-map-1",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "item_map_1_403.json",
+      "status": 403
+    }
+  ]
+}

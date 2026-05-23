@@ -1,0 +1,8 @@
+{
+  "currentVersion": 11.1,
+  "folders": [],
+  "services": [
+    { "name": "Demo/Parcels", "type": "FeatureServer" },
+    { "name": "Demo/Imagery", "type": "MapServer" }
+  ]
+}

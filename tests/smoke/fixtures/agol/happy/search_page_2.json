@@ -1,0 +1,21 @@
+{
+  "query": "*",
+  "total": 4,
+  "start": 3,
+  "num": 100,
+  "nextStart": -1,
+  "results": [
+    {
+      "id": "item-webmap-1",
+      "title": "Parcels Operational Web Map",
+      "type": "Web Map",
+      "owner": "demo.publisher"
+    },
+    {
+      "id": "item-other-1",
+      "title": "Legacy Survey",
+      "type": "Form",
+      "owner": "demo.publisher"
+    }
+  ]
+}

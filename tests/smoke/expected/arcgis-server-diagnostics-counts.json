@@ -1,0 +1,14 @@
+{
+  "items": {
+    "portal-item": 0,
+    "server-service": 0,
+    "filegdb-feature-class": 0
+  },
+  "layers": 0,
+  "featureClasses": 0,
+  "serviceCounts": {
+    "FeatureServer": 1,
+    "MapServer": 1
+  },
+  "folders": []
+}

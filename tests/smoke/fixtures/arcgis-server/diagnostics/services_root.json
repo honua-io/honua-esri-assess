@@ -1,0 +1,8 @@
+{
+  "currentVersion": 11.1,
+  "folders": [],
+  "services": [
+    { "name": "Restricted", "type": "FeatureServer" },
+    { "name": "Throttled", "type": "MapServer" }
+  ]
+}

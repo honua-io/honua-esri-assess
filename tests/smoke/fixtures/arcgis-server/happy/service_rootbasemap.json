@@ -1,0 +1,6 @@
+{
+  "serviceDescription": "Root Basemap",
+  "layers": [
+    { "id": 0, "name": "Imagery" }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0123456789abcdef",
+  "name": "Honua Demo Portal",
+  "portalName": "ArcGIS Online for Honua Demo",
+  "urlKey": "honuademo",
+  "customBaseUrl": "maps.arcgis.com",
+  "isPortal": false
+}

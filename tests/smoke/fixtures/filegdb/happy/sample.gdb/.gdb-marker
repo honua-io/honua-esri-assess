@@ -1,0 +1,3 @@
+Sentinel file marking this directory as a fixture FileGDB. The real driver would
+read .gdbtable / .freelist files; for the smoke harness the descriptor in
+_inventory.json is the source of truth.

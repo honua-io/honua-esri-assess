@@ -73,41 +73,6 @@ def test_translate_arcpy_source_builds_ogc_process_payloads_for_supported_vector
     assert plan.unsupported_families == ("data-access", "spatial-analyst")
 
 
-def test_scan_arcpy_source_star_import_ignores_non_arcpy_bare_calls() -> None:
-    report = scan_arcpy_source(
-        """
-from arcpy import *
-
-print("scan started")
-len(["roads"])
-Buffer_analysis("roads", "roads_buffer", "25 Meters")
-"""
-    )
-
-    assert [call.qualified_name for call in report.calls] == ["arcpy.Buffer_analysis"]
-
-
-def test_translate_arcpy_source_preserves_expanded_kwargs_in_metadata() -> None:
-    plan = translate_arcpy_source(
-        """
-import arcpy
-
-extra = {"dissolve_option": "ALL"}
-arcpy.analysis.Buffer("roads", "roads_buffer", "25 Meters", **extra)
-"""
-    )
-
-    payload = plan.translations[0].payload
-
-    assert payload["inputs"] == {
-        "input_features": "roads",
-        "distance": "25 Meters",
-    }
-    assert payload["metadata"]["honuaMigration"]["expandedKeywords"] == [
-        {"value": {"python": "extra"}, "raw": "extra"}
-    ]
-
-
 def test_process_runner_executes_translated_steps_through_ogc_processes_client() -> None:
     plan = translate_arcpy_source(
         """

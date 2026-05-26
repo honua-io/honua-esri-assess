@@ -29,10 +29,8 @@ class ArcPyCall:
     column: int
     args: tuple[JsonValue, ...] = ()
     kwargs: Mapping[str, JsonValue] = field(default_factory=dict)
-    expanded_kwargs: tuple[JsonValue, ...] = ()
     raw_args: tuple[str, ...] = ()
     raw_kwargs: Mapping[str, str] = field(default_factory=dict)
-    raw_expanded_kwargs: tuple[str, ...] = ()
     assignment_targets: tuple[str, ...] = ()
     filename: str | None = None
 
@@ -58,9 +56,6 @@ class ArcPyCall:
             "rawKwargs": dict(self.raw_kwargs),
             "assignmentTargets": list(self.assignment_targets),
         }
-        if self.expanded_kwargs:
-            result["expandedKwargs"] = list(self.expanded_kwargs)
-            result["rawExpandedKwargs"] = list(self.raw_expanded_kwargs)
         if self.filename is not None:
             result["filename"] = self.filename
         return result
@@ -549,8 +544,6 @@ class _CallCollector(ast.NodeVisitor):
         qualified_name = _resolve_qualified_name(node.func, self.aliases, self.star_modules)
         if qualified_name is not None:
             family, tool = _classify_qualified_name(qualified_name)
-            named_keywords = [kw for kw in node.keywords if kw.arg is not None]
-            expanded_keywords = [kw for kw in node.keywords if kw.arg is None]
             self.calls.append(
                 ArcPyCall(
                     qualified_name=qualified_name,
@@ -559,11 +552,9 @@ class _CallCollector(ast.NodeVisitor):
                     line=node.lineno,
                     column=node.col_offset,
                     args=tuple(_node_value(arg) for arg in node.args),
-                    kwargs={kw.arg or "": _node_value(kw.value) for kw in named_keywords},
-                    expanded_kwargs=tuple(_node_value(kw.value) for kw in expanded_keywords),
+                    kwargs={kw.arg or "**": _node_value(kw.value) for kw in node.keywords},
                     raw_args=tuple(_node_source(arg) for arg in node.args),
-                    raw_kwargs={kw.arg or "": _node_source(kw.value) for kw in named_keywords},
-                    raw_expanded_kwargs=tuple(_node_source(kw.value) for kw in expanded_keywords),
+                    raw_kwargs={kw.arg or "**": _node_source(kw.value) for kw in node.keywords},
                     assignment_targets=_assignment_targets(node, self.parents),
                     filename=self.filename,
                 )
@@ -692,11 +683,6 @@ def _translate_call(call: ArcPyCall, *, process_id_map: Mapping[str, str]) -> Ar
         metadata["filename"] = call.filename
     if call.assignment_targets:
         metadata["assignmentTargets"] = list(call.assignment_targets)
-    if call.expanded_kwargs:
-        metadata["expandedKeywords"] = [
-            {"value": value, "raw": raw}
-            for value, raw in zip(call.expanded_kwargs, call.raw_expanded_kwargs, strict=False)
-        ]
     passthrough_keywords = sorted(set(call.kwargs) - consumed_keywords)
     if passthrough_keywords:
         metadata["passthroughKeywords"] = passthrough_keywords
@@ -758,25 +744,10 @@ def _resolve_qualified_name(node: ast.AST, aliases: Mapping[str, str], star_modu
         for module in star_modules:
             candidate = f"{module}.{base}"
             family, tool = _classify_qualified_name(candidate)
-            if _is_known_star_import_call(candidate, family, tool):
+            if _tool_key(family, tool) in _SUPPORTED_TOOL_SPECS or family != "unknown":
                 return candidate
 
     return None
-
-
-def _is_known_star_import_call(qualified_name: str, family: str, tool: str) -> bool:
-    if _tool_key(family, tool) in _SUPPORTED_TOOL_SPECS:
-        return True
-
-    parts = qualified_name.split(".")
-    if len(parts) != 2:
-        return False
-
-    if tool in _CORE_FUNCTION_FAMILIES:
-        return True
-
-    lowered = tool.lower()
-    return any(lowered.endswith(f"_{suffix}") for suffix in _LEGACY_SUFFIX_FAMILIES)
 
 
 def _attribute_parts(node: ast.AST) -> tuple[str, ...]:

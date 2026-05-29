@@ -84,7 +84,7 @@ def scan_server(
     )
 
 
-@scan_app.command("filegdb", help="Run the FileGDB inventory scanner.")
+@scan_app.command("filegdb", help="Run the FileGDB inventory descriptor scanner.")
 def scan_filegdb(
     target: TargetOption,
     output: OutputOption = DEFAULT_OUTPUT,
@@ -99,6 +99,40 @@ def scan_filegdb(
 ) -> None:
     run_scan_command(
         handler_name="filegdb",
+        target=target,
+        output=output,
+        token_env=token_env,
+        log_format=log_format,
+        log_level=log_level,
+        no_network_telemetry_confirm=no_network_telemetry_confirm,
+        user_agent=user_agent,
+        max_retries=max_retries,
+        timeout=timeout,
+        validate=validate,
+    )
+
+
+@scan_app.command(
+    "filegdb-workspace",
+    help=(
+        "Run the read-only pyogrio/GDAL FileGDB workspace scanner against a "
+        "local .gdb directory (requires the 'filegdb' extra)."
+    ),
+)
+def scan_filegdb_workspace(
+    target: TargetOption,
+    output: OutputOption = DEFAULT_OUTPUT,
+    token_env: TokenEnvOption = None,
+    log_format: LogFormatOption = LogFormat.text,
+    log_level: LogLevelOption = LogLevel.info,
+    no_network_telemetry_confirm: NoNetworkTelemetryConfirmOption = False,
+    user_agent: UserAgentOption = DEFAULT_USER_AGENT,
+    max_retries: MaxRetriesOption = 3,
+    timeout: TimeoutOption = 30.0,
+    validate: ValidateOption = False,
+) -> None:
+    run_scan_command(
+        handler_name="filegdb-workspace",
         target=target,
         output=output,
         token_env=token_env,

@@ -18,8 +18,9 @@ Shipped in the current contract line:
 - Fixture-backed read-only ArcGIS Online Portal Sharing API smoke scanner.
 - Fixture-backed read-only ArcGIS Server REST smoke scanner.
 - Fixture-backed FileGDB inventory descriptor scanner used by `scan filegdb`.
-- `pyogrio`/GDAL FileGDB workspace scanner exposed as the
-  `honua_esri_assess.filegdb` Python library (`scan_filegdb_workspace`).
+- `pyogrio`/GDAL FileGDB workspace scanner exposed both as the
+  `honua_esri_assess.filegdb` Python library (`scan_filegdb_workspace`) and as
+  the `scan filegdb-workspace` CLI command (requires the `filegdb` extra).
 - Markdown readiness report renderer smoke coverage.
 - Separate CI smoke job that runs the fixture-backed pipeline without a live
   Esri system.
@@ -35,9 +36,10 @@ Still out of scope for this line:
   `scan server` outputs. The v0.1 schema supports optional licensing blocks
   and the entitlements library is available for integration; the standalone
   `entitlements` CLI was retired alongside the E9 CLI consolidation.
-- A dedicated CLI surface for the `pyogrio` FileGDB workspace scanner. The
-  workspace scanner remains a library import; the `scan filegdb` CLI handler
-  reads the fixture-backed `_inventory.json` descriptor path only.
+- Vendoring of any closed Esri FileGDB driver. The `scan filegdb-workspace`
+  command relies on the optional `pyogrio`/GDAL backend for read-only metadata;
+  when the `filegdb` extra is absent the command still exits 0 and records a
+  `partial-coverage` diagnostic explaining the missing dependency.
 
 ## Quick start
 
@@ -71,7 +73,7 @@ honua-esri-assess schema validate EsriFootprint.json
 | ArcGIS Online | `scan agol --target <portal-url-or-sharing-rest-url> --output EsriFootprint.json` | none | Uses the Portal Sharing REST API read-only. |
 | ArcGIS Server | `scan server --target <rest-url> --output EsriFootprint.json` | none | Uses ArcGIS Server REST service metadata read-only. |
 | FileGDB (descriptor) | `scan filegdb --target <path> --output EsriFootprint.json` | none | Reads `<path>/_inventory.json` when `<path>` is a directory, or the descriptor file directly. |
-| FileGDB (workspace, library only) | `from honua_esri_assess.filegdb import scan_filegdb_workspace` | `filegdb` extra (`pyogrio`) | `pyogrio`/GDAL metadata calls against a local `.gdb` directory; no CLI surface yet. |
+| FileGDB (workspace) | `scan filegdb-workspace --target <path.gdb> --output EsriFootprint.json` | `filegdb` extra (`pyogrio`) | Read-only `pyogrio`/GDAL metadata calls against a local `.gdb` directory. Also available as the `honua_esri_assess.filegdb.scan_filegdb_workspace` library function. |
 
 ## Command-line usage
 
@@ -96,6 +98,12 @@ honua-esri-assess scan server \
 
 # Fixture/descriptor FileGDB path used by the smoke harness.
 honua-esri-assess scan filegdb \
+  --target ./sample.gdb \
+  --output EsriFootprint.json
+
+# pyogrio/GDAL FileGDB workspace scan against a local .gdb directory
+# (requires the optional `filegdb` extra).
+honua-esri-assess scan filegdb-workspace \
   --target ./sample.gdb \
   --output EsriFootprint.json
 
@@ -136,11 +144,15 @@ The ArcGIS Server `--target` must be the REST base whose `services` child lists
 the service catalog, typically `https://host/arcgis/rest`. The scanner appends
 `services`, folder names, and service probes below that base.
 
-The FileGDB `scan` handler reads a local descriptor only: either a directory
-containing `_inventory.json` or a descriptor file supplied directly. It never
-touches the network. The `pyogrio`/GDAL workspace scanner is exposed as the
-`honua_esri_assess.filegdb.scan_filegdb_workspace` library function — it is not
-wired to a CLI command in this release.
+The FileGDB `scan filegdb` handler reads a local descriptor only: either a
+directory containing `_inventory.json` or a descriptor file supplied directly.
+It never touches the network. The `scan filegdb-workspace` command runs the
+`pyogrio`/GDAL workspace scanner against a local `.gdb` directory using
+read-only metadata calls (`list_layers` / `read_info`); it never opens the
+network and never mutates the workspace. The same scanner is also exposed as
+the `honua_esri_assess.filegdb.scan_filegdb_workspace` library function. Install
+the optional backend with `pip install "honua-esri-assess[filegdb]"`; without
+it the command still exits 0 and records a `partial-coverage` diagnostic.
 
 ### Exit codes and failure surface
 

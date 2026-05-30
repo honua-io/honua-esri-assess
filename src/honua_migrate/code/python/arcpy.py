@@ -8,6 +8,7 @@ inventory work on developer machines without licensed Esri software.
 from __future__ import annotations
 
 import ast
+import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -154,16 +155,88 @@ class ArcPyMigrationPlan:
         }
 
 
+# OGC API - Processes job status values (Part 1, /req/job-list/job-list-success).
+JOB_STATUS_ACCEPTED = "accepted"
+JOB_STATUS_RUNNING = "running"
+JOB_STATUS_SUCCESSFUL = "successful"
+JOB_STATUS_FAILED = "failed"
+JOB_STATUS_DISMISSED = "dismissed"
+
+_TERMINAL_JOB_STATUSES = frozenset(
+    {JOB_STATUS_SUCCESSFUL, JOB_STATUS_FAILED, JOB_STATUS_DISMISSED}
+)
+_SYNC_COMPLETE_STATUSES = frozenset({JOB_STATUS_SUCCESSFUL, "succeeded", "ok", "complete", "completed"})
+
+
 @dataclass(frozen=True)
 class ArcPyProcessExecution:
-    """Result returned after executing one translated OGC process."""
+    """Result returned after executing one translated OGC process.
+
+    For synchronous execution ``result`` holds the immediate process response
+    and ``job_id``/``status``/``results`` stay ``None``. For asynchronous
+    execution ``job_id`` is the polled job identifier, ``status`` is the final
+    OGC job status, ``result`` is the terminal job status document, and
+    ``results`` is the downloaded results document when the job succeeded.
+    """
 
     translation: ArcPyProcessTranslation
     result: JsonObject
+    job_id: str | None = None
+    status: str | None = None
+    results: JsonObject | None = None
+
+    @property
+    def succeeded(self) -> bool:
+        """Return whether the execution reached a successful terminal state."""
+
+        if self.status is None:
+            return _job_status(self.result) in _SYNC_COMPLETE_STATUSES or _job_status(self.result) is None
+        return _normalize_status(self.status) == JOB_STATUS_SUCCESSFUL
+
+    def to_dict(self) -> JsonObject:
+        """Return a JSON-serializable execution evidence record."""
+
+        record: JsonObject = {
+            "translation": self.translation.to_dict(),
+            "result": self.result,
+            "succeeded": self.succeeded,
+        }
+        if self.job_id is not None:
+            record["jobId"] = self.job_id
+        if self.status is not None:
+            record["status"] = self.status
+        if self.results is not None:
+            record["results"] = self.results
+        return record
 
 
 class UnsupportedArcPyCallError(ValueError):
     """Raised when a runner is asked to execute an unsupported ArcPy call."""
+
+
+class ArcPyJobError(RuntimeError):
+    """Raised when a translated process job ends in a failed/dismissed state."""
+
+    def __init__(self, job_id: str | None, status: str, document: JsonObject) -> None:
+        self.job_id = job_id
+        self.status = status
+        self.document = document
+        label = f"job {job_id!r}" if job_id else "process job"
+        super().__init__(f"ArcPy migration {label} ended with status {status!r}.")
+
+
+class ArcPyJobTimeoutError(RuntimeError):
+    """Raised when a translated process job does not reach a terminal state."""
+
+    def __init__(self, job_id: str | None, status: str | None, polls: int) -> None:
+        self.job_id = job_id
+        self.status = status
+        self.polls = polls
+        label = f"job {job_id!r}" if job_id else "process job"
+        super().__init__(
+            f"ArcPy migration {label} did not finish after {polls} poll(s) "
+            f"(last status {status!r})."
+        )
 
 
 @dataclass(frozen=True)
@@ -620,21 +693,82 @@ class ArcPyProcessRunner:
     :class:`honua_sdk.protocols.OgcProcessesClient`.
     """
 
-    def __init__(self, client_or_processes: Any) -> None:
+    def __init__(
+        self,
+        client_or_processes: Any,
+        *,
+        poll_interval: float = 1.0,
+        max_polls: int = 120,
+        sleep: Any = None,
+    ) -> None:
         self._processes = client_or_processes.ogc_processes() if hasattr(client_or_processes, "ogc_processes") else client_or_processes
+        self._poll_interval = poll_interval
+        self._max_polls = max_polls
+        self._sleep = sleep if sleep is not None else _default_sleep
 
     def execute(self, translation: ArcPyProcessTranslation) -> ArcPyProcessExecution:
-        """Execute one translated ArcPy call as an OGC process."""
+        """Execute one translated ArcPy call as a synchronous OGC process."""
 
-        if not translation.process_id:
-            raise UnsupportedArcPyCallError(f"ArcPy call {translation.call.qualified_name!r} does not have a process mapping.")
-        result = self._processes.execute(translation.process_id, translation.payload)
+        process_id, payload = self._execution_args(translation)
+        result = self._processes.execute(process_id, payload)
         return ArcPyProcessExecution(translation=translation, result=result)
 
     def execute_plan(self, plan: ArcPyMigrationPlan) -> tuple[ArcPyProcessExecution, ...]:
-        """Execute all supported translations in plan order."""
+        """Execute all supported translations synchronously, in plan order."""
 
         return tuple(self.execute(translation) for translation in plan.translations)
+
+    def execute_async(self, translation: ArcPyProcessTranslation) -> ArcPyProcessExecution:
+        """Submit a translated call, poll its job, and download results.
+
+        The first response is treated as an OGC API - Processes status document.
+        When it carries a job id, the runner polls ``job(job_id)`` until the job
+        reaches a terminal status, then fetches ``job_results(job_id)`` on
+        success. A synchronous (non-job) response is returned as-is so callers
+        can use a single entry point regardless of server execution mode.
+        """
+
+        process_id, payload = self._execution_args(translation)
+        submission = self._processes.execute(process_id, payload)
+        job_id = _job_id(submission)
+        if job_id is None:
+            # Server ran the process synchronously; no job to poll.
+            return ArcPyProcessExecution(translation=translation, result=submission)
+
+        document = submission
+        status = _normalize_status(_job_status(submission))
+        polls = 0
+        while status not in _TERMINAL_JOB_STATUSES:
+            if polls >= self._max_polls:
+                raise ArcPyJobTimeoutError(job_id, status, polls)
+            self._sleep(self._poll_interval)
+            polls += 1
+            document = self._processes.job(job_id)
+            status = _normalize_status(_job_status(document))
+
+        if status != JOB_STATUS_SUCCESSFUL:
+            raise ArcPyJobError(job_id, status, document)
+
+        results = self._processes.job_results(job_id)
+        return ArcPyProcessExecution(
+            translation=translation,
+            result=document,
+            job_id=job_id,
+            status=status,
+            results=results,
+        )
+
+    def execute_plan_async(self, plan: ArcPyMigrationPlan) -> tuple[ArcPyProcessExecution, ...]:
+        """Execute all supported translations as polled jobs, in plan order."""
+
+        return tuple(self.execute_async(translation) for translation in plan.translations)
+
+    def _execution_args(self, translation: ArcPyProcessTranslation) -> tuple[str, JsonObject]:
+        if not translation.process_id:
+            raise UnsupportedArcPyCallError(
+                f"ArcPy call {translation.call.qualified_name!r} does not have a process mapping."
+            )
+        return translation.process_id, translation.payload
 
 
 def _translate_call(call: ArcPyCall, *, process_id_map: Mapping[str, str]) -> ArcPyProcessTranslation:
@@ -804,6 +938,53 @@ def _node_source(node: ast.AST) -> str:
         return ast.unparse(node)
     except Exception:  # pragma: no cover - ast.unparse should be available on supported Python
         return node.__class__.__name__
+
+
+def _default_sleep(seconds: float) -> None:
+    time.sleep(seconds)
+
+
+def _job_id(document: Any) -> str | None:
+    if not isinstance(document, Mapping):
+        return None
+    for key in ("jobID", "jobId", "job_id", "id"):
+        value = document.get(key)
+        if isinstance(value, str) and value:
+            return value
+        if isinstance(value, int):
+            return str(value)
+    return None
+
+
+def _job_status(document: Any) -> str | None:
+    if not isinstance(document, Mapping):
+        return None
+    value = document.get("status")
+    return value if isinstance(value, str) and value else None
+
+
+def _normalize_status(status: str | None) -> str | None:
+    if status is None:
+        return None
+    normalized = status.strip().lower()
+    return _STATUS_ALIASES.get(normalized, normalized)
+
+
+_STATUS_ALIASES: Mapping[str, str] = {
+    "succeeded": JOB_STATUS_SUCCESSFUL,
+    "success": JOB_STATUS_SUCCESSFUL,
+    "complete": JOB_STATUS_SUCCESSFUL,
+    "completed": JOB_STATUS_SUCCESSFUL,
+    "failure": JOB_STATUS_FAILED,
+    "error": JOB_STATUS_FAILED,
+    "dismiss": JOB_STATUS_DISMISSED,
+    "cancelled": JOB_STATUS_DISMISSED,
+    "canceled": JOB_STATUS_DISMISSED,
+    "pending": JOB_STATUS_ACCEPTED,
+    "queued": JOB_STATUS_ACCEPTED,
+    "in_progress": JOB_STATUS_RUNNING,
+    "inprogress": JOB_STATUS_RUNNING,
+}
 
 
 def _camel_to_snake(value: str) -> str:

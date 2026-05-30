@@ -1,0 +1,7 @@
+{
+  "total": 5,
+  "users": [
+    {"username": "alice"},
+    {"username": "bob"}
+  ]
+}

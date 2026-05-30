@@ -1,0 +1,744 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.honua.io/esri-footprint/v0.2.0/esri-footprint.json",
+  "title": "EsriFootprint",
+  "description": "Read-only inventory + optional authorized access export of an Esri estate produced by honua-esri-assess and consumed by the closed Honua migration product. Schema version esri-footprint/v0.2 (full SemVer in $id). v0.2 is the first line to carry the optional access facet; v0.1 continues to ship for consumers pinned to it. v0.x remains unstable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "tool",
+    "source",
+    "inventory",
+    "counts",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "v0.2",
+      "description": "Major.minor of the contract carried in-band. Full SemVer (e.g. v0.2.0) lives in $id."
+    },
+    "generatedAt": {
+      "$ref": "#/$defs/RFC3339",
+      "description": "When the scanner finished producing this artifact (RFC3339 UTC)."
+    },
+    "tool": { "$ref": "#/$defs/ToolProvenance" },
+    "source": { "$ref": "#/$defs/Source" },
+    "portal": { "$ref": "#/$defs/PortalFacet" },
+    "server": { "$ref": "#/$defs/ServerFacet" },
+    "filegdb": { "$ref": "#/$defs/FileGdbFacet" },
+    "inventory": {
+      "type": "array",
+      "description": "Normalized records from the scanned source, discriminated by EsriItem.kind.",
+      "items": { "$ref": "#/$defs/EsriItem" }
+    },
+    "counts": { "$ref": "#/$defs/Counts" },
+    "diagnostics": {
+      "type": "array",
+      "description": "Typed, prospect-safe diagnostics surfaced during scanning. Raw exceptions and stack traces are forbidden by project constraint and excluded from the schema.",
+      "items": { "$ref": "#/$defs/Diagnostic" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "source": { "properties": { "kind": { "const": "arcgis-online" } }, "required": ["kind"] } },
+        "required": ["source"]
+      },
+      "then": {
+        "required": ["portal"],
+        "not": {
+          "anyOf": [
+            { "required": ["server"] },
+            { "required": ["filegdb"] }
+          ]
+        },
+        "properties": {
+          "inventory": { "items": { "$ref": "#/$defs/PortalItem" } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "source": { "properties": { "kind": { "const": "arcgis-server" } }, "required": ["kind"] } },
+        "required": ["source"]
+      },
+      "then": {
+        "required": ["server"],
+        "not": {
+          "anyOf": [
+            { "required": ["portal"] },
+            { "required": ["filegdb"] }
+          ]
+        },
+        "properties": {
+          "inventory": { "items": { "$ref": "#/$defs/ServerService" } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "source": { "properties": { "kind": { "const": "filegdb" } }, "required": ["kind"] } },
+        "required": ["source"]
+      },
+      "then": {
+        "required": ["filegdb"],
+        "not": {
+          "anyOf": [
+            { "required": ["portal"] },
+            { "required": ["server"] }
+          ]
+        },
+        "properties": {
+          "inventory": { "items": { "$ref": "#/$defs/FileGdbFeatureClass" } }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "RFC3339": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?Z$",
+      "description": "RFC3339 UTC date-time string with an explicit Z suffix."
+    },
+    "SemVer": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+      "description": "Semantic version string."
+    },
+    "ToolProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "honua-esri-assess" },
+        "version": { "$ref": "#/$defs/SemVer" }
+      }
+    },
+    "Source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "locator", "capturedAt"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["arcgis-online", "arcgis-server", "filegdb"]
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capturedAt": { "$ref": "#/$defs/RFC3339" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "filegdb" } }, "required": ["kind"] },
+          "then": { "properties": { "locator": { "pattern": "^sha256:[0-9a-f]{64}$" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "arcgis-online" } }, "required": ["kind"] },
+          "then": { "properties": { "locator": { "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}/[A-Za-z0-9][A-Za-z0-9_-]{0,127}$" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "arcgis-server" } }, "required": ["kind"] },
+          "then": { "properties": { "locator": { "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$" } } }
+        }
+      ]
+    },
+    "SpatialReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wkid": { "type": "integer" },
+        "latestWkid": { "type": "integer" },
+        "wkt": { "type": "string" }
+      },
+      "anyOf": [
+        { "required": ["wkid"] },
+        { "required": ["latestWkid"] },
+        { "required": ["wkt"] }
+      ]
+    },
+    "Extent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bbox", "crs"],
+      "properties": {
+        "bbox": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "number" }
+        },
+        "crs": { "$ref": "#/$defs/SpatialReference" }
+      }
+    },
+    "GeometryType": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "esriGeometryPoint",
+            "esriGeometryMultipoint",
+            "esriGeometryPolyline",
+            "esriGeometryPolygon",
+            "esriGeometryEnvelope"
+          ]
+        },
+        { "type": "null" }
+      ]
+    },
+    "FieldDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "nullable": { "type": "boolean" }
+      }
+    },
+    "EsriTypeCountMap": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,79}$"
+      },
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "Identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._-]{1,128}$",
+      "description": "Prospect-safe identifier: alphanumerics, dot, underscore, dash. Bounded so URLs, tokens, and raw paths cannot ride as keys."
+    },
+    "PrincipalName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._@-]{1,128}$",
+      "description": "Prospect-safe principal name (username or role id). Bounded to safe characters; emails, tokens, and URLs are rejected."
+    },
+    "PortalFacet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["orgId", "orgUrl", "itemCounts"],
+      "properties": {
+        "orgId": { "type": "string", "minLength": 1 },
+        "orgUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$"
+        },
+        "itemCounts": { "$ref": "#/$defs/EsriTypeCountMap" },
+        "sharingSummary": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "private": { "type": "integer", "minimum": 0 },
+            "org": { "type": "integer", "minimum": 0 },
+            "public": { "type": "integer", "minimum": 0 },
+            "shared": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "licensing": { "$ref": "#/$defs/PortalLicensing" },
+        "access": {
+          "$ref": "#/$defs/PortalAccess",
+          "description": "Optional authorized access export. Present only when the operator opts in with an admin-tier token; otherwise omitted entirely."
+        }
+      }
+    },
+    "ServerFacet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["folders", "serviceCounts"],
+      "properties": {
+        "folders": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "serviceCounts": { "$ref": "#/$defs/EsriTypeCountMap" },
+        "version": { "type": "string" },
+        "licensing": { "$ref": "#/$defs/ServerLicensing" },
+        "access": {
+          "$ref": "#/$defs/ServerAccess",
+          "description": "Optional authorized access export. Present only when the operator opts in with an admin-tier token; otherwise omitted entirely."
+        }
+      }
+    },
+    "ExtensionEntitlement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "name", "status", "source"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "status": {
+          "type": "string",
+          "enum": ["licensed", "evaluation", "expired", "unknown"]
+        },
+        "source": {
+          "type": "string",
+          "enum": ["server-admin-licenses", "service-extensions", "portal-subscription"]
+        }
+      }
+    },
+    "UserTypeCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "total": { "type": "integer", "minimum": 0 },
+        "assigned": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "PortalPremiumContent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowedAddOns"],
+      "properties": {
+        "creditsEnabled": { "type": "boolean" },
+        "allowedAddOns": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "PortalLicensing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["userTypes", "premiumContent", "extensionsObserved"],
+      "properties": {
+        "tier": { "type": "string", "minLength": 1 },
+        "subscriptionType": { "type": "string", "minLength": 1 },
+        "userTypes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/UserTypeCount" }
+        },
+        "premiumContent": { "$ref": "#/$defs/PortalPremiumContent" },
+        "extensionsObserved": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ExtensionEntitlement" }
+        }
+      }
+    },
+    "ServiceExtensionRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serviceUrl", "soes", "sois"],
+      "properties": {
+        "serviceUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$"
+        },
+        "soes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "sois": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "ServerLicensing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extensions", "serviceExtensions"],
+      "properties": {
+        "productName": { "type": "string", "minLength": 1 },
+        "currentVersion": { "type": "string", "minLength": 1 },
+        "edition": { "type": "string", "minLength": 1 },
+        "extensions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ExtensionEntitlement" }
+        },
+        "serviceExtensions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ServiceExtensionRecord" }
+        }
+      }
+    },
+    "UserPrincipal": {
+      "type": "object",
+      "description": "One Esri user account observed during the access export. Emails, password hashes, MFA seeds, OAuth client secrets, and session tokens are forbidden by schema.",
+      "additionalProperties": false,
+      "required": ["username", "status", "groupIds"],
+      "properties": {
+        "username": { "$ref": "#/$defs/PrincipalName" },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "roleId": { "$ref": "#/$defs/Identifier" },
+        "userType": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "status": {
+          "type": "string",
+          "enum": ["active", "disabled", "unknown"]
+        },
+        "lastLogin": { "$ref": "#/$defs/RFC3339" },
+        "groupIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Identifier" }
+        }
+      }
+    },
+    "RoleDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "scope", "privileges"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Identifier" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "scope": {
+          "type": "string",
+          "enum": ["admin", "publisher", "user", "custom"]
+        },
+        "privileges": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        },
+        "description": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    },
+    "GroupDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "access",
+        "owner",
+        "capabilities",
+        "isInvitationOnly",
+        "isViewOnly"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/Identifier" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "access": {
+          "type": "string",
+          "enum": ["private", "org", "public", "shared"]
+        },
+        "owner": { "$ref": "#/$defs/PrincipalName" },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+        },
+        "isInvitationOnly": { "type": "boolean" },
+        "isViewOnly": { "type": "boolean" },
+        "memberCount": { "type": "integer", "minimum": 0 },
+        "sharedItemCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ItemSharing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["itemId", "owner", "accessLevel", "sharedWithGroupIds"],
+      "properties": {
+        "itemId": { "$ref": "#/$defs/Identifier" },
+        "owner": { "$ref": "#/$defs/PrincipalName" },
+        "accessLevel": {
+          "type": "string",
+          "enum": ["private", "org", "public", "shared"]
+        },
+        "sharedWithGroupIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Identifier" }
+        }
+      }
+    },
+    "ServicePermission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serviceUrl", "principal", "principalKind", "capabilities"],
+      "properties": {
+        "serviceUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$"
+        },
+        "principal": { "$ref": "#/$defs/PrincipalName" },
+        "principalKind": {
+          "type": "string",
+          "enum": ["user", "role", "group"]
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+        }
+      }
+    },
+    "OrgSecurityPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signInMethods", "allowedOrigins"],
+      "properties": {
+        "mfaRequired": { "type": "boolean" },
+        "signInMethods": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+        },
+        "passwordMinLength": { "type": "integer", "minimum": 0, "maximum": 1024 },
+        "passwordComplexity": { "type": "boolean" },
+        "allowedOrigins": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9.:_/-]{1,256}$"
+          }
+        },
+        "sessionExpiryMinutes": { "type": "integer", "minimum": 0, "maximum": 525600 }
+      }
+    },
+    "HonuaRoleMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["esriRoleId", "honuaRole", "confidence", "rationale"],
+      "properties": {
+        "esriRoleId": { "$ref": "#/$defs/Identifier" },
+        "honuaRole": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "builtin": {
+          "type": "string",
+          "enum": ["admin", "editor", "viewer"]
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
+        },
+        "rationale": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    },
+    "OidcRoleClaimMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["honuaRole", "claimName", "claimValue", "confidence"],
+      "properties": {
+        "honuaRole": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "claimName": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "claimValue": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
+        }
+      }
+    },
+    "FacadeAccessPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyId", "accessLevel", "itemIds", "groupIds", "confidence"],
+      "properties": {
+        "policyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9._:-]{1,256}$"
+        },
+        "accessLevel": {
+          "type": "string",
+          "enum": ["private", "org", "public", "shared"]
+        },
+        "itemIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Identifier" }
+        },
+        "groupIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Identifier" }
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
+        }
+      }
+    },
+    "MappingRecommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["honuaRoles", "oidcRoleClaims", "facadeAccessPolicies"],
+      "properties": {
+        "honuaRoles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/HonuaRoleMapping" }
+        },
+        "oidcRoleClaims": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/OidcRoleClaimMapping" }
+        },
+        "facadeAccessPolicies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FacadeAccessPolicy" }
+        }
+      }
+    },
+    "PortalAccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["users", "roles", "groups", "itemSharing"],
+      "properties": {
+        "users": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/UserPrincipal" }
+        },
+        "roles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/RoleDefinition" }
+        },
+        "groups": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/GroupDefinition" }
+        },
+        "itemSharing": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ItemSharing" }
+        },
+        "securityPolicy": { "$ref": "#/$defs/OrgSecurityPolicy" },
+        "mappingRecommendation": { "$ref": "#/$defs/MappingRecommendation" }
+      }
+    },
+    "ServerAccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["users", "roles", "servicePermissions"],
+      "properties": {
+        "users": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/UserPrincipal" }
+        },
+        "roles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/RoleDefinition" }
+        },
+        "servicePermissions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ServicePermission" }
+        },
+        "securityMode": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "authTier": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "mappingRecommendation": { "$ref": "#/$defs/MappingRecommendation" }
+      }
+    },
+    "FileGdbFacet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pathHash", "featureClassCount"],
+      "properties": {
+        "pathHash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "featureClassCount": { "type": "integer", "minimum": 0 },
+        "version": { "type": "string" }
+      }
+    },
+    "EsriItem": {
+      "oneOf": [
+        { "$ref": "#/$defs/PortalItem" },
+        { "$ref": "#/$defs/ServerService" },
+        { "$ref": "#/$defs/FileGdbFeatureClass" }
+      ]
+    },
+    "PortalItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "type", "owner", "title", "sharing", "modified"],
+      "properties": {
+        "kind": { "const": "portal-item" },
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string" },
+        "owner": { "type": "string" },
+        "title": { "type": "string" },
+        "sharing": {
+          "type": "string",
+          "enum": ["private", "org", "public", "shared"]
+        },
+        "modified": { "$ref": "#/$defs/RFC3339" },
+        "extent": { "$ref": "#/$defs/Extent" },
+        "dependencies": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "ServerService": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "serviceUrl", "serviceType", "folder", "layerCount"],
+      "properties": {
+        "kind": { "const": "server-service" },
+        "serviceUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$"
+        },
+        "serviceType": { "type": "string" },
+        "folder": { "type": "string" },
+        "layerCount": { "type": "integer", "minimum": 0 },
+        "geometryType": { "$ref": "#/$defs/GeometryType" },
+        "extent": { "$ref": "#/$defs/Extent" },
+        "sr": { "$ref": "#/$defs/SpatialReference" }
+      }
+    },
+    "FileGdbFeatureClass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name", "geometryType", "sr"],
+      "properties": {
+        "kind": { "const": "filegdb-feature-class" },
+        "name": { "type": "string", "minLength": 1 },
+        "geometryType": { "$ref": "#/$defs/GeometryType" },
+        "sr": { "$ref": "#/$defs/SpatialReference" },
+        "featureCount": { "type": "integer", "minimum": 0 },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FieldDescriptor" }
+        }
+      }
+    },
+    "Counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "layers", "featureClasses"],
+      "properties": {
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "portal-item": { "type": "integer", "minimum": 0 },
+            "server-service": { "type": "integer", "minimum": 0 },
+            "filegdb-feature-class": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "layers": { "type": "integer", "minimum": 0 },
+        "featureClasses": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "Diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "scope"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "rate-limited",
+            "partial-coverage",
+            "missing-permission",
+            "unresolved-reference",
+            "unsupported-item-type",
+            "redacted-field"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "warn", "error"]
+        },
+        "message": { "type": "string" },
+        "scope": { "type": "string" },
+        "hint": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "permissions": [
+    {"principal": "Publisher", "principalKind": "role", "operations": ["Query", "Edit"]},
+    {"principal": "alice", "principalKind": "user", "operations": ["Query"]},
+    {"principal": "GuestGroup", "isGroup": true, "operations": ["Query"]},
+    {"principal": "https://leak/?", "operations": ["Query"]},
+    {"principal": "bob", "operations": []}
+  ]
+}

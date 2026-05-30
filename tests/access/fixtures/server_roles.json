@@ -1,0 +1,8 @@
+{
+  "roles": [
+    {"rolename": "Administrator", "privileges": ["admin"], "description": "Server admin"},
+    {"rolename": "Publisher", "privileges": ["publish", "edit"]},
+    {"rolename": "FieldEditor", "privileges": ["edit", "view"]}
+  ],
+  "hasMore": false
+}

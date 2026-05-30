@@ -54,6 +54,8 @@ class ScanOptions:
     max_retries: int
     timeout: float
     validate: bool
+    include_access: bool = False
+    access_group_cap: int = 200
     token: str | None = field(default=None, repr=False)
 
 
@@ -139,6 +141,37 @@ ValidateOption = Annotated[
         help="Validate the generated EsriFootprint.json against the bundled schema.",
     ),
 ]
+IncludeAccessOption = Annotated[
+    bool,
+    typer.Option(
+        "--include-access/--no-include-access",
+        help=(
+            "Enable the authorized access export (identity/RBAC, per-service "
+            "permissions). Requires --token-env and emits EsriFootprint schema "
+            "v0.2; off by default."
+        ),
+    ),
+]
+
+
+def _validate_access_group_cap(value: int) -> int:
+    if value < 0:
+        raise typer.BadParameter("--access-group-cap must be >= 0")
+    return value
+
+
+AccessGroupCapOption = Annotated[
+    int,
+    typer.Option(
+        "--access-group-cap",
+        min=0,
+        callback=_validate_access_group_cap,
+        help=(
+            "Per-group member-probe cap when --include-access is set. "
+            "Groups exceeding the cap emit a partial-coverage diagnostic."
+        ),
+    ),
+]
 
 
 def build_scan_options(
@@ -153,11 +186,19 @@ def build_scan_options(
     max_retries: int,
     timeout: float,
     validate: bool,
+    include_access: bool = False,
+    access_group_cap: int = 200,
 ) -> ScanOptions:
     configure_logging(level=log_level.value, log_format=log_format.value)
     token = os.environ.get(token_env) if token_env else None
     if token_env:
         LOGGER.info("using token from environment variable %s", token_env)
+    if include_access and not token:
+        raise DiagnosticError(
+            "--include-access requires --token-env pointing to an admin-tier token.",
+            code="access-token-required",
+            scope="access",
+        )
     return ScanOptions(
         target=target,
         output=output,
@@ -169,6 +210,8 @@ def build_scan_options(
         max_retries=max_retries,
         timeout=timeout,
         validate=validate,
+        include_access=include_access,
+        access_group_cap=access_group_cap,
         token=token,
     )
 
@@ -204,21 +247,29 @@ def run_scan_command(
     max_retries: int,
     timeout: float,
     validate: bool,
+    include_access: bool = False,
+    access_group_cap: int = 200,
 ) -> None:
     from honua_esri_assess.commands.scan_handlers import get_handler
 
-    options = build_scan_options(
-        target=target,
-        output=output,
-        token_env=token_env,
-        log_format=log_format,
-        log_level=log_level,
-        no_network_telemetry_confirm=no_network_telemetry_confirm,
-        user_agent=user_agent,
-        max_retries=max_retries,
-        timeout=timeout,
-        validate=validate,
-    )
+    try:
+        options = build_scan_options(
+            target=target,
+            output=output,
+            token_env=token_env,
+            log_format=log_format,
+            log_level=log_level,
+            no_network_telemetry_confirm=no_network_telemetry_confirm,
+            user_agent=user_agent,
+            max_retries=max_retries,
+            timeout=timeout,
+            validate=validate,
+            include_access=include_access,
+            access_group_cap=access_group_cap,
+        )
+    except DiagnosticError as exc:
+        print_diagnostic_error(exc)
+        raise typer.Exit(exc.exit_code) from None
     try:
         result = get_handler(handler_name).run(options)
         persist_scan_result(options, result)

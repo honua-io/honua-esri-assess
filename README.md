@@ -25,6 +25,11 @@ Shipped in the current contract line:
   Esri system.
 - Read-only entitlement enumeration available as a Python library
   (`honua_esri_assess.entitlements`) for prospective `scan` integration.
+- Optional authorized identity/RBAC export on `scan agol` /
+  `scan server` via `--include-access`. Output is embedded inside
+  `EsriFootprint.json` as an `access` block under `portal` / `server`;
+  enabling it bumps the emitted artifact to `schemaVersion v0.2`. See
+  [`docs/access.md`](docs/access.md).
 - PyPI release path through release-please and Trusted Publishing.
 Still out of scope for this line:
 
@@ -92,6 +97,16 @@ honua-esri-assess scan agol \
 # ArcGIS Server REST endpoint.
 honua-esri-assess scan server \
   --target https://gis.example.com/arcgis \
+  --output EsriFootprint.json
+
+# Authorized identity/RBAC export inside the footprint. Requires --token-env
+# and bumps the artifact to schemaVersion v0.2.
+export AGOL_ADMIN_TOKEN="..."
+honua-esri-assess scan agol \
+  --target https://yourorg.maps.arcgis.com/sharing/rest \
+  --token-env AGOL_ADMIN_TOKEN \
+  --include-access \
+  --access-group-cap 200 \
   --output EsriFootprint.json
 
 # Fixture/descriptor FileGDB path used by the smoke harness.
@@ -163,6 +178,11 @@ wired to a CLI command in this release.
   (`output-write-failed`).
 - Exit `30` — schema validation failed for `scan --validate` or
   `schema validate` (`schema-validation-failed`).
+- A non-zero exit with `access-token-required` on stderr — `--include-access`
+  was requested without a `--token-env`; supply an admin-tier token and retry.
+- A non-zero exit with `access-export-failed` on stderr — the authorized
+  access export hit a hard Esri admin-endpoint failure; the artifact was not
+  written.
 - Exit `1` — an unexpected internal error occurred (`internal-error`). Raw
   exception details are not printed.
 

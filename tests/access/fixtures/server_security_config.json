@@ -1,0 +1,4 @@
+{
+  "securityMode": "BUILTIN",
+  "authenticationTier": "GIS_SERVER"
+}

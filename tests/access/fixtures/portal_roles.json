@@ -1,0 +1,24 @@
+{
+  "roles": [
+    {
+      "id": "custom_editor",
+      "name": "Custom Editor",
+      "scope": "custom",
+      "privileges": ["portal:user:viewItems", "portal:user:updateItems"],
+      "description": "Edit-only custom role"
+    },
+    {
+      "id": "custom_viewer",
+      "name": "Custom Viewer",
+      "scope": "custom",
+      "privileges": ["portal:user:viewItems"]
+    },
+    {
+      "id": "org_admin",
+      "name": "Administrator",
+      "privileges": ["portal:admin:*"]
+    }
+  ],
+  "total": 3,
+  "nextStart": -1
+}

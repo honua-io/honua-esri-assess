@@ -45,3 +45,40 @@ def test_client_module_does_not_hardcode_any_real_host() -> None:
     allowed = {"https://github.com/honua-io/honua-esri-assess"}
     leftovers = [url for url in hardcoded if url not in allowed]
     assert not leftovers, f"unexpected hardcoded URLs in client.py: {leftovers}"
+
+
+def test_access_collectors_emit_only_get_requests() -> None:
+    """Access collectors must only call get_json on the HttpClient protocol.
+
+    The HTTP client protocol exposes only get_json (no post/put/delete), but the
+    invariant is worth re-stating against the new modules to catch a regression
+    if someone introduces a different transport.
+    """
+
+    for module_name in ("portal.py", "server.py"):
+        text = (SRC_ROOT / "access" / module_name).read_text(encoding="utf-8")
+        forbidden_verbs = (
+            "self._client.post",
+            "self._client.put",
+            "self._client.delete",
+            "self._client.patch",
+            "requests.post",
+            "requests.put",
+            "requests.delete",
+            "requests.patch",
+        )
+        for verb in forbidden_verbs:
+            assert verb not in text, (
+                f"access/{module_name} uses {verb}; collectors must stay read-only."
+            )
+
+
+def test_access_models_do_not_declare_secret_fields() -> None:
+    """Backstop the runtime guard in access.models with a static check."""
+
+    text = (SRC_ROOT / "access" / "models.py").read_text(encoding="utf-8")
+    for forbidden_field in ("email:", "password_hash:", "client_secret:", "mfa_seed:"):
+        assert forbidden_field not in text, (
+            f"access/models.py declares forbidden field {forbidden_field!r}; "
+            "secrets are not part of the v0.2 access contract."
+        )

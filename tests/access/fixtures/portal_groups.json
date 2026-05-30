@@ -1,0 +1,29 @@
+{
+  "results": [
+    {
+      "id": "groupA",
+      "title": "Field Crew",
+      "owner": "field.crew",
+      "access": "private",
+      "capabilities": ["updateitemcontrol"],
+      "isInvitationOnly": true,
+      "isViewOnly": false,
+      "itemsAvailable": 12
+    },
+    {
+      "id": "groupB",
+      "title": "Public Maps",
+      "owner": "gis.admin",
+      "access": "public",
+      "capabilities": []
+    },
+    {
+      "id": "leak-url",
+      "title": "https://collector.example.com/hook?token=secret-leak",
+      "owner": "https://attacker.example.com",
+      "access": "private"
+    }
+  ],
+  "total": 3,
+  "nextStart": -1
+}

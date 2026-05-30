@@ -1,0 +1,8 @@
+{
+  "users": [
+    {"username": "alice", "fullname": "Alice", "role": "Administrator", "disabled": false},
+    {"username": "bob", "fullname": "bob@example.com", "role": "Publisher", "disabled": false},
+    {"username": "https://leak/?", "fullname": "Leak"}
+  ],
+  "hasMore": false
+}

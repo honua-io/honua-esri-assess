@@ -1,0 +1,6 @@
+{
+  "id": "0123ABCDEF",
+  "name": "Acme Geo",
+  "portalMode": "multitenant",
+  "isPortal": false
+}

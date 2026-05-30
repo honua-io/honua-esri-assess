@@ -1,0 +1,37 @@
+{
+  "results": [
+    {
+      "username": "alice",
+      "fullName": "Alice Example",
+      "roleId": "org_admin",
+      "userType": "creatorUT",
+      "disabled": false,
+      "lastLogin": 1700000000000,
+      "groups": ["groupA"]
+    },
+    {
+      "username": "bob",
+      "fullName": "bob@example.com",
+      "roleId": "custom_editor",
+      "userType": "fieldWorkerUT",
+      "disabled": false,
+      "lastLogin": 1690000000000,
+      "groups": ["groupA", "groupB"]
+    },
+    {
+      "username": "carol",
+      "fullName": "",
+      "roleId": "custom_viewer",
+      "userType": "viewerUT",
+      "disabled": true,
+      "lastLogin": null,
+      "groups": []
+    },
+    {
+      "username": "https://leak.example.com/u?token=xyz",
+      "fullName": "Should Be Skipped"
+    }
+  ],
+  "total": 4,
+  "nextStart": -1
+}

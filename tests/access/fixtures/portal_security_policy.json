@@ -1,0 +1,9 @@
+{
+  "mfaRequired": true,
+  "signinOptions": ["builtin", "oidc"],
+  "minLength": 12,
+  "hasMixedCase": true,
+  "hasDigit": true,
+  "allowedOrigins": ["https://example.com", "https://maps.example.com"],
+  "sessionExpiry": 60
+}

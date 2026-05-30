@@ -66,6 +66,7 @@ packages = ["src/honua_esri_assess"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "schemas/esri-footprint-v0.1.json" = "honua_esri_assess/schemas/esri-footprint-v0.1.json"
+"schemas/esri-footprint-v0.2.json" = "honua_esri_assess/schemas/esri-footprint-v0.2.json"
 
 [tool.hatch.build.targets.sdist]
 include = [

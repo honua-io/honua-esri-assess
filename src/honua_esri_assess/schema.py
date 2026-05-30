@@ -13,33 +13,37 @@ from . import SCHEMA_VERSION
 from .diagnostics import SchemaValidationError
 
 SCHEMA_FILENAME = "esri-footprint-v0.1.json"
+_SUPPORTED_SCHEMAS: dict[str, str] = {
+    "v0.1": "esri-footprint-v0.1.json",
+    "v0.2": "esri-footprint-v0.2.json",
+}
 
 
-def _repo_schema_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "schemas" / SCHEMA_FILENAME
+def _repo_schema_path(filename: str) -> Path:
+    return Path(__file__).resolve().parents[2] / "schemas" / filename
 
 
-def schema_text() -> str:
-    """Return the bundled schema text.
+def schema_text(version: str | None = None) -> str:
+    """Return the bundled schema text for *version* (default: v0.1).
 
     Wheels carry the schema as a package resource. Editable installs and source
     tree test runs use the top-level schema copy.
     """
 
-    package_path = resources.files("honua_esri_assess").joinpath(
-        "schemas", SCHEMA_FILENAME
-    )
+    filename = _filename_for_version(version)
+    package_path = resources.files("honua_esri_assess").joinpath("schemas", filename)
     if package_path.is_file():
         return package_path.read_text(encoding="utf-8")
-    return _repo_schema_path().read_text(encoding="utf-8")
+    return _repo_schema_path(filename).read_text(encoding="utf-8")
 
 
-def load_schema() -> dict[str, Any]:
-    return json.loads(schema_text())
+def load_schema(version: str | None = None) -> dict[str, Any]:
+    return json.loads(schema_text(version))
 
 
 def validate_footprint(footprint: dict[str, Any]) -> None:
-    schema = load_schema()
+    schema_version = _detect_schema_version(footprint)
+    schema = load_schema(schema_version)
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
     errors = sorted(
         validator.iter_errors(footprint),
@@ -50,7 +54,7 @@ def validate_footprint(footprint: dict[str, Any]) -> None:
         location = _safe_error_location(first.path)
         keyword = str(first.validator or "schema")
         raise SchemaValidationError(
-            f"EsriFootprint.json does not conform to schema {SCHEMA_VERSION}: "
+            f"EsriFootprint.json does not conform to schema {schema_version}: "
             f"{location}: failed {keyword} validation."
         )
 
@@ -81,3 +85,21 @@ def _safe_location_part(part: object) -> str:
     if text.replace("_", "").replace("-", "").isalnum():
         return text
     return "<field>"
+
+
+def _detect_schema_version(footprint: dict[str, Any]) -> str:
+    declared = footprint.get("schemaVersion")
+    if isinstance(declared, str) and declared in _SUPPORTED_SCHEMAS:
+        return declared
+    return SCHEMA_VERSION
+
+
+def _filename_for_version(version: str | None) -> str:
+    if version is None:
+        return SCHEMA_FILENAME
+    if version in _SUPPORTED_SCHEMAS:
+        return _SUPPORTED_SCHEMAS[version]
+    raise SchemaValidationError(
+        f"EsriFootprint.json declares schemaVersion {version!r}, which is "
+        "not supported by this honua-esri-assess release."
+    )

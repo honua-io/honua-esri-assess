@@ -7,6 +7,8 @@ import typer
 from honua_esri_assess.commands.common import (
     DEFAULT_OUTPUT,
     DEFAULT_USER_AGENT,
+    AccessGroupCapOption,
+    IncludeAccessOption,
     LogFormat,
     LogFormatOption,
     LogLevel,
@@ -40,6 +42,8 @@ def scan_agol(
     max_retries: MaxRetriesOption = 3,
     timeout: TimeoutOption = 30.0,
     validate: ValidateOption = False,
+    include_access: IncludeAccessOption = False,
+    access_group_cap: AccessGroupCapOption = 200,
 ) -> None:
     run_scan_command(
         handler_name="agol",
@@ -53,6 +57,8 @@ def scan_agol(
         max_retries=max_retries,
         timeout=timeout,
         validate=validate,
+        include_access=include_access,
+        access_group_cap=access_group_cap,
     )
 
 
@@ -68,6 +74,8 @@ def scan_server(
     max_retries: MaxRetriesOption = 3,
     timeout: TimeoutOption = 30.0,
     validate: ValidateOption = False,
+    include_access: IncludeAccessOption = False,
+    access_group_cap: AccessGroupCapOption = 200,
 ) -> None:
     run_scan_command(
         handler_name="server",
@@ -81,6 +89,8 @@ def scan_server(
         max_retries=max_retries,
         timeout=timeout,
         validate=validate,
+        include_access=include_access,
+        access_group_cap=access_group_cap,
     )
 
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import ast
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -17,6 +17,34 @@ from typing import Any, Literal
 JsonObject = dict[str, Any]
 JsonValue = str | int | float | bool | None | JsonObject | list[Any]
 InputKind = Literal["input", "output", "parameter"]
+MigrationStatus = Literal["translatable", "manual-review", "unsupported"]
+
+
+#: Honua process identifiers the reconciled honua-server geoprocessing runtime
+#: can actually *job-execute* today (honua-server#1228). These are the
+#: namespaced job/run-path process ids -- distinct from the bare OGC API
+#: Processes ids used by :class:`ArcPyProcessRunner`. A registered ArcPy tool
+#: spec is only classified ``"translatable"`` (a clean, server-runnable
+#: migration) when its ``job_process_id`` is in this set. Tools whose Honua
+#: target is not job-executable are emitted as ``"manual-review"`` so the
+#: codemod never claims a migration the server cannot run.
+#:
+#: IMPORTANT (coverage<=server-execution coupling): grow this set ONLY when the
+#: reconciled server gains a corresponding job-executable process. Migration
+#: coverage is gated on it, not on how many ArcPy tools we can parse.
+EXECUTABLE_PROCESS_IDS: frozenset[str] = frozenset(
+    {
+        "geometry.buffer",
+        "geometry.project",
+        "geometry.simplify",
+        "geometry.clip",
+        "geometry.intersect",
+        "geometry.union",
+        "geometry.dissolve",
+        "geometry.make-valid",
+        "analytics.spatial-join-managed",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -30,16 +58,75 @@ class ArcPyCall:
     column: int
     args: tuple[JsonValue, ...] = ()
     kwargs: Mapping[str, JsonValue] = field(default_factory=dict)
+    expanded_kwargs: tuple[JsonValue, ...] = ()
     raw_args: tuple[str, ...] = ()
     raw_kwargs: Mapping[str, str] = field(default_factory=dict)
+    raw_expanded_kwargs: tuple[str, ...] = ()
     assignment_targets: tuple[str, ...] = ()
     filename: str | None = None
 
     @property
+    def _spec(self) -> _ToolSpec | None:
+        return _lookup_spec(self.family, self.tool)
+
+    @property
     def supported(self) -> bool:
-        """Return whether the call has a first-slice Honua process mapping."""
+        """Return whether the call has a first-slice Honua process mapping.
+
+        ``supported`` means "we know which Honua OGC process this maps to",
+        which is broader than :attr:`translatable`. A supported-but-not-yet
+        -job-executable tool is classified ``"manual-review"``.
+        """
 
         return _tool_key(self.family, self.tool) in _SUPPORTED_TOOL_SPECS
+
+    @property
+    def status(self) -> MigrationStatus:
+        """Migration status for this call.
+
+        * ``"translatable"`` -- a registered tool whose Honua job target is
+          executable by the reconciled server today (see
+          :data:`EXECUTABLE_PROCESS_IDS`).
+        * ``"manual-review"`` -- a registered tool whose job target is not yet
+          executable, so it is emitted for human migration rather than a
+          server-runnable claim.
+        * ``"unsupported"`` -- no Honua mapping exists for this ArcPy call.
+        """
+
+        spec = self._spec
+        if spec is None:
+            return "unsupported"
+        return spec.status_for(self)[0]
+
+    @property
+    def manual_review_reason(self) -> str | None:
+        """Why this call is manual-review (or ``None`` when not manual-review)."""
+
+        spec = self._spec
+        if spec is None:
+            return None
+        status, reason = spec.status_for(self)
+        return reason if status == "manual-review" else None
+
+    @property
+    def translatable(self) -> bool:
+        """Whether this call maps to a Honua process the server can job-execute."""
+
+        return self.status == "translatable"
+
+    @property
+    def process_id(self) -> str | None:
+        """Target Honua OGC API Processes id, when a mapping exists."""
+
+        spec = self._spec
+        return spec.process_id if spec is not None else None
+
+    @property
+    def job_process_id(self) -> str | None:
+        """Reconciled-server job-executable process id, when one exists."""
+
+        spec = self._spec
+        return spec.job_process_id if spec is not None else None
 
     def to_dict(self) -> JsonObject:
         """Return a JSON-serializable call inventory entry."""
@@ -51,12 +138,18 @@ class ArcPyCall:
             "line": self.line,
             "column": self.column,
             "supported": self.supported,
+            "status": self.status,
+            "processId": self.process_id,
+            "jobProcessId": self.job_process_id,
             "args": list(self.args),
             "kwargs": dict(self.kwargs),
             "rawArgs": list(self.raw_args),
             "rawKwargs": dict(self.raw_kwargs),
             "assignmentTargets": list(self.assignment_targets),
         }
+        if self.expanded_kwargs:
+            result["expandedKwargs"] = list(self.expanded_kwargs)
+            result["rawExpandedKwargs"] = list(self.raw_expanded_kwargs)
         if self.filename is not None:
             result["filename"] = self.filename
         return result
@@ -73,15 +166,27 @@ class ArcPyScanReport:
 
     @property
     def supported_calls(self) -> tuple[ArcPyCall, ...]:
-        """Calls that can be translated to a Honua OGC Processes request."""
+        """Calls with any known Honua OGC process mapping (registered)."""
 
         return tuple(call for call in self.calls if call.supported)
+
+    @property
+    def translatable_calls(self) -> tuple[ArcPyCall, ...]:
+        """Calls mapping to a Honua process the reconciled server can run."""
+
+        return tuple(call for call in self.calls if call.translatable)
+
+    @property
+    def manual_review_calls(self) -> tuple[ArcPyCall, ...]:
+        """Calls with a known mapping whose job target is not yet executable."""
+
+        return tuple(call for call in self.calls if call.status == "manual-review")
 
     @property
     def unsupported_calls(self) -> tuple[ArcPyCall, ...]:
         """Calls that were classified but do not have a process mapping yet."""
 
-        return tuple(call for call in self.calls if not call.supported)
+        return tuple(call for call in self.calls if call.status == "unsupported")
 
     @property
     def unsupported_families(self) -> tuple[str, ...]:
@@ -97,6 +202,8 @@ class ArcPyScanReport:
             "imports": dict(self.imports),
             "calls": [call.to_dict() for call in self.calls],
             "supportedCount": len(self.supported_calls),
+            "translatableCount": len(self.translatable_calls),
+            "manualReviewCount": len(self.manual_review_calls),
             "unsupportedCount": len(self.unsupported_calls),
             "unsupportedFamilies": list(self.unsupported_families),
         }
@@ -107,12 +214,20 @@ class ArcPyScanReport:
 
 @dataclass(frozen=True)
 class ArcPyProcessTranslation:
-    """A supported ArcPy call expressed as an OGC API Processes execution."""
+    """A supported ArcPy call expressed as an OGC API Processes execution.
+
+    ``process_id`` is the bare OGC API Processes id that
+    :class:`ArcPyProcessRunner` executes against ``/ogc/processes``.
+    ``job_process_id`` is the reconciled server's namespaced job-executable id
+    (honua-server#1228) for GP/run-path targeting; it is ``None`` for tools the
+    server cannot job-execute.
+    """
 
     call: ArcPyCall
     process_id: str
     payload: JsonObject
     notes: tuple[str, ...] = ()
+    job_process_id: str | None = None
 
     def to_dict(self) -> JsonObject:
         """Return a JSON-serializable translation entry."""
@@ -120,6 +235,7 @@ class ArcPyProcessTranslation:
         return {
             "call": self.call.to_dict(),
             "processId": self.process_id,
+            "jobProcessId": self.job_process_id,
             "payload": self.payload,
             "notes": list(self.notes),
         }
@@ -131,6 +247,12 @@ class ArcPyMigrationPlan:
 
     report: ArcPyScanReport
     translations: tuple[ArcPyProcessTranslation, ...]
+
+    @property
+    def manual_review_calls(self) -> tuple[ArcPyCall, ...]:
+        """Calls with a Honua mapping the reconciled server cannot yet run."""
+
+        return self.report.manual_review_calls
 
     @property
     def unsupported_calls(self) -> tuple[ArcPyCall, ...]:
@@ -150,6 +272,7 @@ class ArcPyMigrationPlan:
         return {
             "report": self.report.to_dict(),
             "translations": [translation.to_dict() for translation in self.translations],
+            "manualReviewCalls": [call.to_dict() for call in self.manual_review_calls],
             "unsupportedCalls": [call.to_dict() for call in self.unsupported_calls],
             "unsupportedFamilies": list(self.unsupported_families),
         }
@@ -246,6 +369,12 @@ class _ArgSpec:
     kind: InputKind = "parameter"
 
 
+#: A per-call gate may downgrade an otherwise-executable tool to manual-review
+#: for argument forms the reconciled server cannot job-execute. It returns a
+#: ``(status, reason)`` pair; ``reason`` is ``None`` when the call passes.
+_GateResult = tuple[MigrationStatus, "str | None"]
+
+
 @dataclass(frozen=True)
 class _ToolSpec:
     family: str
@@ -254,6 +383,43 @@ class _ToolSpec:
     args: tuple[_ArgSpec, ...]
     aliases: Mapping[str, str] = field(default_factory=dict)
     notes: tuple[str, ...] = ()
+    #: Reconciled-server job-executable process id (honua-server#1228), or
+    #: ``None`` when the server cannot job-execute this tool yet. Distinct from
+    #: ``process_id`` (the bare OGC API Processes id the runner POSTs to).
+    job_process_id: str | None = None
+    #: Optional per-call gate. When set and the spec is otherwise executable,
+    #: the gate may downgrade specific argument forms to ``"manual-review"``.
+    gate: "Callable[[ArcPyCall], _GateResult] | None" = None
+
+    @property
+    def executable(self) -> bool:
+        """Whether the reconciled server can job-execute the target process."""
+
+        return self.job_process_id is not None and self.job_process_id in EXECUTABLE_PROCESS_IDS
+
+    @property
+    def status(self) -> MigrationStatus:
+        """Spec-level status from reconciled-server job-executability.
+
+        This ignores any per-call :attr:`gate`; use :meth:`status_for` for the
+        call-aware status that drives translation/coverage.
+        """
+
+        return "translatable" if self.executable else "manual-review"
+
+    def status_for(self, call: ArcPyCall) -> _GateResult:
+        """Call-aware ``(status, reason)`` honoring any per-call gate."""
+
+        if not self.executable:
+            return "manual-review", (
+                f"Honua process {self.job_process_id!r} is not job-executable by "
+                "the reconciled server yet."
+                if self.job_process_id is not None
+                else "No job-executable Honua process is mapped for this ArcPy tool yet."
+            )
+        if self.gate is not None:
+            return self.gate(call)
+        return "translatable", None
 
 
 def _arg(arcpy_name: str, process_name: str | None = None, *, kind: InputKind = "parameter") -> _ArgSpec:
@@ -288,11 +454,51 @@ def _register(spec: _ToolSpec) -> _ToolSpec:
     return spec
 
 
+def _call_argument(call: ArcPyCall, position: int, *arcpy_names: str) -> JsonValue:
+    """Resolve a call argument by positional index or any of its keyword names."""
+
+    for name in arcpy_names:
+        normalized = _normalize_keyword(name)
+        for raw_name, value in call.kwargs.items():
+            if _normalize_keyword(raw_name) == normalized:
+                return value
+    if 0 <= position < len(call.args):
+        return call.args[position]
+    return None
+
+
+def _spatial_join_gate(call: ArcPyCall) -> _GateResult:
+    """Gate ``SpatialJoin`` to the one-to-one summarizing form.
+
+    The reconciled server's ``analytics.spatial-join-managed`` job-executes the
+    one-to-one summarizing join. ArcGIS ``JOIN_ONE_TO_MANY`` fan-out and
+    ``KEEP_COMMON`` (inner) join forms are not inlinable into the managed
+    process, so they are downgraded to manual-review with a reason.
+    """
+
+    join_operation = _call_argument(call, 3, "join_operation")
+    if isinstance(join_operation, str) and join_operation.strip().upper() == "JOIN_ONE_TO_MANY":
+        return "manual-review", (
+            "SpatialJoin JOIN_ONE_TO_MANY fans out rows and is not inlinable into "
+            "analytics.spatial-join-managed (one-to-one summarizing) -- migrate manually."
+        )
+
+    join_type = _call_argument(call, 4, "join_type")
+    if isinstance(join_type, str) and join_type.strip().upper() == "KEEP_COMMON":
+        return "manual-review", (
+            "SpatialJoin KEEP_COMMON (inner) join is a non-inlinable join input for "
+            "analytics.spatial-join-managed -- migrate manually."
+        )
+
+    return "translatable", None
+
+
 _register(
     _ToolSpec(
         family="analysis",
         tool="Buffer",
         process_id="buffer",
+        job_process_id="geometry.buffer",
         args=(
             _arg("in_features", "input_features", kind="input"),
             _arg("out_feature_class", "result", kind="output"),
@@ -316,6 +522,7 @@ _register(
         family="analysis",
         tool="Clip",
         process_id="clip",
+        job_process_id="geometry.clip",
         args=(
             _arg("in_features", "input_features", kind="input"),
             _arg("clip_features", "clip_features", kind="input"),
@@ -330,6 +537,7 @@ _register(
         family="analysis",
         tool="Intersect",
         process_id="intersect",
+        job_process_id="geometry.intersect",
         args=(
             _arg("in_features", "input_features", kind="input"),
             _arg("out_feature_class", "result", kind="output"),
@@ -345,6 +553,11 @@ _register(
         family="analysis",
         tool="Erase",
         process_id="erase",
+        # Intentionally NOT job-executable: ArcGIS Erase subtracts the *union of
+        # the whole erase feature class* from each input feature, whereas the
+        # reconciled server's geometry.difference is a single-geometry pairwise
+        # subtract. The feature-class-vs-single-geometry semantics differ, so
+        # Erase stays manual-review rather than claiming a false migration.
         args=(
             _arg("in_features", "input_features", kind="input"),
             _arg("erase_features", "erase_features", kind="input"),
@@ -352,6 +565,11 @@ _register(
             _arg("cluster_tolerance", "cluster_tolerance"),
         ),
         aliases=_aliases(("output", "result"), ("out_features", "result")),
+        notes=(
+            "ArcGIS Erase subtracts the union of the erase feature class from "
+            "each input feature; geometry.difference is single-geometry subtract. "
+            "Semantics differ -- migrate manually (per honua-server#1228 review).",
+        ),
     )
 )
 _register(
@@ -359,6 +577,7 @@ _register(
         family="analysis",
         tool="Union",
         process_id="union",
+        job_process_id="geometry.union",
         args=(
             _arg("in_features", "input_features", kind="input"),
             _arg("out_feature_class", "result", kind="output"),
@@ -373,7 +592,12 @@ _register(
     _ToolSpec(
         family="analysis",
         tool="SpatialJoin",
+        # OGC bare id stays "spatial-join" (PostGIS-protocol path). The reconciled
+        # server job-executes spatial joins only via the NEW managed process
+        # analytics.spatial-join-managed (honua-server#1228); trunk's plain
+        # analytics.spatial-join is protocol-only and NOT reachable by run/job.
         process_id="spatial-join",
+        job_process_id="analytics.spatial-join-managed",
         args=(
             _arg("target_features", "target_features", kind="input"),
             _arg("join_features", "join_features", kind="input"),
@@ -387,6 +611,10 @@ _register(
             _arg("match_fields", "match_fields"),
         ),
         aliases=_aliases(("output", "result"), ("out_features", "result")),
+        # Only the one-to-one summarizing form maps cleanly onto the managed
+        # process. One-to-many fan-out and non-inlinable (KEEP_COMMON) joins are
+        # downgraded to manual-review with a reason by _spatial_join_gate.
+        gate=_spatial_join_gate,
     )
 )
 _register(
@@ -394,6 +622,7 @@ _register(
         family="management",
         tool="Dissolve",
         process_id="dissolve",
+        job_process_id="geometry.dissolve",
         args=(
             _arg("in_features", "input_features", kind="input"),
             _arg("out_feature_class", "result", kind="output"),
@@ -403,6 +632,7 @@ _register(
             _arg("unsplit_lines", "unsplit_lines"),
         ),
         aliases=_aliases(("output", "result"), ("out_features", "result")),
+        notes=("geometry.dissolve is group-aware: dissolve_field maps to grouping fields.",),
     )
 )
 _register(
@@ -422,6 +652,7 @@ _register(
         family="management",
         tool="Project",
         process_id="project",
+        job_process_id="geometry.project",
         args=(
             _arg("in_dataset", "input_features", kind="input"),
             _arg("out_dataset", "result", kind="output"),
@@ -437,6 +668,25 @@ _register(
             ("out_feature_class", "result"),
             ("output", "result"),
             ("out_features", "result"),
+        ),
+    )
+)
+_register(
+    _ToolSpec(
+        family="management",
+        tool="RepairGeometry",
+        process_id="make-valid",
+        job_process_id="geometry.make-valid",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("delete_null", "delete_null"),
+            _arg("validation_method", "validation_method"),
+        ),
+        aliases=_aliases(("input_layer", "input_features")),
+        notes=(
+            "ArcGIS RepairGeometry mutates in_features in place; geometry.make-valid "
+            "returns a repaired feature result. delete_null/validation_method are "
+            "passed through for server-side review.",
         ),
     )
 )
@@ -519,6 +769,51 @@ _register(
         ),
         aliases=_aliases(("where_clause", "where")),
         notes=("Append is translated as a process request; review write behavior before running against production data.",),
+    )
+)
+
+# ---------------------------------------------------------------------------
+# Re-pointed hardening coverage: ArcPy tools mapped to the reconciled server's
+# job-executable geometry.simplify process (honua-server#1228). Tools whose
+# closest Honua target is NOT job-executable on the reconciled server are
+# intentionally left unregistered rather than mapped to a non-runnable id, so
+# executable coverage never overstates what the server can run.
+# ---------------------------------------------------------------------------
+_register(
+    _ToolSpec(
+        family="cartography",
+        tool="SimplifyPolygon",
+        process_id="simplify",
+        job_process_id="geometry.simplify",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("out_feature_class", "result", kind="output"),
+            _arg("algorithm", "algorithm"),
+            _arg("tolerance", "tolerance"),
+            _arg("minimum_area", "minimum_area"),
+            _arg("error_option", "error_option"),
+            _arg("collapsed_point_option", "collapsed_point_option"),
+        ),
+        aliases=_aliases(("output", "result"), ("out_features", "result"), ("simplification_tolerance", "tolerance")),
+        notes=("Geometry simplification; ArcPy topology-preservation flags are passed through for server-side review.",),
+    )
+)
+_register(
+    _ToolSpec(
+        family="cartography",
+        tool="SimplifyLine",
+        process_id="simplify",
+        job_process_id="geometry.simplify",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("out_feature_class", "result", kind="output"),
+            _arg("algorithm", "algorithm"),
+            _arg("tolerance", "tolerance"),
+            _arg("error_resolving_option", "error_option"),
+            _arg("collapsed_point_option", "collapsed_point_option"),
+        ),
+        aliases=_aliases(("output", "result"), ("out_features", "result"), ("simplification_tolerance", "tolerance")),
+        notes=("Geometry simplification; ArcPy topology-preservation flags are passed through for server-side review.",),
     )
 )
 
@@ -617,6 +912,8 @@ class _CallCollector(ast.NodeVisitor):
         qualified_name = _resolve_qualified_name(node.func, self.aliases, self.star_modules)
         if qualified_name is not None:
             family, tool = _classify_qualified_name(qualified_name)
+            named_keywords = [kw for kw in node.keywords if kw.arg is not None]
+            expanded_keywords = [kw for kw in node.keywords if kw.arg is None]
             self.calls.append(
                 ArcPyCall(
                     qualified_name=qualified_name,
@@ -625,9 +922,11 @@ class _CallCollector(ast.NodeVisitor):
                     line=node.lineno,
                     column=node.col_offset,
                     args=tuple(_node_value(arg) for arg in node.args),
-                    kwargs={kw.arg or "**": _node_value(kw.value) for kw in node.keywords},
+                    kwargs={kw.arg or "": _node_value(kw.value) for kw in named_keywords},
+                    expanded_kwargs=tuple(_node_value(kw.value) for kw in expanded_keywords),
                     raw_args=tuple(_node_source(arg) for arg in node.args),
-                    raw_kwargs={kw.arg or "**": _node_source(kw.value) for kw in node.keywords},
+                    raw_kwargs={kw.arg or "": _node_source(kw.value) for kw in named_keywords},
+                    raw_expanded_kwargs=tuple(_node_source(kw.value) for kw in expanded_keywords),
                     assignment_targets=_assignment_targets(node, self.parents),
                     filename=self.filename,
                 )
@@ -677,12 +976,115 @@ def translate_arcpy_source(source: str, *, filename: str | None = None, process_
 
 
 def translate_arcpy_report(report: ArcPyScanReport, *, process_id_map: Mapping[str, str] | None = None) -> ArcPyMigrationPlan:
-    """Translate supported calls from a scan report to OGC Processes payloads."""
+    """Translate supported calls from a scan report to OGC Processes payloads.
+
+    Every *supported* call (one with a registered Honua OGC mapping) is
+    translated, preserving the OGC API Processes run path. Each translation
+    additionally carries the reconciled-server ``job_process_id`` when the tool
+    is job-executable; coverage gating to job-executable tools is reported via
+    :func:`build_parity_evidence`, not by dropping translations here.
+    """
 
     translations = []
     for call in report.supported_calls:
         translations.append(_translate_call(call, process_id_map=process_id_map or {}))
     return ArcPyMigrationPlan(report=report, translations=tuple(translations))
+
+
+def build_parity_evidence(plan: ArcPyMigrationPlan) -> JsonObject:
+    """Build the parity-evidence JSON report for one source/plan.
+
+    The report is the migration-story artifact: for every discovered ArcPy
+    call it records the mapped Honua OGC process and reconciled-server job
+    process (or ``manual-review`` / ``unsupported`` with a reason), an overall
+    coverage percentage, and a per-tool status rollup. Coverage is computed
+    against the set of classified calls and is gated by reconciled-server
+    job-executability -- see :data:`EXECUTABLE_PROCESS_IDS`.
+    """
+
+    report = plan.report
+    calls = report.calls
+    total = len(calls)
+    translatable = report.translatable_calls
+    manual = report.manual_review_calls
+    unsupported = report.unsupported_calls
+
+    translation_by_call: dict[int, ArcPyProcessTranslation] = {
+        id(translation.call): translation for translation in plan.translations
+    }
+
+    call_entries: list[JsonObject] = []
+    for call in calls:
+        entry: JsonObject = {
+            "qualifiedName": call.qualified_name,
+            "family": call.family,
+            "tool": call.tool,
+            "line": call.line,
+            "column": call.column,
+            "status": call.status,
+            "processId": call.process_id,
+            "jobProcessId": call.job_process_id,
+        }
+        translation = translation_by_call.get(id(call))
+        if call.translatable and translation is not None:
+            entry["payload"] = translation.payload
+            if translation.notes:
+                entry["notes"] = list(translation.notes)
+        elif call.status == "manual-review":
+            entry["reason"] = call.manual_review_reason or (
+                "Honua process target is not job-executable by the reconciled server yet."
+            )
+            spec = _lookup_spec(call.family, call.tool)
+            if spec is not None and spec.notes:
+                entry["notes"] = list(spec.notes)
+        else:
+            entry["reason"] = "No Honua process mapping is registered for this ArcPy call."
+        call_entries.append(entry)
+
+    # Per-tool status rollup keyed by family.tool.
+    tools: dict[str, JsonObject] = {}
+    for call in calls:
+        key = f"{call.family}.{call.tool}"
+        bucket = tools.setdefault(
+            key,
+            {
+                "family": call.family,
+                "tool": call.tool,
+                "status": call.status,
+                "processId": call.process_id,
+                "jobProcessId": call.job_process_id,
+                "count": 0,
+            },
+        )
+        bucket["count"] = int(bucket["count"]) + 1
+
+    coverage_pct = round(100.0 * len(translatable) / total, 2) if total else 0.0
+
+    return {
+        "schema": "honua.migration.arcpy.parity-evidence/v1",
+        "source": report.filename,
+        "syntaxError": report.syntax_error,
+        "summary": {
+            "totalCalls": total,
+            "translatableCalls": len(translatable),
+            "manualReviewCalls": len(manual),
+            "unsupportedCalls": len(unsupported),
+            "coveragePercent": coverage_pct,
+            "executableProcessIds": sorted(EXECUTABLE_PROCESS_IDS),
+            "unsupportedFamilies": list(report.unsupported_families),
+        },
+        "calls": call_entries,
+        "toolStatus": [tools[key] for key in sorted(tools)],
+    }
+
+
+def build_parity_evidence_for_source(
+    source: str, *, filename: str | None = None, process_id_map: Mapping[str, str] | None = None
+) -> JsonObject:
+    """Scan + translate ``source`` and return its parity-evidence report."""
+
+    plan = translate_arcpy_source(source, filename=filename, process_id_map=process_id_map)
+    return build_parity_evidence(plan)
 
 
 class ArcPyProcessRunner:
@@ -771,12 +1173,17 @@ class ArcPyProcessRunner:
         return translation.process_id, translation.payload
 
 
-def _translate_call(call: ArcPyCall, *, process_id_map: Mapping[str, str]) -> ArcPyProcessTranslation:
-    key = _tool_key(call.family, call.tool)
+def _lookup_spec(family: str, tool: str) -> _ToolSpec | None:
+    key = _tool_key(family, tool)
     spec = _SUPPORTED_TOOL_SPECS.get(key)
     if spec is None:
         aliased = _PAIRWISE_TOOL_ALIASES.get(key)
         spec = _SUPPORTED_TOOL_SPECS.get(aliased) if aliased is not None else None
+    return spec
+
+
+def _translate_call(call: ArcPyCall, *, process_id_map: Mapping[str, str]) -> ArcPyProcessTranslation:
+    spec = _lookup_spec(call.family, call.tool)
     if spec is None:
         raise UnsupportedArcPyCallError(f"ArcPy call {call.qualified_name!r} is not supported by the translator.")
 
@@ -817,6 +1224,11 @@ def _translate_call(call: ArcPyCall, *, process_id_map: Mapping[str, str]) -> Ar
         metadata["filename"] = call.filename
     if call.assignment_targets:
         metadata["assignmentTargets"] = list(call.assignment_targets)
+    if call.expanded_kwargs:
+        metadata["expandedKeywords"] = [
+            {"value": value, "raw": raw}
+            for value, raw in zip(call.expanded_kwargs, call.raw_expanded_kwargs, strict=False)
+        ]
     passthrough_keywords = sorted(set(call.kwargs) - consumed_keywords)
     if passthrough_keywords:
         metadata["passthroughKeywords"] = passthrough_keywords
@@ -827,7 +1239,14 @@ def _translate_call(call: ArcPyCall, *, process_id_map: Mapping[str, str]) -> Ar
 
     process_key = f"{call.family}.{call.tool}"
     process_id = process_id_map.get(process_key, process_id_map.get(spec.process_id, spec.process_id))
-    return ArcPyProcessTranslation(call=call, process_id=process_id, payload=payload, notes=spec.notes)
+    job_process_id = spec.job_process_id if call.translatable else None
+    return ArcPyProcessTranslation(
+        call=call,
+        process_id=process_id,
+        payload=payload,
+        notes=spec.notes,
+        job_process_id=job_process_id,
+    )
 
 
 def _assign_process_value(arg_spec: _ArgSpec, value: JsonValue, *, inputs: JsonObject, outputs: JsonObject) -> None:

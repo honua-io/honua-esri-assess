@@ -108,6 +108,41 @@ def test_build_recommendation_facade_policies_group_by_access_and_groups() -> No
     assert public_policy.confidence == "medium"
 
 
+def test_build_recommendation_drops_shared_items_with_unknown_group_ids() -> None:
+    """The v0.1 inventory cannot populate per-item group ids; the mapper must skip
+    sharing=shared records with empty group_ids instead of emitting a misleading
+    facade:shared:no-groups policy.
+    """
+
+    portal = PortalAccess(
+        users=(),
+        roles=(),
+        groups=(),
+        item_sharing=(
+            # Two real shared items but no captured group boundary —
+            # the mapper must drop them, NOT roll them into a single
+            # facade:shared:no-groups policy.
+            ItemSharing(
+                item_id="item1",
+                owner="alice",
+                access_level="shared",
+                shared_with_group_ids=(),
+            ),
+            ItemSharing(
+                item_id="item2",
+                owner="bob",
+                access_level="shared",
+                shared_with_group_ids=(),
+            ),
+            # A normal sharing=org item must still produce its policy.
+            ItemSharing(item_id="item3", owner="alice", access_level="org"),
+        ),
+    )
+    rec = build_recommendation(portal=portal)
+    policy_ids = {p.policy_id for p in rec.facade_access_policies}
+    assert policy_ids == {"facade:org:no-groups"}
+
+
 def test_build_recommendation_round_trip_is_stable() -> None:
     rec1 = build_recommendation(portal=_portal())
     rec2 = build_recommendation(portal=_portal())

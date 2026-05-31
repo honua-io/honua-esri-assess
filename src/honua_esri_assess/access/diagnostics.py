@@ -11,9 +11,12 @@ prospect-safe messages.
 from __future__ import annotations
 
 import re
-from typing import Any, TypeGuard
+from typing import Any, Iterable, TypeGuard
 
-from honua_esri_assess.entitlements.diagnostics import AssessmentError
+from honua_esri_assess.entitlements.diagnostics import (
+    AssessmentError,
+    Diagnostic,
+)
 
 
 # Same RFC822-ish email shape used by the v0.2 PrincipalName schema's
@@ -113,6 +116,91 @@ def envelope_code(error_obj: Any) -> int:
         ) from None
 
 
+def bounded_text(
+    value: Any,
+    cap: int,
+    *,
+    scope: str,
+    diagnostics: list[Diagnostic],
+    field: str | None = None,
+) -> str | None:
+    """Truncate ``value`` to ``cap`` characters with a ``redacted-field`` diagnostic.
+
+    Used by the access collectors to guarantee that the v0.2 ``maxLength``
+    caps on free-text fields (e.g. ``fullName`` at 256, role ``description``
+    at 512) hold even when an Esri admin payload supplies an overlong
+    string. Returns ``None`` when ``value`` is missing or not a non-empty
+    string so the caller can drop the optional field cleanly.
+
+    The truncation is byte-for-byte deterministic across runs and emits
+    an info-severity diagnostic at ``scope`` so closed-product consumers
+    can see when a field was bounded.
+    """
+
+    if not isinstance(value, str) or not value:
+        return None
+    if len(value) <= cap:
+        return value
+    qualifier = f" {field}" if field else ""
+    diagnostics.append(
+        Diagnostic(
+            code="redacted-field",
+            severity="info",
+            message=(
+                f"Free-text{qualifier} truncated to {cap} characters "
+                "to satisfy the v0.2 schema cap."
+            ),
+            scope=scope,
+        )
+    )
+    return value[:cap]
+
+
+def bounded_str_array(
+    values: Any,
+    cap: int,
+    *,
+    scope: str,
+    diagnostics: list[Diagnostic],
+    field: str | None = None,
+) -> tuple[str, ...]:
+    """Bound each string entry in ``values`` to ``cap`` characters.
+
+    Mirrors :func:`bounded_text` for the array-of-strings v0.2 caps such
+    as ``RoleDefinition.privileges`` (items <= 128) and
+    ``GroupDefinition.capabilities`` (items <= 64). Non-string entries
+    are dropped silently; over-cap entries are truncated and a single
+    ``redacted-field`` diagnostic is emitted per call regardless of how
+    many entries were bounded so the diagnostic surface stays compact.
+    """
+
+    if not isinstance(values, Iterable) or isinstance(values, (str, bytes)):
+        return ()
+    out: list[str] = []
+    truncated = 0
+    for entry in values:
+        if not isinstance(entry, str) or not entry:
+            continue
+        if len(entry) > cap:
+            entry = entry[:cap]
+            truncated += 1
+        out.append(entry)
+    if truncated:
+        qualifier = f" {field}" if field else ""
+        diagnostics.append(
+            Diagnostic(
+                code="redacted-field",
+                severity="info",
+                message=(
+                    f"{truncated} array{qualifier} entry/entries truncated "
+                    f"to {cap} characters to satisfy the v0.2 schema cap."
+                ),
+                scope=scope,
+            )
+        )
+    return tuple(out)
+
+
 __all__ = [
     "AccessApiError",
     "AccessAuthError",
@@ -122,6 +210,8 @@ __all__ = [
     "AccessNotFoundError",
     "AccessRateLimitedError",
     "AccessSchemaError",
+    "bounded_str_array",
+    "bounded_text",
     "envelope_code",
     "is_safe_principal_name",
 ]

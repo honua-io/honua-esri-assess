@@ -50,11 +50,14 @@ honua-esri-assess report --input EsriFootprint.json --strict
 | --- | --- | --- |
 | `--input` | yes | Path to `EsriFootprint.json`, or `-` to read JSON from stdin. |
 | `--output` | no | Markdown output path, or `-` for stdout. Defaults to stdout. |
-| `--strict` | no | Exit with a typed schema error when v0.1 validation fails. |
+| `--strict` | no | Exit with a typed schema error when the input does not validate against the schema declared by its `schemaVersion`. |
 
-Schema validation uses the v0.1 schema packaged with the CLI and the runtime
-`jsonschema` dependency. The published schema also remains available for audit
-at [`schemas/esri-footprint-v0.1.json`](../schemas/esri-footprint-v0.1.json).
+Schema validation dispatches on the input footprint's `schemaVersion`: a v0.1
+document validates against the packaged v0.1 schema and a v0.2 document (the
+optional `access` block from `scan --include-access`) validates against the
+packaged v0.2 schema. Both schemas remain available for audit at
+[`schemas/esri-footprint-v0.1.json`](../schemas/esri-footprint-v0.1.json) and
+[`schemas/esri-footprint-v0.2.json`](../schemas/esri-footprint-v0.2.json).
 
 Without `--strict`, validation failures are rendered into a `Schema Warnings`
 section and the report still exits successfully. If validation cannot run

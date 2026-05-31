@@ -28,6 +28,8 @@ from .diagnostics import (
     AccessNotFoundError,
     AccessRateLimitedError,
     AccessSchemaError,
+    bounded_str_array,
+    bounded_text,
     envelope_code,
     is_safe_principal_name,
 )
@@ -49,6 +51,9 @@ _LOG = logging.getLogger(__name__)
 # Principal-name checks live in ``access.diagnostics.is_safe_principal_name``
 # so they stay in lockstep with the v0.2 ``PrincipalName.not`` schema clause.
 _ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+_PAGE_NUM = 100
+# Outer page cap — see ``portal.py:_paginate`` for the matching invariant.
+_PAGE_CAP = 100
 _SAFE_FOLDER_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _SAFE_SERVICE_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _SAFE_TYPE_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
@@ -112,8 +117,20 @@ class ServerAccessCollector:
         security_mode = payload.get("securityMode") or payload.get("authenticationMode")
         auth_tier = payload.get("authenticationTier") or payload.get("authTier")
         return (
-            str(security_mode) if isinstance(security_mode, str) and security_mode else None,
-            str(auth_tier) if isinstance(auth_tier, str) and auth_tier else None,
+            bounded_text(
+                security_mode,
+                64,
+                scope="server.access.securityConfig",
+                diagnostics=diagnostics,
+                field="securityMode",
+            ),
+            bounded_text(
+                auth_tier,
+                64,
+                scope="server.access.securityConfig",
+                diagnostics=diagnostics,
+                field="authTier",
+            ),
         )
 
     def _collect_users(
@@ -152,7 +169,13 @@ class ServerAccessCollector:
             if isinstance(full_name, str) and "@" in full_name:
                 full_name = None
             elif isinstance(full_name, str) and full_name:
-                full_name = _sanitize_text(full_name)
+                full_name = bounded_text(
+                    _sanitize_text(full_name),
+                    256,
+                    scope="server.access.users",
+                    diagnostics=diagnostics,
+                    field="fullName",
+                )
             else:
                 full_name = None
             role_id = entry.get("role") or entry.get("roleId")
@@ -192,15 +215,27 @@ class ServerAccessCollector:
             if role_id in seen:
                 continue
             seen.add(role_id)
-            description = entry.get("description")
-            if isinstance(description, str) and description:
-                description = _sanitize_text(description)
+            description_raw = entry.get("description")
+            if isinstance(description_raw, str) and description_raw:
+                description = bounded_text(
+                    _sanitize_text(description_raw),
+                    512,
+                    scope="server.access.roles",
+                    diagnostics=diagnostics,
+                    field="description",
+                )
             else:
                 description = None
-            privileges = tuple(
-                str(p)
-                for p in entry.get("privileges", [])
-                if isinstance(p, str)
+            privileges = bounded_str_array(
+                (
+                    str(p)
+                    for p in entry.get("privileges", [])
+                    if isinstance(p, str)
+                ),
+                128,
+                scope="server.access.roles",
+                diagnostics=diagnostics,
+                field="privileges",
             )
             scope = _server_role_scope(role_id, privileges)
             roles.append(
@@ -258,13 +293,15 @@ class ServerAccessCollector:
     ) -> list[Any]:
         out: list[Any] = []
         start = 0
-        for _ in range(100):
+        # See ``portal.py:_paginate`` for the rationale on cap + diagnostic.
+        cap_exhausted_more_available = False
+        for _ in range(_PAGE_CAP):
             payload = self._get(
                 path,
                 scope=scope,
                 diagnostics=diagnostics,
                 soft_auth_failure=True,
-                params={"size": "100", "start": str(start)},
+                params={"size": str(_PAGE_NUM), "start": str(start)},
             )
             if not isinstance(payload, dict):
                 break
@@ -278,7 +315,27 @@ class ServerAccessCollector:
             if isinstance(next_start, int) and next_start > start:
                 start = next_start
             else:
-                start += 100
+                start += _PAGE_NUM
+        else:
+            cap_exhausted_more_available = True
+        if cap_exhausted_more_available:
+            diagnostics.append(
+                Diagnostic(
+                    code="partial-coverage",
+                    severity="info",
+                    message=(
+                        "Access enumeration capped at "
+                        f"{_PAGE_CAP * _PAGE_NUM} records; the source still "
+                        "advertised additional pages. Trailing principals "
+                        "are not in the artifact."
+                    ),
+                    scope=scope,
+                    hint=(
+                        "Tighten the query scope (e.g. filter by role) or "
+                        "re-run after pruning the source enumeration."
+                    ),
+                )
+            )
         return out
 
     def _get(
@@ -511,7 +568,14 @@ def _parse_permission_record(
     operations = record.get("operations") or record.get("capabilities") or []
     if not isinstance(operations, list):
         return None
-    caps = tuple(sorted({str(c) for c in operations if isinstance(c, str)}))
+    bounded = bounded_str_array(
+        (str(c) for c in operations if isinstance(c, str)),
+        64,
+        scope=scope,
+        diagnostics=diagnostics,
+        field="capabilities",
+    )
+    caps = tuple(sorted(set(bounded)))
     if not caps:
         return None
     return ServicePermission(

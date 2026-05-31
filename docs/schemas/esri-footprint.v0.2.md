@@ -57,8 +57,8 @@ Optional object under `ServerFacet.access`.
 
 | Field | Required | Type | Description |
 | --- | --- | --- | --- |
-| `username` | yes | `PrincipalName` | Username; schema pattern `^[A-Za-z0-9._@-]{1,128}$`. |
-| `fullName` | no | string ≤ 256 | Display name; **never an email**. Email-shaped values are dropped by the scanner. |
+| `username` | yes | `PrincipalName` | Username; schema pattern `^[A-Za-z0-9._@-]{1,128}$` plus an explicit `not: { pattern: <RFC822-shape> }` clause that rejects email-shaped values at validation time. Subject-style ids like `alice@enterprise` remain valid. |
+| `fullName` | no | string ≤ 256 | Display name; **never an email**. Email-shaped values are dropped by the scanner, and credential-shaped free-text fragments (`token=`, `Bearer `, URL userinfo) are scrubbed via the shared `redact()` pass before emission. |
 | `roleId` | no | `Identifier` | Esri role id; schema pattern `^[A-Za-z0-9._-]{1,128}$`. |
 | `userType` | no | string ≤ 128 | License tier label (e.g. `creatorUT`). |
 | `status` | yes | enum | `active`, `disabled`, `unknown`. |
@@ -137,7 +137,7 @@ endpoint does not expose the value.
 | Field | Required | Type | Description |
 | --- | --- | --- | --- |
 | `esriRoleId` | yes | `Identifier` | |
-| `honuaRole` | yes | string ≤ 128 | Either a builtin (`admin`, `editor`, `viewer`) or `custom:<id>`. |
+| `honuaRole` | yes | string ≤ 128 | Either a builtin (`admin`, `editor`, `viewer`) or `custom:<id>`. Deterministically bounded to 128 chars: `custom:<id>` values where the prefixed body would overflow are truncated and suffixed with `.<sha1[:8]>`. |
 | `builtin` | no | enum | `admin`, `editor`, `viewer`. |
 | `confidence` | yes | enum | `high`, `medium`, `low`. |
 | `rationale` | yes | string ≤ 512 | Reviewer-facing explanation. |
@@ -155,7 +155,7 @@ endpoint does not expose the value.
 
 | Field | Required | Type | Description |
 | --- | --- | --- | --- |
-| `policyId` | yes | string ≤ 256 | Stable id derived from access level and group set. |
+| `policyId` | yes | string ≤ 256 | Stable id derived from access level and group set. Deterministically bounded to 256 chars: long bodies are truncated and suffixed with `.<sha1[:8]>` so consumers can still dedupe across runs. |
 | `accessLevel` | yes | enum | `private`, `org`, `public`, `shared`. |
 | `itemIds` | yes | `Identifier[]` | Items covered by the policy. |
 | `groupIds` | yes | `Identifier[]` | Groups the policy delegates to. |

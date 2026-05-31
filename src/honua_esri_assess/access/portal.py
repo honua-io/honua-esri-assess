@@ -28,6 +28,8 @@ from .diagnostics import (
     AccessNotFoundError,
     AccessRateLimitedError,
     AccessSchemaError,
+    bounded_str_array,
+    bounded_text,
     envelope_code,
     is_safe_principal_name,
 )
@@ -48,6 +50,11 @@ _LOG = logging.getLogger(__name__)
 
 _DEFAULT_GROUP_CAP = 200
 _PAGE_NUM = 100
+# Outer page cap — bounds the paginator so a malformed Esri response
+# cannot loop forever. When the cap is hit while the source still
+# advertises another page, ``_paginate`` emits a ``partial-coverage``
+# diagnostic with the call-site scope so the truncation is visible.
+_PAGE_CAP = 100
 # Used inside ``_collect_users`` to drop email-shaped (and any
 # ``@``-bearing) display-name strings. Username/owner principal checks
 # live in ``access.diagnostics.is_safe_principal_name`` so they stay in
@@ -144,19 +151,36 @@ class PortalAccessCollector:
             if role_id in seen:
                 continue
             seen.add(role_id)
-            privileges = tuple(
-                str(p) for p in entry.get("privileges", []) if isinstance(p, str)
+            privileges = bounded_str_array(
+                (str(p) for p in entry.get("privileges", []) if isinstance(p, str)),
+                128,
+                scope="portal.access.roles",
+                diagnostics=diagnostics,
+                field="privileges",
             )
-            description = entry.get("description")
-            if isinstance(description, str) and description:
-                description = _sanitize_text(description)
+            description_raw = entry.get("description")
+            if isinstance(description_raw, str) and description_raw:
+                description = bounded_text(
+                    _sanitize_text(description_raw),
+                    512,
+                    scope="portal.access.roles",
+                    diagnostics=diagnostics,
+                    field="description",
+                )
             else:
                 description = None
             scope = _role_scope_from_payload(role_id, entry)
             roles.append(
                 RoleDefinition(
                     id=role_id,
-                    name=_sanitize_text(name),
+                    name=bounded_text(
+                        _sanitize_text(name),
+                        256,
+                        scope="portal.access.roles",
+                        diagnostics=diagnostics,
+                        field="name",
+                    )
+                    or name[:256],
                     scope=scope,
                     privileges=privileges,
                     description=description,
@@ -233,15 +257,26 @@ class PortalAccessCollector:
             if group_id in seen:
                 continue
             seen.add(group_id)
-            capabilities = tuple(
-                str(c) for c in entry.get("capabilities", []) if isinstance(c, str)
+            capabilities = bounded_str_array(
+                (str(c) for c in entry.get("capabilities", []) if isinstance(c, str)),
+                64,
+                scope="portal.access.groups",
+                diagnostics=diagnostics,
+                field="capabilities",
             )
             member_count = self._maybe_member_count(group_id, diagnostics)
             shared_count = _as_optional_int(entry.get("itemsAvailable"))
             groups.append(
                 GroupDefinition(
                     id=group_id,
-                    title=_sanitize_text(title),
+                    title=bounded_text(
+                        _sanitize_text(title),
+                        256,
+                        scope="portal.access.groups",
+                        diagnostics=diagnostics,
+                        field="title",
+                    )
+                    or title[:256],
                     access=access,
                     owner=owner,
                     capabilities=capabilities,
@@ -328,14 +363,26 @@ class PortalAccessCollector:
             ):
                 full_name = None
             elif isinstance(full_name, str) and full_name:
-                full_name = _sanitize_text(full_name)
+                full_name = bounded_text(
+                    _sanitize_text(full_name),
+                    256,
+                    scope="portal.access.users",
+                    diagnostics=diagnostics,
+                    field="fullName",
+                )
             else:
                 full_name = None
             role_id = entry.get("roleId") or entry.get("role")
             if not _is_safe_id(role_id):
                 role_id = None
             user_type = entry.get("userType") or entry.get("userLicenseTypeId")
-            user_type = user_type if isinstance(user_type, str) and user_type else None
+            user_type = bounded_text(
+                user_type,
+                128,
+                scope="portal.access.users",
+                diagnostics=diagnostics,
+                field="userType",
+            ) if isinstance(user_type, str) and user_type else None
             status = _user_status(entry.get("disabled"), entry.get("status"))
             last_login = _quantize_last_login(entry.get("lastLogin"))
             raw_group_ids = entry.get("groups") or []
@@ -370,7 +417,12 @@ class PortalAccessCollector:
         start = 1
         out: list[Any] = []
         # Bound the loop to keep a malformed Esri response from running away.
-        for _ in range(100):
+        # When the loop exits because the page cap was reached while the
+        # source still advertises another page, surface a partial-coverage
+        # diagnostic so the operator knows the enumeration was truncated
+        # instead of silently complete.
+        cap_exhausted_more_available = False
+        for _ in range(_PAGE_CAP):
             params: dict[str, str] = {"num": str(_PAGE_NUM), "start": str(start)}
             if base_params:
                 params.update(base_params)
@@ -392,6 +444,28 @@ class PortalAccessCollector:
             if next_start == start:
                 break
             start = next_start
+        else:
+            # Loop completed _PAGE_CAP iterations without an explicit break
+            # — i.e. the source still has more pages to offer.
+            cap_exhausted_more_available = True
+        if cap_exhausted_more_available:
+            diagnostics.append(
+                Diagnostic(
+                    code="partial-coverage",
+                    severity="info",
+                    message=(
+                        "Access enumeration capped at "
+                        f"{_PAGE_CAP * _PAGE_NUM} records; the source still "
+                        "advertised additional pages. Trailing principals "
+                        "are not in the artifact."
+                    ),
+                    scope=scope,
+                    hint=(
+                        "Tighten the query scope (e.g. filter by org or "
+                        "role) or re-run after pruning the source enumeration."
+                    ),
+                )
+            )
         return out
 
     def _get(
@@ -546,6 +620,7 @@ def _normalize_item_sharing(
     diagnostics: list[Diagnostic],
 ) -> tuple[ItemSharing, ...]:
     out: list[ItemSharing] = []
+    shared_without_groups = 0
     for entry in sharing:
         if not _ID_RE.fullmatch(entry.item_id):
             diagnostics.append(
@@ -570,7 +645,35 @@ def _normalize_item_sharing(
                 )
             )
             continue
+        if entry.access_level == "shared" and not entry.shared_with_group_ids:
+            shared_without_groups += 1
         out.append(entry)
+    if shared_without_groups:
+        # The v0.1 inventory does not carry per-item group membership, so
+        # an item entering with ``access_level == "shared"`` and an empty
+        # ``shared_with_group_ids`` tuple cannot anchor a reliable
+        # facade-policy stub. Surface the gap so closed-product consumers
+        # know to fall back to a follow-on probe instead of treating the
+        # mapper output as authoritative. The mapper drops these records
+        # from ``facadeAccessPolicies`` for the same reason.
+        diagnostics.append(
+            Diagnostic(
+                code="partial-coverage",
+                severity="info",
+                message=(
+                    f"{shared_without_groups} shared portal item(s) reached "
+                    "the access export without populated sharedWithGroupIds; "
+                    "facade-policy recommendations were omitted for those "
+                    "items so the boundary is not overstated."
+                ),
+                scope="portal.access.itemSharing",
+                hint=(
+                    "The v0.1 inventory does not carry per-item group "
+                    "membership; future ticket TBD will add a bounded "
+                    "/content/items/<id>/groups probe."
+                ),
+            )
+        )
     return tuple(out)
 
 

@@ -207,6 +207,15 @@ def _facade_policies(
 ) -> tuple[FacadeAccessPolicy, ...]:
     buckets: dict[tuple[AccessLevel, tuple[str, ...]], list[str]] = {}
     for record in item_sharing:
+        # An item with ``access_level == "shared"`` but no concrete group ids
+        # cannot anchor a reliable facade-policy stub — emitting one would
+        # imply org-wide sharing when the source actually had a group
+        # boundary the v0.1 inventory could not capture. The portal
+        # collector emits a ``partial-coverage`` diagnostic for this case
+        # via ``_normalize_item_sharing``; the mapper just drops them so
+        # the recommendation does not overstate confidence.
+        if record.access_level == "shared" and not record.shared_with_group_ids:
+            continue
         key = (record.access_level, tuple(sorted(record.shared_with_group_ids)))
         buckets.setdefault(key, []).append(record.item_id)
     policies: list[FacadeAccessPolicy] = []

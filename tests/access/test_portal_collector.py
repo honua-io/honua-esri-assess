@@ -298,6 +298,206 @@ def test_portal_groups_and_users_are_scoped_to_org_id() -> None:
     )
 
 
+def test_portal_overlong_user_role_group_strings_truncate_with_diagnostics() -> None:
+    """v0.2 schema caps must hold; overlong fields are truncated and announced."""
+
+    import json
+    from pathlib import Path
+
+    from jsonschema import Draft202012Validator, FormatChecker
+
+    from honua_esri_assess.access import build_recommendation
+    from honua_esri_assess.footprint.access import apply_access_facet
+
+    overlong_full_name = "n" * 300
+    overlong_role_name = "R" * 300
+    overlong_description = "D" * 600
+    overlong_privilege = "p" * 150
+    overlong_group_title = "T" * 300
+    overlong_capability = "c" * 100
+    overlong_user_type = "u" * 200
+
+    roles_payload = {
+        "roles": [
+            {
+                "id": "custom_long",
+                "name": overlong_role_name,
+                "description": overlong_description,
+                "scope": "custom",
+                "privileges": [overlong_privilege],
+            }
+        ],
+        "nextStart": -1,
+    }
+    groups_payload = {
+        "results": [
+            {
+                "id": "groupBig",
+                "title": overlong_group_title,
+                "owner": "alice",
+                "access": "private",
+                "capabilities": [overlong_capability],
+            }
+        ],
+        "nextStart": -1,
+    }
+    users_payload = {
+        "results": [
+            {
+                "username": "alice",
+                "fullName": overlong_full_name,
+                "userType": overlong_user_type,
+                "roleId": "custom_long",
+                "disabled": False,
+                "groups": [],
+            }
+        ],
+        "nextStart": -1,
+    }
+    handlers = {
+        "portals/self": respond(200, load_fixture("portal_self.json")),
+        "portals/0123ABCDEF/roles": respond(200, roles_payload),
+        "portals/0123ABCDEF/securityPolicy": respond(200, {}),
+        "community/groups": respond(200, groups_payload),
+        "community/groups/groupBig/users": respond(200, {"total": 1, "users": []}),
+        "community/users": respond(200, users_payload),
+    }
+    client = StubHttpClient(handlers=handlers)
+    collector = PortalAccessCollector("https://www.arcgis.com", client)
+    result = collector.collect()
+
+    user = next(u for u in result.access.users if u.username == "alice")
+    assert user.full_name is not None
+    assert len(user.full_name) <= 256
+    assert user.user_type is not None
+    assert len(user.user_type) <= 128
+
+    role = next(r for r in result.access.roles if r.id == "custom_long")
+    assert len(role.name) <= 256
+    assert role.description is not None
+    assert len(role.description) <= 512
+    assert all(len(p) <= 128 for p in role.privileges)
+
+    group = next(g for g in result.access.groups if g.id == "groupBig")
+    assert len(group.title) <= 256
+    assert all(len(c) <= 64 for c in group.capabilities)
+
+    truncation_scopes = {
+        d.scope
+        for d in result.diagnostics
+        if d.code == "redacted-field"
+        and "truncated" in d.message
+    }
+    assert {
+        "portal.access.users",
+        "portal.access.roles",
+        "portal.access.groups",
+    } <= truncation_scopes
+
+    # The full v0.2 artifact must validate clean after truncation.
+    footprint = {
+        "schemaVersion": "v0.2",
+        "generatedAt": "2026-05-30T00:00:00Z",
+        "tool": {"name": "honua-esri-assess", "version": "0.2.0"},
+        "source": {
+            "kind": "arcgis-online",
+            "locator": "example.maps.arcgis.com/0123ABCDEF",
+            "capturedAt": "2026-05-30T00:00:00Z",
+        },
+        "portal": {
+            "orgId": "0123ABCDEF",
+            "orgUrl": "https://example.maps.arcgis.com",
+            "itemCounts": {},
+        },
+        "inventory": [],
+        "counts": {
+            "items": {
+                "portal-item": 0,
+                "server-service": 0,
+                "filegdb-feature-class": 0,
+            },
+            "layers": 0,
+            "featureClasses": 0,
+        },
+        "diagnostics": [],
+    }
+    from honua_esri_assess.access import AccessFacet
+    from dataclasses import replace as _replace
+
+    portal_access = _replace(
+        result.access,
+        mapping_recommendation=build_recommendation(portal=result.access),
+    )
+    full = apply_access_facet(footprint, AccessFacet(portal=portal_access))
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "schemas"
+        / "esri-footprint-v0.2.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+    errors = sorted(validator.iter_errors(full), key=lambda e: list(e.path))
+    assert errors == [], [e.message for e in errors]
+
+
+def test_portal_pagination_cap_exhaustion_emits_partial_coverage() -> None:
+    """When the source keeps advertising nextStart > 0, the cap must announce truncation."""
+
+    def _runaway(url: str, params):
+        # Always claim another page is available, with a moving nextStart.
+        next_start = int(params.get("start", "1")) + int(params.get("num", "100"))
+        return respond(200, {"results": [], "nextStart": next_start})(url, params)
+
+    handlers = {
+        "portals/self": respond(200, load_fixture("portal_self.json")),
+        "portals/0123ABCDEF/roles": respond(200, {"roles": [], "nextStart": -1}),
+        "portals/0123ABCDEF/securityPolicy": respond(200, {}),
+        "community/groups": _runaway,
+        "community/users": _runaway,
+    }
+    client = StubHttpClient(handlers=handlers)
+    collector = PortalAccessCollector("https://www.arcgis.com", client)
+    result = collector.collect()
+
+    capped_scopes = {
+        d.scope
+        for d in result.diagnostics
+        if d.code == "partial-coverage"
+        and "capped" in d.message
+    }
+    assert {"portal.access.groups", "portal.access.users"} <= capped_scopes
+
+
+def test_portal_item_sharing_emits_partial_coverage_when_shared_without_groups() -> None:
+    """A shared portal item with no populated group ids must surface a partial-coverage."""
+
+    handlers = _admin_handlers()
+    client = StubHttpClient(handlers=handlers)
+    collector = PortalAccessCollector("https://www.arcgis.com", client)
+    item_sharing = [
+        ItemSharing(
+            item_id="abc",
+            owner="alice",
+            access_level="shared",
+            shared_with_group_ids=(),
+        ),
+    ]
+    result = collector.collect(item_sharing=item_sharing)
+    capped = [
+        d
+        for d in result.diagnostics
+        if d.code == "partial-coverage"
+        and d.scope == "portal.access.itemSharing"
+    ]
+    assert capped, "expected partial-coverage diagnostic for sharing=shared with no groups"
+    # The mapper must drop these items so the recommendation does not overstate confidence.
+    from honua_esri_assess.access import build_recommendation
+
+    rec = build_recommendation(portal=result.access)
+    policy_ids = {p.policy_id for p in rec.facade_access_policies}
+    assert "facade:shared:no-groups" not in policy_ids
+
+
 def test_portal_item_sharing_redacts_unsafe_records() -> None:
     handlers = _admin_handlers()
     client = StubHttpClient(handlers=handlers)

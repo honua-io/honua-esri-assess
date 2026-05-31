@@ -48,10 +48,21 @@ second discovery pass.
 | `--include-access / --no-include-access` | `--no-include-access` | Enable the authorized export. Requires `--token-env`. |
 | `--access-group-cap INT` | `200` | Per-group member-probe cap. Groups whose membership exceeds the cap emit a `partial-coverage` diagnostic. |
 | `--token-env VAR` | _none_ | Environment variable that holds an admin-tier token. Required when `--include-access` is set. |
+| `--max-retries INT` | `3` | Bounded retries with exponential backoff that the access HTTP client applies on transient `429`/`502`/`503`/`504` responses (and on the HTTP-200 envelope-`429` shape some Esri proxies emit). The same flag drives the v0.1 inventory scanner; access requests reuse the operator's chosen attempt budget. |
 
 `--include-access` raises a typed CLI diagnostic (`access-token-required`)
 when no `--token-env` is supplied. The collector retains the read-only
 stance — the underlying HTTP wrapper exposes only `get_json`.
+
+Portal access enumeration is scoped to the org returned by
+`portals/self`: the collector passes `q=orgid:{orgId}` on every
+`community/groups` and `community/users` page so the prospect's
+admin-tier token cannot widen the export to the community-shared
+surface beyond the org it operates. Server access permission probes
+are bounded to services that survived the v0.1 inventory walk —
+services dropped by terminal `server.service.*` diagnostics are also
+skipped by the access collector so the artifact never describes
+permissions for rows it does not carry.
 
 ## Diagnostics surface
 
@@ -61,15 +72,25 @@ Soft coverage gaps surface as locked-vocabulary diagnostics inside
 | Code | When |
 | --- | --- |
 | `missing-permission` | The admin-tier token cannot read an endpoint. |
-| `partial-coverage` | A group membership probe exceeded `--access-group-cap`, or a response shape was unexpected but recoverable. |
+| `partial-coverage` | A group membership probe exceeded `--access-group-cap`; a paginated admin endpoint kept advertising more pages after the per-call cap (10,000 records) was hit; an item arrived with `accessLevel=shared` but no populated `sharedWithGroupIds` (the v0.1 inventory does not capture per-item group membership, so the mapper omits the facade-policy stub for those items); or a response shape was unexpected but recoverable. |
 | `unresolved-reference` | An expected admin endpoint returned 404. |
-| `redacted-field` | The scanner deliberately omitted a field whose payload was not prospect-safe (URL-shaped item ids, URL-shaped owners, etc.). |
+| `redacted-field` | The scanner deliberately omitted a field whose payload was not prospect-safe (URL-shaped item ids, URL-shaped owners, etc.), OR truncated a free-text string to its v0.2 schema cap (`fullName`/`name`/`title` at 256, role `description` at 512, `privileges`/`capabilities` items at 128/64, `userType` at 128, server `securityMode`/`authTier` at 64). Truncation diagnostics carry the originating scope so consumers can see which surface was bounded. |
+
+Soft access diagnostics are written into the same `diagnostics[]`
+top-level array as the v0.1 inventory diagnostics, so closed-product
+consumers of the sole handoff artifact see access coverage gaps on
+the existing diagnostic pipeline without subscribing to a sibling
+array. CLI stderr mirrors the same lines.
 
 Hard failures raise `AccessExportError` subclasses
 (`AccessAuthError`, `AccessForbiddenError`, `AccessNotFoundError`,
 `AccessRateLimitedError`, `AccessConnectionError`, `AccessApiError`,
 `AccessSchemaError`). The CLI maps them to a typed stderr diagnostic
 (`access-export-failed`); no raw Python tracebacks are printed.
+`AccessSchemaError` also covers malformed Esri error envelopes (for
+example a non-integer `code` from a broken proxy), keeping the
+failure inside the typed-error pipeline instead of escaping as
+`internal-error`.
 
 `AccessRateLimitedError` is what surfaces when an admin endpoint
 returns HTTP 429 (or an HTTP-200 envelope with `error.code == 429`)
@@ -210,17 +231,49 @@ anything on the Honua side. The mapper:
 Updates to the mapper ship as PATCH changes to the scanner; they do not
 bump the schema.
 
+Mapper-derived identifiers (`HonuaRoleMapping.honuaRole`,
+`FacadeAccessPolicy.policyId`) are deterministically bounded to the
+v0.2 schema caps. When `prefix + body` exceeds the cap, the mapper
+emits `prefix + truncated_body + "." + sha1(full_body)[:8]` so
+closed-product consumers can still dedupe across runs without the
+suffix overflowing schema validation.
+
+Facade-policy stubs are generated only for items with `accessLevel` in
+{`private`, `org`, `public`}, or `accessLevel=shared` with a non-empty
+`sharedWithGroupIds`. Items with `accessLevel=shared` and unknown
+(empty) group ids are excluded from `facadeAccessPolicies` so the
+recommendation does not imply org-wide sharing when the source
+actually had a group boundary the v0.1 inventory could not capture;
+the portal collector emits a `partial-coverage` diagnostic at scope
+`portal.access.itemSharing` so the data gap is visible.
+
 ## What never leaves the source
 
 By project constraint, the following are forbidden by the v0.2 schema
 and by collector behavior:
 
-- Email addresses (the schema rejects an `email` field on
-  `UserPrincipal`; full-name look-alikes are dropped when they contain
-  `@`).
+- Email addresses. The v0.2 `PrincipalName` schema carries an
+  explicit `not: { pattern: <RFC822-shape> }` clause, so
+  `alice@example.com`-shaped usernames, group owners, and service
+  principals are rejected at validation time. The collectors mirror
+  that rule via `access.diagnostics.is_safe_principal_name` and emit
+  a `redacted-field` diagnostic when an Esri payload would have
+  carried such a value. Subject-style ids like `alice@enterprise`
+  (no TLD-shaped suffix) stay valid because they remain useful for
+  SAML/OIDC mapping.
 - Password hashes, MFA seeds, OAuth client secrets, session tokens.
 - URL-shaped values inside identifier or username fields (the schema
   pattern rejects them).
+- Credential-shaped fragments inside otherwise valid free-text
+  fields. Group titles, user `fullName`, role display names, role
+  descriptions, and security-policy origins are routed through the
+  shared `diagnostics.redact()` pass before emission, so a hostile or
+  careless admin cannot ride a `token=...`, `Bearer ...`, or
+  userinfo-bearing URL into the artifact even when the surrounding
+  field passes its shape check. `OrgSecurityPolicy.allowedOrigins`
+  entries with userinfo are reduced to credential-free origins (e.g.
+  `https://allowed.local`) and dropped with a `redacted-field`
+  diagnostic when they still cannot satisfy the schema pattern.
 - Credit balances, behavioral telemetry. `lastLogin` is quantized to
   the UTC date (00:00:00Z).
 

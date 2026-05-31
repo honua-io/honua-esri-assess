@@ -9,6 +9,7 @@ Portal-facade access policies without re-querying Esri.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Iterable
 
 from .models import (
@@ -45,6 +46,39 @@ _PRIVILEGE_HONUA_HINTS: tuple[tuple[str, HonuaBuiltinRole], ...] = (
 )
 
 _DEFAULT_CLAIM_NAME = "roles"
+
+# v0.2 schema caps for the mapper's derived ids.
+_HONUA_ROLE_MAX = 128
+_POLICY_ID_MAX = 256
+# Reserved suffix budget for deterministic disambiguation: ``.`` separator
+# plus 8 hex chars of SHA-1(full body). The ``.`` is in both ``HonuaRoleMapping.honuaRole``
+# (unrestricted) and ``FacadeAccessPolicy.policyId`` (pattern allows ``.``).
+_HASH_HEX_LEN = 8
+_HASH_SEP = "."
+
+
+def _bounded_id(prefix: str, body: str, *, max_total: int) -> str:
+    """Return ``prefix + body`` if it fits ``max_total`` chars.
+
+    When it doesn't, returns ``prefix + truncated_body + "." + hash8`` where
+    ``hash8`` is the first 8 hex characters of SHA-1(full body). This keeps
+    the resulting identifier deterministic across runs (so the closed
+    product can dedupe), bounded to ``max_total``, and shaped to fit both
+    the unrestricted ``HonuaRoleMapping.honuaRole`` and the
+    ``FacadeAccessPolicy.policyId`` pattern ``^[A-Za-z0-9._:-]{1,256}$``.
+    """
+
+    candidate = prefix + body
+    if len(candidate) <= max_total:
+        return candidate
+    remaining = max_total - len(prefix) - _HASH_HEX_LEN - len(_HASH_SEP)
+    if remaining <= 0:
+        # Prefix alone exhausts the budget; fall back to hash-only suffix.
+        digest = hashlib.sha1(body.encode("utf-8")).hexdigest()[:_HASH_HEX_LEN]
+        return f"{prefix}{_HASH_SEP}{digest}"[:max_total]
+    truncated = body[:remaining]
+    digest = hashlib.sha1(body.encode("utf-8")).hexdigest()[:_HASH_HEX_LEN]
+    return f"{prefix}{truncated}{_HASH_SEP}{digest}"
 
 
 def build_recommendation(
@@ -98,8 +132,11 @@ def _honua_role_mappings(
             )
             continue
         # Custom role — derive a privilege-based hint plus a stable name.
+        # Bound the rendered name to the v0.2 ``HonuaRoleMapping.honuaRole``
+        # 128-char cap; long Esri role ids get deterministically truncated
+        # plus a short hash suffix so consumers can still dedupe.
         hinted = _privilege_hint(role.privileges)
-        honua_role = f"custom:{role.id}"
+        honua_role = _bounded_id("custom:", role.id, max_total=_HONUA_ROLE_MAX)
         if hinted is None:
             out.append(
                 HonuaRoleMapping(
@@ -177,8 +214,13 @@ def _facade_policies(
         buckets.items(), key=lambda kv: (kv[0][0], kv[0][1])
     ):
         # Stable policy id so downstream consumers can dedupe across runs.
+        # Two schema-valid 128-char group ids would otherwise overflow the
+        # v0.2 ``FacadeAccessPolicy.policyId`` 256-char cap, so route the
+        # full suffix through the bounded-id helper.
         suffix = "-".join(group_ids) if group_ids else "no-groups"
-        policy_id = f"facade:{access_level}:{suffix}"
+        policy_id = _bounded_id(
+            f"facade:{access_level}:", suffix, max_total=_POLICY_ID_MAX
+        )
         confidence: MappingConfidence = (
             "high" if access_level in {"private", "org"} else "medium"
         )

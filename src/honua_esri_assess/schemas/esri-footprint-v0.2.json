@@ -218,7 +218,8 @@
       "type": "string",
       "minLength": 1,
       "pattern": "^[A-Za-z0-9._@-]{1,128}$",
-      "description": "Prospect-safe principal name (username or role id). Bounded to safe characters; emails, tokens, and URLs are rejected."
+      "not": { "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$" },
+      "description": "Prospect-safe principal name (username or role id). Bounded to safe characters; emails (anything that fits the RFC822-ish ``user@host.tld`` shape), tokens, and URLs are rejected. Subject-style ids like ``alice@enterprise`` remain valid."
     },
     "PortalFacet": {
       "type": "object",

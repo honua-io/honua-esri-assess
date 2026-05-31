@@ -10,9 +10,17 @@ prospect-safe messages.
 
 from __future__ import annotations
 
-from typing import Any
+import re
+from typing import Any, TypeGuard
 
 from honua_esri_assess.entitlements.diagnostics import AssessmentError
+
+
+# Same RFC822-ish email shape used by the v0.2 PrincipalName schema's
+# ``not`` clause. Keep these in lock-step: a value that the collector
+# accepts here MUST also pass the schema.
+_PRINCIPAL_NAME_RE = re.compile(r"^[A-Za-z0-9._@-]{1,128}$")
+_EMAIL_SHAPE_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class AccessExportError(AssessmentError):
@@ -45,6 +53,30 @@ class AccessApiError(AccessExportError):
 
 class AccessSchemaError(AccessExportError):
     """Response body could not be parsed into the expected shape."""
+
+
+def is_safe_principal_name(value: Any) -> TypeGuard[str]:
+    """Return True iff *value* is a schema-valid ``PrincipalName``.
+
+    A schema-valid PrincipalName matches ``^[A-Za-z0-9._@-]{1,128}$`` AND
+    is NOT email-shaped. The v0.2 schema's ``PrincipalName.not`` clause
+    rejects RFC822-ish ``user@host.tld`` values; the collectors must
+    mirror that check or the artifact would carry records that strict
+    consumers reject. Subject-style ids like ``alice@enterprise``
+    (no TLD-shaped suffix) remain valid.
+
+    Annotated as a :class:`typing.TypeGuard` so callers can narrow the
+    inferred type to ``str`` after the check, mirroring the dataclass
+    fields that consume the value.
+    """
+
+    if not isinstance(value, str):
+        return False
+    if not _PRINCIPAL_NAME_RE.fullmatch(value):
+        return False
+    if _EMAIL_SHAPE_RE.fullmatch(value):
+        return False
+    return True
 
 
 def envelope_code(error_obj: Any) -> int:
@@ -91,4 +123,5 @@ __all__ = [
     "AccessRateLimitedError",
     "AccessSchemaError",
     "envelope_code",
+    "is_safe_principal_name",
 ]

@@ -29,6 +29,7 @@ from .diagnostics import (
     AccessRateLimitedError,
     AccessSchemaError,
     envelope_code,
+    is_safe_principal_name,
 )
 from .models import (
     GroupDefinition,
@@ -47,12 +48,11 @@ _LOG = logging.getLogger(__name__)
 
 _DEFAULT_GROUP_CAP = 200
 _PAGE_NUM = 100
+# Used inside ``_collect_users`` to drop email-shaped (and any
+# ``@``-bearing) display-name strings. Username/owner principal checks
+# live in ``access.diagnostics.is_safe_principal_name`` so they stay in
+# lockstep with the v0.2 ``PrincipalName.not`` schema clause.
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-# Mirror the v0.2 PrincipalName pattern: @ is allowed so SAML / OIDC
-# subject-style usernames (e.g. ``alice@enterprise``) survive the
-# collector and reach the artifact. The schema rejects email shapes
-# separately via the _EMAIL_RE guard below.
-_USERNAME_RE = re.compile(r"^[A-Za-z0-9._@-]{1,128}$")
 # Mirror the v0.2 Identifier pattern length cap (was 64, schema allows 128).
 _ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 # Mirror the OrgSecurityPolicy.allowedOrigins pattern from the v0.2 schema.
@@ -213,7 +213,19 @@ class PortalAccessCollector:
                 continue
             if not isinstance(title, str) or not title:
                 continue
-            if not isinstance(owner, str) or not _USERNAME_RE.fullmatch(owner):
+            if not is_safe_principal_name(owner):
+                if isinstance(owner, str) and owner:
+                    diagnostics.append(
+                        Diagnostic(
+                            code="redacted-field",
+                            severity="info",
+                            message=(
+                                "Group record omitted: owner is email-shaped or fails "
+                                "the PrincipalName pattern."
+                            ),
+                            scope="portal.access.groups",
+                        )
+                    )
                 continue
             if access not in {"private", "org", "public", "shared"}:
                 continue
@@ -293,7 +305,19 @@ class PortalAccessCollector:
             if not isinstance(entry, dict):
                 continue
             username = entry.get("username")
-            if not isinstance(username, str) or not _USERNAME_RE.fullmatch(username):
+            if not is_safe_principal_name(username):
+                if isinstance(username, str) and username:
+                    diagnostics.append(
+                        Diagnostic(
+                            code="redacted-field",
+                            severity="info",
+                            message=(
+                                "User record omitted: username is email-shaped or fails "
+                                "the PrincipalName pattern."
+                            ),
+                            scope="portal.access.users",
+                        )
+                    )
                 continue
             if username in seen:
                 continue
@@ -533,12 +557,15 @@ def _normalize_item_sharing(
                 )
             )
             continue
-        if not _USERNAME_RE.fullmatch(entry.owner):
+        if not is_safe_principal_name(entry.owner):
             diagnostics.append(
                 Diagnostic(
                     code="redacted-field",
                     severity="info",
-                    message="Item sharing record omitted: owner username is not prospect-safe.",
+                    message=(
+                        "Item sharing record omitted: owner username is not "
+                        "prospect-safe (email-shaped or out-of-pattern)."
+                    ),
                     scope="portal.access.itemSharing",
                 )
             )

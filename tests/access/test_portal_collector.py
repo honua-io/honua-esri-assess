@@ -175,6 +175,54 @@ def test_portal_envelope_with_non_integer_code_raises_typed_access_schema_error(
         collector.collect()
 
 
+def test_portal_email_shaped_principals_are_dropped_with_diagnostic() -> None:
+    """Schema PrincipalName.not rejects emails; collector mirrors that AND emits a diagnostic."""
+
+    groups_payload = {
+        "results": [
+            {
+                "id": "groupX",
+                "title": "Email Owner Group",
+                # Email-shaped owner — schema-invalid via PrincipalName.not.
+                "owner": "alice@example.com",
+                "access": "private",
+                "capabilities": [],
+            }
+        ],
+        "nextStart": -1,
+    }
+    users_payload = {
+        "results": [
+            {
+                # Email-shaped username — collector must drop with diagnostic.
+                "username": "bob@example.com",
+                "roleId": "org_admin",
+                "disabled": False,
+                "groups": [],
+            }
+        ],
+        "nextStart": -1,
+    }
+    handlers = {
+        "portals/self": respond(200, load_fixture("portal_self.json")),
+        "portals/0123ABCDEF/roles": respond(200, {"roles": [], "nextStart": -1}),
+        "portals/0123ABCDEF/securityPolicy": respond(200, {}),
+        "community/groups": respond(200, groups_payload),
+        "community/users": respond(200, users_payload),
+    }
+    client = StubHttpClient(handlers=handlers)
+    collector = PortalAccessCollector("https://www.arcgis.com", client)
+    result = collector.collect()
+
+    # The email-shaped username/owner records must not survive.
+    assert all(user.username != "bob@example.com" for user in result.access.users)
+    assert all(group.owner != "alice@example.com" for group in result.access.groups)
+    # Diagnostics announce both drops.
+    scopes = [d.scope for d in result.diagnostics if d.code == "redacted-field"]
+    assert "portal.access.users" in scopes
+    assert "portal.access.groups" in scopes
+
+
 def test_portal_accepts_at_sign_principals_per_schema() -> None:
     """``@``-bearing usernames/owners are schema-valid PrincipalNames and must survive."""
 
@@ -270,6 +318,10 @@ def test_portal_item_sharing_redacts_unsafe_records() -> None:
     result = collector.collect(item_sharing=item_sharing)
     item_ids = {s.item_id for s in result.access.item_sharing}
     assert item_ids == {"abc"}
-    assert (
-        sum(1 for d in result.diagnostics if d.code == "redacted-field") == 2
+    item_sharing_drops = sum(
+        1
+        for d in result.diagnostics
+        if d.code == "redacted-field"
+        and d.scope == "portal.access.itemSharing"
     )
+    assert item_sharing_drops == 2

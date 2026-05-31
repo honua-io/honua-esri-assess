@@ -94,6 +94,53 @@ def test_server_forbidden_admin_endpoint_emits_missing_permission() -> None:
     assert result.access.security_mode is None
 
 
+def test_server_email_shaped_principals_are_dropped_with_diagnostic() -> None:
+    """Schema PrincipalName.not rejects emails; server collector mirrors that."""
+
+    users_payload = {
+        "users": [
+            {
+                "username": "alice@example.com",
+                "role": "Publisher",
+                "disabled": False,
+            }
+        ],
+        "hasMore": False,
+    }
+    permissions_payload = {
+        "permissions": [
+            {
+                "principal": "guest@example.com",
+                "principalKind": "user",
+                "operations": ["Query"],
+            }
+        ]
+    }
+    handlers = _admin_handlers()
+    handlers["admin/security/users/search"] = respond(200, users_payload)
+    handlers["admin/services/Utilities/Water.MapServer/permissions"] = respond(
+        200, permissions_payload
+    )
+    client = StubHttpClient(handlers=handlers)
+    collector = ServerAccessCollector("https://gis.example.com/arcgis", client)
+    services = [ServiceRef(folder="Utilities", name="Water", type="MapServer")]
+    result = collector.collect(services=services)
+
+    assert all(user.username != "alice@example.com" for user in result.access.users)
+    assert all(
+        perm.principal != "guest@example.com"
+        for perm in result.access.service_permissions
+    )
+    scopes = {d.scope for d in result.diagnostics if d.code == "redacted-field"}
+    assert "server.access.users" in scopes
+    # The service-scope diagnostic identifies which service the principal belonged to.
+    assert any(
+        d.scope.startswith("server.access.services/Utilities/Water.MapServer")
+        and d.code == "redacted-field"
+        for d in result.diagnostics
+    )
+
+
 def test_server_envelope_with_non_integer_code_raises_typed_access_schema_error() -> None:
     """Server collector must map a malformed envelope code to AccessSchemaError."""
 

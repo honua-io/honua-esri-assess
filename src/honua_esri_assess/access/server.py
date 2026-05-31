@@ -29,6 +29,7 @@ from .diagnostics import (
     AccessRateLimitedError,
     AccessSchemaError,
     envelope_code,
+    is_safe_principal_name,
 )
 from .models import (
     PrincipalKind,
@@ -44,8 +45,9 @@ from .models import (
 _LOG = logging.getLogger(__name__)
 
 
-_USERNAME_RE = re.compile(r"^[A-Za-z0-9._@-]{1,128}$")
 # Mirror the v0.2 Identifier pattern length cap (was 64, schema allows 128).
+# Principal-name checks live in ``access.diagnostics.is_safe_principal_name``
+# so they stay in lockstep with the v0.2 ``PrincipalName.not`` schema clause.
 _ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _SAFE_FOLDER_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _SAFE_SERVICE_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
@@ -129,7 +131,19 @@ class ServerAccessCollector:
             if not isinstance(entry, dict):
                 continue
             username = entry.get("username") or entry.get("name")
-            if not isinstance(username, str) or not _USERNAME_RE.fullmatch(username):
+            if not is_safe_principal_name(username):
+                if isinstance(username, str) and username:
+                    diagnostics.append(
+                        Diagnostic(
+                            code="redacted-field",
+                            severity="info",
+                            message=(
+                                "Server user record omitted: username is email-shaped "
+                                "or fails the PrincipalName pattern."
+                            ),
+                            scope="server.access.users",
+                        )
+                    )
                 continue
             if username in seen:
                 continue
@@ -223,7 +237,12 @@ class ServerAccessCollector:
                 continue
             service_url = _service_url(self._base_url, ref)
             for record in permission_records:
-                permission = _parse_permission_record(record, service_url)
+                permission = _parse_permission_record(
+                    record,
+                    service_url,
+                    diagnostics=diagnostics,
+                    scope=scope,
+                )
                 if permission is None:
                     continue
                 permissions.append(permission)
@@ -465,12 +484,28 @@ def _server_role_scope(role_id: str, privileges: tuple[str, ...]) -> RoleScope:
 
 
 def _parse_permission_record(
-    record: Any, service_url: str
+    record: Any,
+    service_url: str,
+    *,
+    diagnostics: list[Diagnostic],
+    scope: str,
 ) -> ServicePermission | None:
     if not isinstance(record, dict):
         return None
     principal = record.get("principal")
-    if not isinstance(principal, str) or not _USERNAME_RE.fullmatch(principal):
+    if not is_safe_principal_name(principal):
+        if isinstance(principal, str) and principal:
+            diagnostics.append(
+                Diagnostic(
+                    code="redacted-field",
+                    severity="info",
+                    message=(
+                        "Service permission record omitted: principal is email-shaped "
+                        "or fails the PrincipalName pattern."
+                    ),
+                    scope=scope,
+                )
+            )
         return None
     principal_kind = _principal_kind_from_payload(record)
     operations = record.get("operations") or record.get("capabilities") or []

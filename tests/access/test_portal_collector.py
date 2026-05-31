@@ -158,6 +158,34 @@ def test_portal_envelope_401_on_admin_endpoint_is_soft_handled() -> None:
     assert AccessAuthError is not None
 
 
+def test_portal_groups_and_users_are_scoped_to_org_id() -> None:
+    client = StubHttpClient(handlers=_admin_handlers())
+    collector = PortalAccessCollector("https://www.arcgis.com", client)
+
+    collector.collect()
+
+    expected_q = "orgid:0123ABCDEF"
+    group_calls = [
+        params
+        for url, params in client.calls
+        if url.endswith("community/groups")
+    ]
+    assert group_calls, "expected at least one community/groups call"
+    assert all(call.get("q") == expected_q for call in group_calls), (
+        f"community/groups calls were not org-scoped: {group_calls}"
+    )
+
+    user_calls = [
+        params
+        for url, params in client.calls
+        if url.endswith("community/users")
+    ]
+    assert user_calls, "expected at least one community/users call"
+    assert all(call.get("q") == expected_q for call in user_calls), (
+        f"community/users calls were not org-scoped: {user_calls}"
+    )
+
+
 def test_portal_item_sharing_redacts_unsafe_records() -> None:
     handlers = _admin_handlers()
     client = StubHttpClient(handlers=handlers)

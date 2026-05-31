@@ -135,7 +135,9 @@ class ServerAccessCollector:
             full_name = entry.get("fullname") or entry.get("fullName")
             if isinstance(full_name, str) and "@" in full_name:
                 full_name = None
-            elif not isinstance(full_name, str) or not full_name:
+            elif isinstance(full_name, str) and full_name:
+                full_name = _sanitize_text(full_name)
+            else:
                 full_name = None
             role_id = entry.get("role") or entry.get("roleId")
             if not isinstance(role_id, str) or not _ID_RE.fullmatch(role_id):
@@ -176,7 +178,7 @@ class ServerAccessCollector:
             seen.add(role_id)
             description = entry.get("description")
             if isinstance(description, str) and description:
-                description = _redact_secrets(description)
+                description = _sanitize_text(description)
             else:
                 description = None
             privileges = tuple(
@@ -390,6 +392,19 @@ def _interpret_response(
     raise AccessApiError(
         f"ArcGIS Server endpoint {safe_url(url)} returned HTTP {status}."
     )
+
+
+def _sanitize_text(value: str) -> str:
+    """Scrub credential-shaped fragments from a free-text server-access field.
+
+    Mirrors ``honua_esri_assess.access.portal._sanitize_text`` — server-side
+    payloads (role descriptions, user full names) can still embed
+    ``token=...`` / ``Bearer ...`` substrings inside an otherwise-valid
+    field, so we route them through the shared redactor before they reach
+    the artifact.
+    """
+
+    return _redact_secrets(value)
 
 
 def _ref_is_safe(ref: ServiceRef) -> bool:

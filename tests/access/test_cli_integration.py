@@ -116,6 +116,58 @@ def test_handler_receives_include_access_and_cap(
     assert seen["token"] == "topsecret-token-value"
 
 
+def test_embed_access_diagnostics_appends_locked_wire_shape() -> None:
+    """Access diagnostics must flow into the artifact's diagnostics[] array."""
+
+    from honua_esri_assess.commands.scan_handlers.agol import (
+        _embed_access_diagnostics as _embed_agol,
+    )
+    from honua_esri_assess.commands.scan_handlers.server import (
+        _embed_access_diagnostics as _embed_server,
+    )
+    from honua_esri_assess.entitlements.diagnostics import Diagnostic as AccessDiagnostic
+
+    diags = (
+        AccessDiagnostic(
+            code="missing-permission",
+            severity="warn",
+            message="Token cannot read security policy.",
+            scope="portal.access.securityPolicy",
+        ),
+        AccessDiagnostic(
+            code="partial-coverage",
+            severity="info",
+            message="Group cap hit.",
+            scope="portal.access.groups.groupB.users",
+            hint="Re-run with --access-group-cap >= 500.",
+        ),
+    )
+    for embed in (_embed_agol, _embed_server):
+        footprint: dict[str, object] = {"diagnostics": [{"code": "rate-limited",
+                                                          "severity": "info",
+                                                          "message": "pre-existing",
+                                                          "scope": "arcgis-online"}]}
+        embed(footprint, diags)
+
+        codes = [d["code"] for d in footprint["diagnostics"]]
+        assert codes == ["rate-limited", "missing-permission", "partial-coverage"]
+        # Locked-code wire shape: required keys + optional hint.
+        missing = footprint["diagnostics"][1]
+        assert set(missing) == {"code", "severity", "message", "scope"}
+        capped = footprint["diagnostics"][2]
+        assert capped["hint"] == "Re-run with --access-group-cap >= 500."
+
+
+def test_embed_access_diagnostics_noop_on_empty_diags() -> None:
+    from honua_esri_assess.commands.scan_handlers.agol import (
+        _embed_access_diagnostics,
+    )
+
+    footprint: dict[str, object] = {"diagnostics": []}
+    _embed_access_diagnostics(footprint, ())
+    assert footprint["diagnostics"] == []
+
+
 def test_scan_default_omits_access_block(tmp_path: Path) -> None:
     def fake(options: ScanOptions) -> ScanResult:
         return ScanResult(

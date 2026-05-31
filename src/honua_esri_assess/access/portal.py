@@ -100,8 +100,8 @@ class PortalAccessCollector:
 
         roles = self._collect_roles(org_id, diagnostics)
         security = self._collect_security_policy(org_id, diagnostics)
-        groups = self._collect_groups(diagnostics)
-        users = self._collect_users(diagnostics)
+        groups = self._collect_groups(org_id, diagnostics)
+        users = self._collect_users(org_id, diagnostics)
         sharing = _normalize_item_sharing(item_sharing, diagnostics)
 
         access = PortalAccess(
@@ -140,14 +140,14 @@ class PortalAccessCollector:
             )
             description = entry.get("description")
             if isinstance(description, str) and description:
-                description = _redact_secrets(description)
+                description = _sanitize_text(description)
             else:
                 description = None
             scope = _role_scope_from_payload(role_id, entry)
             roles.append(
                 RoleDefinition(
                     id=role_id,
-                    name=name,
+                    name=_sanitize_text(name),
                     scope=scope,
                     privileges=privileges,
                     description=description,
@@ -178,7 +178,7 @@ class PortalAccessCollector:
             allowed_origins=tuple(
                 sorted(
                     {
-                        str(o)
+                        _sanitize_text(str(o))
                         for o in (payload.get("allowedOrigins") or [])
                         if isinstance(o, str)
                     }
@@ -188,13 +188,14 @@ class PortalAccessCollector:
         )
 
     def _collect_groups(
-        self, diagnostics: list[Diagnostic]
+        self, org_id: str, diagnostics: list[Diagnostic]
     ) -> tuple[GroupDefinition, ...]:
         payloads = self._paginate(
             "sharing/rest/community/groups",
             scope="portal.access.groups",
             diagnostics=diagnostics,
             page_key="results",
+            base_params={"q": f"orgid:{org_id}"},
         )
         groups: list[GroupDefinition] = []
         seen: set[str] = set()
@@ -225,7 +226,7 @@ class PortalAccessCollector:
             groups.append(
                 GroupDefinition(
                     id=group_id,
-                    title=title,
+                    title=_sanitize_text(title),
                     access=access,
                     owner=owner,
                     capabilities=capabilities,
@@ -274,13 +275,14 @@ class PortalAccessCollector:
         return None
 
     def _collect_users(
-        self, diagnostics: list[Diagnostic]
+        self, org_id: str, diagnostics: list[Diagnostic]
     ) -> tuple[UserPrincipal, ...]:
         payloads = self._paginate(
             "sharing/rest/community/users",
             scope="portal.access.users",
             diagnostics=diagnostics,
             page_key="results",
+            base_params={"q": f"orgid:{org_id}"},
         )
         users: list[UserPrincipal] = []
         seen: set[str] = set()
@@ -298,7 +300,9 @@ class PortalAccessCollector:
                 _EMAIL_RE.fullmatch(full_name) or "@" in full_name
             ):
                 full_name = None
-            elif not isinstance(full_name, str) or not full_name:
+            elif isinstance(full_name, str) and full_name:
+                full_name = _sanitize_text(full_name)
+            else:
                 full_name = None
             role_id = entry.get("roleId") or entry.get("role")
             if not _is_safe_id(role_id):
@@ -334,17 +338,21 @@ class PortalAccessCollector:
         scope: str,
         diagnostics: list[Diagnostic],
         page_key: str,
+        base_params: dict[str, str] | None = None,
     ) -> list[Any]:
         start = 1
         out: list[Any] = []
         # Bound the loop to keep a malformed Esri response from running away.
         for _ in range(100):
+            params: dict[str, str] = {"num": str(_PAGE_NUM), "start": str(start)}
+            if base_params:
+                params.update(base_params)
             payload = self._get(
                 path,
                 scope=scope,
                 diagnostics=diagnostics,
                 soft_auth_failure=True,
-                params={"num": str(_PAGE_NUM), "start": str(start)},
+                params=params,
             )
             if not isinstance(payload, dict):
                 break
@@ -565,6 +573,21 @@ def _quantize_last_login(value: Any) -> str | None:
     except (OverflowError, OSError, ValueError):
         return None
     return ts.strftime("%Y-%m-%dT00:00:00Z")
+
+
+def _sanitize_text(value: str) -> str:
+    """Scrub credential-shaped fragments from a free-text access field.
+
+    Group titles, user full names, role display names, and security-policy
+    origin URLs are emitted into the artifact verbatim from Esri payloads.
+    A hostile or careless Esri admin can plant a ``token=...`` or
+    ``Bearer ...`` substring inside an otherwise-valid free-text field;
+    routing those through the shared :func:`redact` keeps the
+    no-credential-artifact constraint intact even when the field passes
+    every other shape check.
+    """
+
+    return _redact_secrets(value)
 
 
 def _is_safe_id(value: Any) -> bool:

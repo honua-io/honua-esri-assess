@@ -30,6 +30,7 @@ class StubHttpClient:
         default_factory=dict
     )
     seen: list[str] = field(default_factory=list)
+    calls: list[tuple[str, dict[str, str]]] = field(default_factory=list)
     raise_on: dict[str, Exception] = field(default_factory=dict)
 
     def get_json(
@@ -39,14 +40,16 @@ class StubHttpClient:
         *,
         timeout: float | None = None,
     ) -> HttpResponse:
+        captured = dict(params or {})
         self.seen.append(url)
+        self.calls.append((url, captured))
         for key, exc in self.raise_on.items():
             if key in url:
                 raise exc
         handler = _match_handler(self.handlers, url)
         if handler is None:
             raise AssertionError(f"no stub handler matched URL {url!r}")
-        return handler(url, params or {})
+        return handler(url, captured)
 
 
 def _match_handler(

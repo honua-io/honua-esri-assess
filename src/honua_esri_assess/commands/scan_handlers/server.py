@@ -121,8 +121,22 @@ def _collect_server_access(
     recommendation = build_recommendation(server=result.access)
     server_access = replace(result.access, mapping_recommendation=recommendation)
     new_footprint = apply_access_facet(footprint, AccessFacet(server=server_access))
+    _embed_access_diagnostics(new_footprint, result.diagnostics)
     cli_diags = [_to_cli_diagnostic(diag) for diag in result.diagnostics]
     return new_footprint, cli_diags
+
+
+def _embed_access_diagnostics(
+    footprint: dict[str, Any],
+    access_diagnostics: tuple[AccessDiagnostic, ...],
+) -> None:
+    if not access_diagnostics:
+        return
+    existing = footprint.get("diagnostics")
+    if not isinstance(existing, list):
+        existing = []
+    existing.extend(diag.to_dict() for diag in access_diagnostics)
+    footprint["diagnostics"] = existing
 
 
 def _arcgis_base_from_target(target: str) -> str:

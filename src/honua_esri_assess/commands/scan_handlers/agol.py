@@ -103,8 +103,22 @@ def _collect_portal_access(
     recommendation = build_recommendation(portal=result.access)
     portal_access = replace(result.access, mapping_recommendation=recommendation)
     new_footprint = apply_access_facet(footprint, AccessFacet(portal=portal_access))
+    _embed_access_diagnostics(new_footprint, result.diagnostics)
     diagnostics = [_to_cli_diagnostic(diag) for diag in result.diagnostics]
     return new_footprint, diagnostics
+
+
+def _embed_access_diagnostics(
+    footprint: dict[str, Any],
+    access_diagnostics: tuple[AccessDiagnostic, ...],
+) -> None:
+    if not access_diagnostics:
+        return
+    existing = footprint.get("diagnostics")
+    if not isinstance(existing, list):
+        existing = []
+    existing.extend(diag.to_dict() for diag in access_diagnostics)
+    footprint["diagnostics"] = existing
 
 
 def _item_sharing_from_inventory(

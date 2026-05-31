@@ -10,6 +10,7 @@ from honua_esri_assess.access import (
     ItemSharing,
     PortalAccessCollector,
 )
+from honua_esri_assess.access.diagnostics import AccessSchemaError
 
 from .conftest import StubHttpClient, load_fixture, respond
 
@@ -156,6 +157,69 @@ def test_portal_envelope_401_on_admin_endpoint_is_soft_handled() -> None:
     )
     # Hard auth failures still raise; the type is wired up.
     assert AccessAuthError is not None
+
+
+def test_portal_envelope_with_non_integer_code_raises_typed_access_schema_error() -> None:
+    """A non-numeric envelope code must surface as AccessSchemaError, not ValueError."""
+
+    handlers = {
+        "portals/self": respond(200, load_fixture("portal_self.json")),
+        "portals/0123ABCDEF/roles": respond(
+            200, {"error": {"code": "not-an-int", "message": "weird"}}
+        ),
+    }
+    client = StubHttpClient(handlers=handlers)
+    collector = PortalAccessCollector("https://www.arcgis.com", client)
+
+    with pytest.raises(AccessSchemaError):
+        collector.collect()
+
+
+def test_portal_accepts_at_sign_principals_per_schema() -> None:
+    """``@``-bearing usernames/owners are schema-valid PrincipalNames and must survive."""
+
+    groups_payload = {
+        "results": [
+            {
+                "id": "groupA",
+                "title": "Subject Group",
+                # SAML/OIDC-style subject owner with @ — schema-valid.
+                "owner": "alice@enterprise",
+                "access": "private",
+                "capabilities": [],
+            }
+        ],
+        "nextStart": -1,
+    }
+    users_payload = {
+        "results": [
+            {
+                "username": "carol@enterprise",
+                # Email-shaped fullName still gets dropped by the email guard.
+                "fullName": "Carol Example",
+                "roleId": "org_admin",
+                "disabled": False,
+                "groups": [],
+            }
+        ],
+        "nextStart": -1,
+    }
+    handlers = {
+        "portals/self": respond(200, load_fixture("portal_self.json")),
+        "portals/0123ABCDEF/roles": respond(200, {"roles": [], "nextStart": -1}),
+        "portals/0123ABCDEF/securityPolicy": respond(200, {}),
+        "community/groups": respond(200, groups_payload),
+        "community/groups/groupA/users": respond(200, {"total": 1, "users": []}),
+        "community/users": respond(200, users_payload),
+    }
+    client = StubHttpClient(handlers=handlers)
+    collector = PortalAccessCollector("https://www.arcgis.com", client)
+    result = collector.collect()
+
+    usernames = {user.username for user in result.access.users}
+    assert "carol@enterprise" in usernames
+    owners = {group.owner for group in result.access.groups}
+    assert "alice@enterprise" in owners
 
 
 def test_portal_groups_and_users_are_scoped_to_org_id() -> None:

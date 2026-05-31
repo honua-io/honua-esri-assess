@@ -194,6 +194,13 @@ class RequestsHttpClient:
                     self._sleep(self._backoff_for(attempt))
                     continue
                 raise ConnectionError(str(exc)) from exc
+            # Retry retryable HTTP statuses BEFORE attempting to parse the
+            # body: Esri proxies routinely answer 503/429 with HTML/text,
+            # and forcing a JSON parse on those would raise ValueError after
+            # one attempt instead of letting --max-retries take effect.
+            if status in self._RETRYABLE_STATUSES and attempt < self._max_attempts:
+                self._sleep(self._backoff_for(attempt))
+                continue
             body: Any = None
             if raw:
                 try:
@@ -203,7 +210,14 @@ class RequestsHttpClient:
                         f"non-JSON response from Esri endpoint: {exc}"
                     ) from exc
             last_response = HttpResponse(status_code=status, body=body)
-            if status in self._RETRYABLE_STATUSES and attempt < self._max_attempts:
+            # Esri also returns HTTP 200 with a JSON error envelope when the
+            # gateway throttles; the collectors map ``error.code == 429`` to
+            # ``AccessRateLimitedError``. Honor --max-retries for that shape
+            # too so the client absorbs transient envelope throttles.
+            if (
+                _envelope_indicates_rate_limit(body)
+                and attempt < self._max_attempts
+            ):
                 self._sleep(self._backoff_for(attempt))
                 continue
             return last_response
@@ -217,3 +231,23 @@ class RequestsHttpClient:
             self._initial_backoff * (self._backoff_factor ** (attempt - 1)),
             self._max_backoff_seconds,
         )
+
+
+def _envelope_indicates_rate_limit(body: Any) -> bool:
+    """Return True for an HTTP-200 Esri body whose error envelope is 429."""
+
+    if not isinstance(body, dict):
+        return False
+    error = body.get("error")
+    if not isinstance(error, dict):
+        return False
+    code = error.get("code")
+    if code is None:
+        return False
+    # Esri sometimes serializes the code as a string; coerce defensively
+    # so the retry path covers both shapes without raising.
+    try:
+        numeric = int(code)
+    except (TypeError, ValueError):
+        return False
+    return numeric == 429

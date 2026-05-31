@@ -28,6 +28,7 @@ from .diagnostics import (
     AccessNotFoundError,
     AccessRateLimitedError,
     AccessSchemaError,
+    envelope_code,
 )
 from .models import (
     GroupDefinition,
@@ -47,8 +48,13 @@ _LOG = logging.getLogger(__name__)
 _DEFAULT_GROUP_CAP = 200
 _PAGE_NUM = 100
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-_USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
-_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+# Mirror the v0.2 PrincipalName pattern: @ is allowed so SAML / OIDC
+# subject-style usernames (e.g. ``alice@enterprise``) survive the
+# collector and reach the artifact. The schema rejects email shapes
+# separately via the _EMAIL_RE guard below.
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9._@-]{1,128}$")
+# Mirror the v0.2 Identifier pattern length cap (was 64, schema allows 128).
+_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 # Mirror the OrgSecurityPolicy.allowedOrigins pattern from the v0.2 schema.
 _ALLOWED_ORIGIN_RE = re.compile(r"^[A-Za-z0-9.:_/-]{1,256}$")
 
@@ -406,7 +412,7 @@ def _interpret_response(
     if status == 200 and isinstance(body, dict):
         error_obj = body.get("error")
         if isinstance(error_obj, dict):
-            code = int(error_obj.get("code") or 0)
+            code = envelope_code(error_obj)
             if code in {401, 498, 499} and soft_auth_failure:
                 diagnostics.append(
                     Diagnostic(

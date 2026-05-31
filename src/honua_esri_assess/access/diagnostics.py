@@ -10,6 +10,8 @@ prospect-safe messages.
 
 from __future__ import annotations
 
+from typing import Any
+
 from honua_esri_assess.entitlements.diagnostics import AssessmentError
 
 
@@ -45,6 +47,40 @@ class AccessSchemaError(AccessExportError):
     """Response body could not be parsed into the expected shape."""
 
 
+def envelope_code(error_obj: Any) -> int:
+    """Coerce an Esri error envelope's ``code`` field to ``int`` safely.
+
+    Esri admin endpoints occasionally serialize the envelope ``code`` as a
+    string, and broken proxies have been observed dropping non-numeric
+    values into it. A bare ``int(...)`` therefore raises ``ValueError``,
+    which is not an :class:`AccessExportError` and would otherwise bypass
+    the scan handler's ``access-export-failed`` mapping and surface as a
+    generic ``internal-error``. Routing through this helper keeps the
+    failure typed.
+
+    Returns ``0`` when the envelope contains no ``code`` (or an empty
+    one); raises :class:`AccessSchemaError` for any value that cannot be
+    parsed as an integer.
+    """
+
+    if not isinstance(error_obj, dict):
+        return 0
+    raw = error_obj.get("code")
+    if raw is None or raw == "":
+        return 0
+    if isinstance(raw, bool):
+        # ``bool`` is a subclass of ``int``; treat it as a schema mismatch.
+        raise AccessSchemaError(
+            "Esri error envelope contained a boolean where an integer code was expected."
+        )
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        raise AccessSchemaError(
+            "Esri error envelope contained a non-integer code; refusing to interpret it."
+        ) from None
+
+
 __all__ = [
     "AccessApiError",
     "AccessAuthError",
@@ -54,4 +90,5 @@ __all__ = [
     "AccessNotFoundError",
     "AccessRateLimitedError",
     "AccessSchemaError",
+    "envelope_code",
 ]

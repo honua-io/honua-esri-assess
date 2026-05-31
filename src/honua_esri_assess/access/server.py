@@ -28,6 +28,7 @@ from .diagnostics import (
     AccessNotFoundError,
     AccessRateLimitedError,
     AccessSchemaError,
+    envelope_code,
 )
 from .models import (
     PrincipalKind,
@@ -44,7 +45,8 @@ _LOG = logging.getLogger(__name__)
 
 
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9._@-]{1,128}$")
-_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+# Mirror the v0.2 Identifier pattern length cap (was 64, schema allows 128).
+_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _SAFE_FOLDER_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _SAFE_SERVICE_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _SAFE_TYPE_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
@@ -303,7 +305,7 @@ def _interpret_response(
     if status == 200 and isinstance(body, dict):
         error_obj = body.get("error")
         if isinstance(error_obj, dict):
-            code = int(error_obj.get("code") or 0)
+            code = envelope_code(error_obj)
             if code in {401, 498, 499} and soft_auth_failure:
                 diagnostics.append(
                     Diagnostic(

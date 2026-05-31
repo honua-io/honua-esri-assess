@@ -8,6 +8,7 @@ from honua_esri_assess.access import (
     AccessRateLimitedError,
     ServerAccessCollector,
 )
+from honua_esri_assess.access.diagnostics import AccessSchemaError
 from honua_esri_assess.access.server import ServiceRef
 
 from .conftest import StubHttpClient, load_fixture, respond
@@ -91,3 +92,16 @@ def test_server_forbidden_admin_endpoint_emits_missing_permission() -> None:
         for d in result.diagnostics
     )
     assert result.access.security_mode is None
+
+
+def test_server_envelope_with_non_integer_code_raises_typed_access_schema_error() -> None:
+    """Server collector must map a malformed envelope code to AccessSchemaError."""
+
+    handlers = _admin_handlers()
+    handlers["admin/security/config"] = respond(
+        200, {"error": {"code": "not-an-int", "message": "weird"}}
+    )
+    client = StubHttpClient(handlers=handlers)
+    collector = ServerAccessCollector("https://gis.example.com/arcgis", client)
+    with pytest.raises(AccessSchemaError):
+        collector.collect(services=[])

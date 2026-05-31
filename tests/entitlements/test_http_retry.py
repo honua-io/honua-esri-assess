@@ -191,3 +191,94 @@ def test_http_error_404_is_not_retried(
     assert resp.status_code == 404
     assert len(seen) == 1
     assert sleeps == []
+
+
+def test_retryable_status_with_html_body_retries_to_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 503 with an HTML/proxy body must retry instead of dying on JSON parse."""
+
+    client = RequestsHttpClient(
+        max_attempts=3,
+        initial_backoff=0.0,
+        backoff_factor=1.0,
+        max_backoff_seconds=0.0,
+        sleep=lambda _seconds: None,
+    )
+    _install_responses(
+        monkeypatch,
+        [
+            _FakeResponse(503, b"<html><body>Bad Gateway</body></html>"),
+            _FakeResponse(200, b'{"ok": true}'),
+        ],
+    )
+    resp = client.get_json("https://gis.fixture.local/arcgis/admin/security/config")
+    assert resp.status_code == 200
+    assert resp.body == {"ok": True}
+
+
+def test_terminal_retryable_status_with_html_body_raises_value_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the retryable status persists, the surviving body parse still raises."""
+
+    client = RequestsHttpClient(
+        max_attempts=2,
+        initial_backoff=0.0,
+        backoff_factor=1.0,
+        max_backoff_seconds=0.0,
+        sleep=lambda _seconds: None,
+    )
+    _install_responses(
+        monkeypatch,
+        [
+            _FakeResponse(503, b"<html>Bad Gateway</html>"),
+            _FakeResponse(503, b"<html>Still bad</html>"),
+        ],
+    )
+    with pytest.raises(ValueError):
+        client.get_json("https://gis.fixture.local/arcgis/admin/security/config")
+
+
+def test_envelope_429_on_http_200_is_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HTTP-200 with ``error.code == 429`` must honor --max-retries."""
+
+    client = RequestsHttpClient(
+        max_attempts=3,
+        initial_backoff=0.0,
+        backoff_factor=1.0,
+        max_backoff_seconds=0.0,
+        sleep=lambda _seconds: None,
+    )
+    seen = _install_responses(
+        monkeypatch,
+        [
+            _FakeResponse(200, b'{"error": {"code": 429, "message": "throttled"}}'),
+            _FakeResponse(200, b'{"error": {"code": "429"}}'),  # string-shaped
+            _FakeResponse(200, b'{"ok": true}'),
+        ],
+    )
+    resp = client.get_json("https://gis.fixture.local/arcgis/admin/security/config")
+    assert resp.status_code == 200
+    assert resp.body == {"ok": True}
+    assert len(seen) == 3
+
+
+def test_envelope_401_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the 429 envelope shape opts into retry — 401/403/404 stay terminal."""
+
+    sleeps: list[float] = []
+    client = RequestsHttpClient(max_attempts=3, sleep=sleeps.append)
+    seen = _install_responses(
+        monkeypatch,
+        [_FakeResponse(200, b'{"error": {"code": 401, "message": "denied"}}')],
+    )
+    resp = client.get_json("https://gis.fixture.local/arcgis/admin/security/config")
+    assert resp.status_code == 200
+    assert resp.body == {"error": {"code": 401, "message": "denied"}}
+    assert len(seen) == 1
+    assert sleeps == []

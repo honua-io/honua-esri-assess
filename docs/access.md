@@ -62,7 +62,6 @@ Soft coverage gaps surface as locked-vocabulary diagnostics inside
 | --- | --- |
 | `missing-permission` | The admin-tier token cannot read an endpoint. |
 | `partial-coverage` | A group membership probe exceeded `--access-group-cap`, or a response shape was unexpected but recoverable. |
-| `rate-limited` | An admin endpoint throttled the scan. |
 | `unresolved-reference` | An expected admin endpoint returned 404. |
 | `redacted-field` | The scanner deliberately omitted a field whose payload was not prospect-safe (URL-shaped item ids, URL-shaped owners, etc.). |
 
@@ -71,6 +70,16 @@ Hard failures raise `AccessExportError` subclasses
 `AccessRateLimitedError`, `AccessConnectionError`, `AccessApiError`,
 `AccessSchemaError`). The CLI maps them to a typed stderr diagnostic
 (`access-export-failed`); no raw Python tracebacks are printed.
+
+`AccessRateLimitedError` is what surfaces when an admin endpoint
+returns HTTP 429 (or an HTTP-200 envelope with `error.code == 429`)
+after the HTTP client has exhausted `--max-retries` retries with
+exponential backoff. Throttling is treated as a terminal failure for
+the access export rather than a soft `rate-limited` diagnostic so
+that operators rerun the scan once the source has recovered instead
+of shipping an artifact that silently dropped admin tables. The
+v0.1-locked `rate-limited` code remains reserved for the inventory
+scanners that DO continue past per-request throttling.
 
 Diagnostic scope identifiers use the following taxonomy:
 

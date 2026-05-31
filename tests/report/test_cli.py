@@ -14,6 +14,9 @@ from honua_esri_assess import cli
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SAMPLE_FOOTPRINT = REPO_ROOT / "docs" / "samples" / "esri-footprint.sample.json"
+ACCESS_SAMPLE_FOOTPRINT = (
+    REPO_ROOT / "docs" / "samples" / "esri-footprint.access.sample.json"
+)
 
 
 def test_report_writes_output_file(tmp_path: Path, capsys) -> None:
@@ -103,6 +106,34 @@ def test_report_strict_schema_failure_is_typed(tmp_path: Path, capsys) -> None:
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err.startswith("error: [report.schema.invalid]")
+    assert "Traceback" not in captured.err
+
+
+def test_report_strict_accepts_v02_access_sample(capsys) -> None:
+    exit_code = cli.main(
+        ["report", "--input", str(ACCESS_SAMPLE_FOOTPRINT), "--strict"]
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert captured.out.startswith("# Honua Esri Readiness Report")
+    assert "## Schema Warnings" not in captured.out
+    assert captured.err == ""
+
+
+def test_report_strict_v02_violation_message_quotes_v02(tmp_path: Path, capsys) -> None:
+    invalid = tmp_path / "invalid-v02.json"
+    invalid.write_text(
+        json.dumps({"schemaVersion": "v0.2", "unknown_field": "x"}),
+        encoding="utf-8",
+    )
+
+    exit_code = cli.main(["report", "--input", str(invalid), "--strict"])
+
+    assert exit_code == 3
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "field is not allowed by EsriFootprint v0.2" in captured.err
     assert "Traceback" not in captured.err
 
 

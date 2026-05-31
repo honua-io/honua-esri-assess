@@ -18,7 +18,7 @@ from honua_esri_assess.diagnostics import (
     handle_unexpected_error,
     render_error,
 )
-from honua_esri_assess.report.validation import validate_footprint_v01
+from honua_esri_assess.report.validation import validate_footprint
 
 
 def report_command(
@@ -40,7 +40,7 @@ def report_command(
         bool,
         typer.Option(
             "--strict",
-            help="Fail if the input does not validate against EsriFootprint v0.1.",
+            help="Fail if the input does not validate against its declared EsriFootprint schema.",
         ),
     ] = False,
 ) -> None:
@@ -94,7 +94,7 @@ def _schema_warnings(
     *,
     strict: bool,
 ) -> tuple[str, ...]:
-    issues = validate_footprint_v01(footprint)
+    issues = validate_footprint(footprint)
     failures = tuple(issue.message for issue in issues if issue.is_failure)
     if strict and failures:
         raise ReportSchemaValidationError(failures[0])

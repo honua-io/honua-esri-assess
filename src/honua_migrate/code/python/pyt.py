@@ -39,22 +39,34 @@ class UnsupportedToolboxError(NotImplementedError):
 
 @dataclass(frozen=True)
 class PytParameter:
-    """One ``arcpy.Parameter(...)`` discovered in ``getParameterInfo``."""
+    """One ``arcpy.Parameter(...)`` discovered in ``getParameterInfo``.
+
+    Besides the constructor keywords, common script-tool parameter attributes
+    set *after* construction are captured when they are literal: a default
+    ``param.value = ...`` and a value-list ``param.filter.list = [...]``.
+    """
 
     name: str | None
     display_name: str | None = None
     datatype: str | None = None
     parameter_type: str | None = None
     direction: str | None = None
+    default_value: JsonValue = None
+    filter_list: tuple[JsonValue, ...] | None = None
 
     def to_dict(self) -> JsonObject:
-        return {
+        result: JsonObject = {
             "name": self.name,
             "displayName": self.display_name,
             "datatype": self.datatype,
             "parameterType": self.parameter_type,
             "direction": self.direction,
         }
+        if self.default_value is not None:
+            result["defaultValue"] = self.default_value
+        if self.filter_list is not None:
+            result["filterList"] = list(self.filter_list)
+        return result
 
 
 @dataclass(frozen=True)
@@ -354,26 +366,102 @@ def _parse_parameters(node: ast.ClassDef) -> tuple[PytParameter, ...]:
     method = _method(node, "getParameterInfo")
     if method is None:
         return ()
+
+    # First pass: collect post-construction attribute assignments keyed by the
+    # local variable name the Parameter was bound to. Common script-tool idioms
+    # set ``param.value = <default>`` and ``param.filter.list = [<choices>]``.
+    defaults, filter_lists = _parameter_attribute_assignments(method)
+
+    bound_calls = {
+        id(stmt.value)
+        for stmt in ast.walk(method)
+        if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Call)
+    }
+
     parameters: list[PytParameter] = []
-    for call in ast.walk(method):
-        if not isinstance(call, ast.Call):
+    for stmt in ast.walk(method):
+        if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
             continue
-        if not _is_parameter_constructor(call.func):
+        if not (isinstance(stmt.value, ast.Call) and _is_parameter_constructor(stmt.value.func)):
             continue
-        kwargs: dict[str, JsonValue] = {}
-        for keyword in call.keywords:
-            if keyword.arg is not None:
-                kwargs[keyword.arg] = _const_value(keyword.value)
+        target = stmt.targets[0]
+        var = target.id if isinstance(target, ast.Name) else None
         parameters.append(
-            PytParameter(
-                name=_as_str(kwargs.get("name")),
-                display_name=_as_str(kwargs.get("displayName")),
-                datatype=_as_str(kwargs.get("datatype")),
-                parameter_type=_as_str(kwargs.get("parameterType")),
-                direction=_as_str(kwargs.get("direction")),
+            _parameter_from_call(
+                stmt.value,
+                default_value=defaults.get(var) if var is not None else None,
+                filter_list=filter_lists.get(var) if var is not None else None,
             )
         )
+
+    # Fall back to any inline ``arcpy.Parameter(...)`` calls not bound to a
+    # local (e.g. constructed directly inside the returned list) so the original
+    # detection behaviour is preserved.
+    for call in ast.walk(method):
+        if not isinstance(call, ast.Call) or not _is_parameter_constructor(call.func):
+            continue
+        if id(call) in bound_calls:
+            continue
+        parameters.append(_parameter_from_call(call))
     return tuple(parameters)
+
+
+def _parameter_attribute_assignments(
+    method: ast.FunctionDef,
+) -> tuple[dict[str, JsonValue], dict[str, tuple[JsonValue, ...]]]:
+    """Collect ``param.value`` / ``param.filter.list`` literals by variable."""
+
+    defaults: dict[str, JsonValue] = {}
+    filter_lists: dict[str, tuple[JsonValue, ...]] = {}
+    for stmt in ast.walk(method):
+        if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+            continue
+        var, attr_path = _attribute_chain(stmt.targets[0])
+        if var is None:
+            continue
+        value = _const_value(stmt.value)
+        if attr_path == ("value",) and value is not None:
+            defaults[var] = value
+        elif attr_path == ("filter", "list") and isinstance(value, list):
+            filter_lists[var] = tuple(value)
+    return defaults, filter_lists
+
+
+def _parameter_from_call(
+    call: ast.Call,
+    *,
+    default_value: JsonValue = None,
+    filter_list: tuple[JsonValue, ...] | None = None,
+) -> PytParameter:
+    kwargs = {kw.arg: _const_value(kw.value) for kw in call.keywords if kw.arg is not None}
+    return PytParameter(
+        name=_as_str(kwargs.get("name")),
+        display_name=_as_str(kwargs.get("displayName")),
+        datatype=_as_str(kwargs.get("datatype")),
+        parameter_type=_as_str(kwargs.get("parameterType")),
+        direction=_as_str(kwargs.get("direction")),
+        default_value=default_value,
+        filter_list=filter_list,
+    )
+
+
+def _attribute_chain(node: ast.AST) -> tuple[str | None, tuple[str, ...]]:
+    """Return ``(base_var, attribute_path)`` for ``a.b.c`` attribute targets.
+
+    ``param.value`` -> ``("param", ("value",))``;
+    ``param.filter.list`` -> ``("param", ("filter", "list"))``. Returns
+    ``(None, ())`` for anything that is not a plain attribute chain rooted at a
+    bare name.
+    """
+
+    attrs: list[str] = []
+    current: ast.AST = node
+    while isinstance(current, ast.Attribute):
+        attrs.append(current.attr)
+        current = current.value
+    if isinstance(current, ast.Name) and attrs:
+        return current.id, tuple(reversed(attrs))
+    return None, ()
 
 
 def _is_parameter_constructor(func: ast.AST) -> bool:

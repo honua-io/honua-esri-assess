@@ -149,6 +149,84 @@ def test_parse_pyt_source_reports_syntax_error() -> None:
     assert toolbox.syntax_error is not None
 
 
+PYT_PARAM_ATTRS_SOURCE = '''
+import arcpy
+
+
+class Toolbox(object):
+    def __init__(self):
+        self.label = "Attrs Toolbox"
+        self.alias = "attrs"
+        self.tools = [Styled]
+
+
+class Styled(object):
+    def __init__(self):
+        self.label = "Styled"
+
+    def getParameterInfo(self):
+        distance = arcpy.Parameter(
+            displayName="Distance",
+            name="distance",
+            datatype="GPLinearUnit",
+            parameterType="Required",
+            direction="Input",
+        )
+        distance.value = "25 Meters"
+        method = arcpy.Parameter(
+            displayName="Method",
+            name="method",
+            datatype="GPString",
+            parameterType="Required",
+            direction="Input",
+        )
+        method.filter.list = ["PLANAR", "GEODESIC"]
+        method.value = "PLANAR"
+        return [distance, method]
+
+    def execute(self, parameters, messages):
+        arcpy.analysis.Buffer("a", "b", parameters[0].valueAsText)
+'''
+
+
+def test_parse_pyt_captures_default_value_and_filter_list() -> None:
+    toolbox = parse_pyt_source(PYT_PARAM_ATTRS_SOURCE, filename="attrs.pyt")
+    (tool,) = toolbox.tools
+    params = {p.name: p for p in tool.parameters}
+
+    assert params["distance"].default_value == "25 Meters"
+    assert params["distance"].filter_list is None
+
+    assert params["method"].default_value == "PLANAR"
+    assert params["method"].filter_list == ("PLANAR", "GEODESIC")
+
+
+def test_pyt_parameter_to_dict_includes_attrs_only_when_present() -> None:
+    toolbox = parse_pyt_source(PYT_PARAM_ATTRS_SOURCE)
+    (tool,) = toolbox.tools
+    params = {p.name: p.to_dict() for p in tool.parameters}
+
+    method = params["method"]
+    assert method["defaultValue"] == "PLANAR"
+    assert method["filterList"] == ["PLANAR", "GEODESIC"]
+
+    distance = params["distance"]
+    assert distance["defaultValue"] == "25 Meters"
+    assert "filterList" not in distance
+
+
+def test_pyt_bound_parameters_are_not_double_counted() -> None:
+    # PYT_SOURCE binds each Parameter to a local then returns the locals; the
+    # parser must report exactly one parameter per constructor, not two.
+    toolbox = parse_pyt_source(PYT_SOURCE)
+    buffer_tool = toolbox.tools[0]
+    assert [p.name for p in buffer_tool.parameters] == [
+        "in_features",
+        "distance",
+        "out_features",
+    ]
+
+
 def test_parse_binary_toolbox_is_stubbed_with_todo(tmp_path) -> None:
     with pytest.raises(UnsupportedToolboxError) as excinfo:
         parse_binary_toolbox(tmp_path / "example.atbx")

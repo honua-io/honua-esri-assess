@@ -772,6 +772,129 @@ _register(
     )
 )
 
+_register(
+    _ToolSpec(
+        family="analysis",
+        tool="GraphicBuffer",
+        # GraphicBuffer is Buffer with cap/join geometry styling. The buffered
+        # geometry itself maps onto geometry.buffer; the ArcGIS cap/join/miter
+        # styling kwargs are passed through for server-side review the same way
+        # Buffer's line_side/line_end_type are.
+        process_id="buffer",
+        job_process_id="geometry.buffer",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("out_feature_class", "result", kind="output"),
+            _arg("buffer_distance_or_field", "distance"),
+            _arg("line_caps", "line_caps"),
+            _arg("line_joins", "line_joins"),
+            _arg("miter_limit", "miter_limit"),
+            _arg("max_deviation", "max_deviation"),
+        ),
+        aliases=_aliases(
+            ("input_features", "input_features"),
+            ("distance", "distance"),
+            ("output", "result"),
+            ("out_features", "result"),
+        ),
+        notes=(
+            "GraphicBuffer maps to geometry.buffer; ArcGIS cap/join/miter styling "
+            "kwargs are passed through for server-side review.",
+        ),
+    )
+)
+
+
+_register(
+    _ToolSpec(
+        family="management",
+        tool="MinimumBoundingGeometry",
+        # geometry.convex-hull is layer-scope on the reconciled server but NOT in
+        # EXECUTABLE_PROCESS_IDS, so this tool is supported (mapped) yet stays
+        # manual-review -- it never claims a server-runnable migration. Note: a
+        # per-call gate cannot refine the geometry_type here because gates only
+        # run for job-executable specs; the geometry_type caveat is surfaced via
+        # notes instead.
+        process_id="convex-hull",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("out_feature_class", "result", kind="output"),
+            _arg("geometry_type", "geometry_type"),
+            _arg("group_option", "group_option"),
+            _arg("group_field", "group_field"),
+            _arg("mbg_fields_option", "mbg_fields_option"),
+        ),
+        aliases=_aliases(("output", "result"), ("out_features", "result")),
+        notes=(
+            "Only the CONVEX_HULL geometry_type maps to geometry.convex-hull "
+            "(which is not job-executable by the reconciled server yet); other "
+            "bounding-geometry types (ENVELOPE, CIRCLE, RECTANGLE_*) have no "
+            "Honua mapping -- migrate manually.",
+        ),
+    )
+)
+_register(
+    _ToolSpec(
+        family="management",
+        tool="FeatureToPoint",
+        # geometry.centroid is layer-scope but not job-executable -> manual-review.
+        process_id="centroid",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("out_feature_class", "result", kind="output"),
+            _arg("point_location", "point_location"),
+        ),
+        aliases=_aliases(("output", "result"), ("out_features", "result")),
+        notes=(
+            "FeatureToPoint maps to geometry.centroid; ArcGIS INSIDE point_location "
+            "(label point) differs from a true centroid -- review before running.",
+        ),
+    )
+)
+_register(
+    _ToolSpec(
+        family="analysis",
+        tool="SymDiff",
+        # geometry.difference is layer-scope but not job-executable; symmetric
+        # difference additionally differs from a pairwise single-geometry
+        # difference, so this stays manual-review.
+        process_id="symmetric-difference",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("update_features", "update_features", kind="input"),
+            _arg("out_feature_class", "result", kind="output"),
+            _arg("join_attributes", "join_attributes"),
+            _arg("cluster_tolerance", "cluster_tolerance"),
+        ),
+        aliases=_aliases(("output", "result"), ("out_features", "result")),
+        notes=(
+            "ArcGIS SymDiff computes the symmetric difference of two feature "
+            "classes; no job-executable Honua process maps to it yet -- migrate "
+            "manually.",
+        ),
+    )
+)
+_register(
+    _ToolSpec(
+        family="analysis",
+        tool="Update",
+        process_id="update",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("update_features", "update_features", kind="input"),
+            _arg("out_feature_class", "result", kind="output"),
+            _arg("keep_borders", "keep_borders"),
+            _arg("cluster_tolerance", "cluster_tolerance"),
+        ),
+        aliases=_aliases(("output", "result"), ("out_features", "result")),
+        notes=(
+            "ArcGIS Update cuts the input with the update feature class and "
+            "replaces overlapping geometry; no job-executable Honua process maps "
+            "to it yet -- migrate manually.",
+        ),
+    )
+)
+
 # ---------------------------------------------------------------------------
 # Re-pointed hardening coverage: ArcPy tools mapped to the reconciled server's
 # job-executable geometry.simplify process (honua-server#1228). Tools whose

@@ -66,6 +66,7 @@ def run(options: ScanOptions) -> ScanResult:
             user_agent=options.user_agent,
             timeout=options.timeout,
             group_cap=options.access_group_cap,
+            max_attempts=max(1, options.max_retries + 1),
         )
         diagnostics.extend(access_diags)
 
@@ -83,11 +84,13 @@ def _collect_portal_access(
     user_agent: str,
     timeout: float,
     group_cap: int,
+    max_attempts: int,
 ) -> tuple[dict[str, Any], list[Diagnostic]]:
     client = RequestsHttpClient(
         token=token,
         user_agent=user_agent,
         default_timeout=timeout,
+        max_attempts=max_attempts,
     )
     collector = PortalAccessCollector(target, client, group_cap=group_cap)
     item_sharing = _item_sharing_from_inventory(footprint.get("inventory", []))

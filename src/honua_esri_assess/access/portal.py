@@ -18,6 +18,7 @@ import re
 from honua_esri_assess.diagnostics import redact as _redact_secrets
 from honua_esri_assess.entitlements.diagnostics import Diagnostic
 from honua_esri_assess.entitlements.http import HttpClient, HttpResponse, safe_url
+from honua_esri_assess.server._safe import credential_free_url
 
 from .diagnostics import (
     AccessApiError,
@@ -48,6 +49,8 @@ _PAGE_NUM = 100
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+# Mirror the OrgSecurityPolicy.allowedOrigins pattern from the v0.2 schema.
+_ALLOWED_ORIGIN_RE = re.compile(r"^[A-Za-z0-9.:_/-]{1,256}$")
 
 
 @dataclass(frozen=True)
@@ -176,13 +179,7 @@ class PortalAccessCollector:
             password_complexity=_as_optional_bool(payload.get("hasMixedCase"))
             or _as_optional_bool(payload.get("hasDigit")),
             allowed_origins=tuple(
-                sorted(
-                    {
-                        _sanitize_text(str(o))
-                        for o in (payload.get("allowedOrigins") or [])
-                        if isinstance(o, str)
-                    }
-                )
+                sorted(_sanitize_allowed_origins(payload.get("allowedOrigins"), diagnostics))
             ),
             session_expiry_minutes=_as_optional_int(payload.get("sessionExpiry")),
         )
@@ -573,6 +570,50 @@ def _quantize_last_login(value: Any) -> str | None:
     except (OverflowError, OSError, ValueError):
         return None
     return ts.strftime("%Y-%m-%dT00:00:00Z")
+
+
+def _sanitize_allowed_origins(
+    raw: Any, diagnostics: list[Diagnostic]
+) -> set[str]:
+    """Strip userinfo/query/fragment from CORS origin URLs and drop unsafe entries.
+
+    The generic ``_sanitize_text`` redactor replaces credential values with
+    a literal ``<redacted>`` token, which contains characters
+    (``<``, ``>``) that the v0.2 ``OrgSecurityPolicy.allowedOrigins``
+    pattern (``[A-Za-z0-9.:_/-]{1,256}``) rejects. Schema validation would
+    therefore reject any artifact whose Esri payload listed an origin
+    with embedded userinfo. We use the URL-parsing
+    :func:`credential_free_url` helper instead, which produces a
+    schema-shaped origin like ``https://allowed.local``. Entries that
+    still fail the pattern after parsing are dropped with a
+    ``redacted-field`` diagnostic.
+    """
+
+    cleaned: set[str] = set()
+    if not isinstance(raw, list):
+        return cleaned
+    for entry in raw:
+        if not isinstance(entry, str) or not entry:
+            continue
+        try:
+            stripped = credential_free_url(entry)
+        except ValueError:
+            stripped = ""
+        if not stripped or not _ALLOWED_ORIGIN_RE.fullmatch(stripped):
+            diagnostics.append(
+                Diagnostic(
+                    code="redacted-field",
+                    severity="info",
+                    message=(
+                        "Allowed origin omitted: value could not be reduced to a "
+                        "schema-safe origin URL."
+                    ),
+                    scope="portal.access.securityPolicy",
+                )
+            )
+            continue
+        cleaned.add(stripped)
+    return cleaned
 
 
 def _sanitize_text(value: str) -> str:

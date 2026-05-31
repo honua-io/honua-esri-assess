@@ -155,11 +155,11 @@ def _server_to_footprint(
     generated_stamp = _utc(generated_at or datetime.now(timezone.utc))
     captured_stamp = _utc(captured_at or generated_stamp)
     service_counts = Counter(service.service_type for service in result.services)
-    omitted = _services_omitted_from_inventory(result.diagnostics)
+    omitted = services_omitted_from_inventory(result.diagnostics)
     inventory = [
         _server_service_to_dict(service)
         for service in result.services
-        if _service_identity(service) not in omitted
+        if service_identity(service) not in omitted
     ]
     diagnostics = [
         _server_diagnostic_to_dict(diagnostic)
@@ -237,13 +237,21 @@ def _portal_diagnostic_to_dict(diagnostic: Diagnostic) -> dict[str, Any]:
 _ROOT_FOLDER_SENTINEL = "_root"
 
 
-def _service_identity(service: ServiceRecord) -> tuple[str, str, str]:
+def service_identity(service: ServiceRecord) -> tuple[str, str, str]:
+    """Canonical ``(folder, name, service_type)`` key used by the omission filter."""
+
     return (service.folder or _ROOT_FOLDER_SENTINEL, service.name, service.service_type)
 
 
-def _services_omitted_from_inventory(
+def services_omitted_from_inventory(
     diagnostics: tuple[ScanDiagnostic, ...],
 ) -> set[tuple[str, str, str]]:
+    """Identities of services that the v0.1 emitter drops from ``inventory[]``.
+
+    Shared with the access scan handler so per-service permission probes
+    stay aligned with the artifact's inventory list.
+    """
+
     terminal_codes = {
         "server.auth",
         "server.forbidden",

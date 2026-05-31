@@ -22,7 +22,11 @@ from honua_esri_assess.diagnostics import (
 from honua_esri_assess.entitlements.diagnostics import Diagnostic as AccessDiagnostic
 from honua_esri_assess.entitlements.http import RequestsHttpClient
 from honua_esri_assess.footprint.access import apply_access_facet
-from honua_esri_assess.footprint.v0_1 import to_footprint_v0_1
+from honua_esri_assess.footprint.v0_1 import (
+    service_identity,
+    services_omitted_from_inventory,
+    to_footprint_v0_1,
+)
 from honua_esri_assess.server import (
     AnonymousCredential,
     RetryPolicy,
@@ -70,13 +74,26 @@ def run(options: ScanOptions) -> ScanResult:
         _to_cli_diagnostic(diagnostic) for diagnostic in result.diagnostics
     ]
     if options.include_access and options.token:
+        # Access permission probes must stay aligned with the emitted inventory:
+        # terminal scanner failures (server.auth, server.forbidden,
+        # server.rate-limited, server.service.missing-permission,
+        # server.service.rate-limited) omit the service from `inventory[]` in the
+        # v0.1 emitter, so probing those services would describe permissions for
+        # rows the artifact does not carry.
+        omitted = services_omitted_from_inventory(result.diagnostics)
+        access_services = [
+            service
+            for service in result.services
+            if service_identity(service) not in omitted
+        ]
         footprint, access_diags = _collect_server_access(
             footprint=footprint,
             target=options.target,
-            services=list(result.services),
+            services=access_services,
             token=options.token,
             user_agent=options.user_agent,
             timeout=options.timeout,
+            max_attempts=max(1, options.max_retries + 1),
         )
         diagnostics.extend(access_diags)
     return ScanResult(
@@ -93,11 +110,13 @@ def _collect_server_access(
     token: str,
     user_agent: str,
     timeout: float,
+    max_attempts: int,
 ) -> tuple[dict[str, Any], list[Diagnostic]]:
     client = RequestsHttpClient(
         token=token,
         user_agent=user_agent,
         default_timeout=timeout,
+        max_attempts=max_attempts,
     )
     base_url = _arcgis_base_from_target(target)
     collector = ServerAccessCollector(base_url, client)

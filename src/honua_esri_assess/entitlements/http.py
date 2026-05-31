@@ -16,6 +16,7 @@ from typing import Any, Mapping, Protocol
 from urllib.parse import urlencode, urlparse, urlunparse
 import json
 import logging
+import time
 import urllib.error
 import urllib.request
 
@@ -134,16 +135,28 @@ class RequestsHttpClient:
     for that library; consumers should not depend on the concrete class.
     """
 
+    _RETRYABLE_STATUSES = frozenset({429, 502, 503, 504})
+
     def __init__(
         self,
         *,
         token: str | None = None,
         user_agent: str = "honua-esri-assess",
         default_timeout: float = 30.0,
+        max_attempts: int = 1,
+        initial_backoff: float = 1.0,
+        backoff_factor: float = 2.0,
+        max_backoff_seconds: float = 30.0,
+        sleep: Any = time.sleep,
     ) -> None:
         self._token = token
         self._user_agent = user_agent
         self._default_timeout = default_timeout
+        self._max_attempts = max(1, int(max_attempts))
+        self._initial_backoff = max(0.0, float(initial_backoff))
+        self._backoff_factor = max(1.0, float(backoff_factor))
+        self._max_backoff_seconds = max(0.0, float(max_backoff_seconds))
+        self._sleep = sleep
 
     def get_json(
         self,
@@ -166,19 +179,41 @@ class RequestsHttpClient:
         )
         effective_timeout = timeout if timeout is not None else self._default_timeout
         _LOG.debug("GET %s", safe_url(full_url))
-        try:
-            with urllib.request.urlopen(request, timeout=effective_timeout) as response:
-                status = response.getcode()
-                raw = response.read()
-        except urllib.error.HTTPError as exc:
-            raw = exc.read() if hasattr(exc, "read") else b""
-            status = exc.code
-        except (urllib.error.URLError, TimeoutError) as exc:
-            raise ConnectionError(str(exc)) from exc
-        body: Any = None
-        if raw:
+
+        last_response: HttpResponse | None = None
+        for attempt in range(1, self._max_attempts + 1):
             try:
-                body = json.loads(raw.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise ValueError(f"non-JSON response from Esri endpoint: {exc}") from exc
-        return HttpResponse(status_code=status, body=body)
+                with urllib.request.urlopen(request, timeout=effective_timeout) as response:
+                    status = response.getcode()
+                    raw = response.read()
+            except urllib.error.HTTPError as exc:
+                raw = exc.read() if hasattr(exc, "read") else b""
+                status = exc.code
+            except (urllib.error.URLError, TimeoutError) as exc:
+                if attempt < self._max_attempts:
+                    self._sleep(self._backoff_for(attempt))
+                    continue
+                raise ConnectionError(str(exc)) from exc
+            body: Any = None
+            if raw:
+                try:
+                    body = json.loads(raw.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ValueError(
+                        f"non-JSON response from Esri endpoint: {exc}"
+                    ) from exc
+            last_response = HttpResponse(status_code=status, body=body)
+            if status in self._RETRYABLE_STATUSES and attempt < self._max_attempts:
+                self._sleep(self._backoff_for(attempt))
+                continue
+            return last_response
+        # Loop only exits via return or raise; the assertion guards against
+        # a future edit that accidentally drops the terminal return.
+        assert last_response is not None
+        return last_response
+
+    def _backoff_for(self, attempt: int) -> float:
+        return min(
+            self._initial_backoff * (self._backoff_factor ** (attempt - 1)),
+            self._max_backoff_seconds,
+        )

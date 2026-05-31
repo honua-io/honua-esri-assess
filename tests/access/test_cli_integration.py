@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -166,6 +167,135 @@ def test_embed_access_diagnostics_noop_on_empty_diags() -> None:
     footprint: dict[str, object] = {"diagnostics": []}
     _embed_access_diagnostics(footprint, ())
     assert footprint["diagnostics"] == []
+
+
+def test_server_access_excludes_services_omitted_from_inventory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Per-service permission probes must skip services the v0.1 emitter drops."""
+
+    from honua_esri_assess.access.server import ServiceRef
+    from honua_esri_assess.commands.scan_handlers import server as server_handler
+    from honua_esri_assess.entitlements.diagnostics import (
+        Diagnostic as AccessDiagnostic,
+    )
+    from honua_esri_assess.server.models import (
+        ScanDiagnostic,
+        ServerInfo,
+        ServerScanResult,
+        ServiceRecord,
+    )
+
+    visible_service = ServiceRecord(
+        name="Visible",
+        folder="",
+        service_type="MapServer",
+        kind="mapService",
+        url="https://gis.fixture.local/arcgis/rest/services/Visible/MapServer",
+    )
+    forbidden_service = ServiceRecord(
+        name="Forbidden",
+        folder="Restricted",
+        service_type="FeatureServer",
+        kind="featureService",
+        url=(
+            "https://gis.fixture.local/arcgis/rest/services/Restricted/"
+            "Forbidden/FeatureServer"
+        ),
+    )
+    rate_limited_service = ServiceRecord(
+        name="Throttled",
+        folder="",
+        service_type="MapServer",
+        kind="mapService",
+        url="https://gis.fixture.local/arcgis/rest/services/Throttled/MapServer",
+    )
+    diagnostics = (
+        ScanDiagnostic(
+            code="server.service.missing-permission",
+            severity="warning",
+            message="forbidden",
+            field="services/Restricted/Forbidden/FeatureServer",
+        ),
+        ScanDiagnostic(
+            code="server.service.rate-limited",
+            severity="warning",
+            message="429",
+            field="services/_root/Throttled/MapServer",
+        ),
+    )
+    scan_result = ServerScanResult(
+        info=ServerInfo(url="https://gis.fixture.local/arcgis/rest/services"),
+        auth_mode="token",
+        deep=True,
+        folders=(),
+        services=(visible_service, forbidden_service, rate_limited_service),
+        diagnostics=diagnostics,
+    )
+
+    captured: dict[str, object] = {}
+
+    class _FakeServerClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+    class _FakeServerScanner:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def scan(self, _client: object) -> ServerScanResult:
+            return scan_result
+
+    def _fake_collect_server_access(
+        *,
+        footprint: dict[str, Any],
+        target: str,
+        services: list[ServiceRecord],
+        token: str,
+        user_agent: str,
+        timeout: float,
+        max_attempts: int,
+    ) -> tuple[dict[str, Any], list[object]]:
+        captured["services"] = list(services)
+        captured["max_attempts"] = max_attempts
+        return footprint, []
+
+    monkeypatch.setattr(server_handler, "ServerClient", _FakeServerClient)
+    monkeypatch.setattr(server_handler, "ServerScanner", _FakeServerScanner)
+    monkeypatch.setattr(
+        server_handler, "_collect_server_access", _fake_collect_server_access
+    )
+
+    options = ScanOptions(
+        target="https://gis.fixture.local/arcgis",
+        output=tmp_path / "out.json",
+        token_env="FAKE_TOKEN",
+        log_format="text",
+        log_level="info",
+        no_network_telemetry_confirm=False,
+        user_agent="ua",
+        max_retries=4,
+        timeout=10.0,
+        validate=False,
+        include_access=True,
+        access_group_cap=10,
+        token="fake-token-value",
+    )
+
+    server_handler.run(options)
+
+    services_passed = [
+        (s.folder or "", s.name, s.service_type)
+        for s in captured["services"]  # type: ignore[union-attr]
+    ]
+    # Only the visible service survives the omission filter.
+    assert services_passed == [("", "Visible", "MapServer")]
+    # And --max-retries=4 → max_attempts=5 reaches the access call.
+    assert captured["max_attempts"] == 5
+    # Suppress the unused-import lint for the typed alias.
+    assert AccessDiagnostic is not None
+    assert ServiceRef is not None
 
 
 def test_scan_default_omits_access_block(tmp_path: Path) -> None:

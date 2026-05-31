@@ -295,7 +295,19 @@ def test_portal_free_text_fields_strip_credential_fragments() -> None:
     assert group["title"].startswith("Field Crew ")
     assert "<redacted>" in group["title"]
     policy = out["portal"]["access"]["securityPolicy"]
-    assert all("<redacted>" in origin for origin in policy["allowedOrigins"])
+    # The userinfo-bearing origin survives as a schema-shaped URL,
+    # never the redactor's "<redacted>" sentinel (which would violate
+    # the v0.2 allowedOrigins pattern).
+    assert policy["allowedOrigins"] == ["https://allowed.local"]
+
+    # And the resulting v0.2 artifact must actually pass schema validation.
+    from pathlib import Path
+
+    from jsonschema import Draft202012Validator, FormatChecker
+
+    schema_path = Path(__file__).resolve().parents[2] / "schemas" / "esri-footprint-v0.2.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    Draft202012Validator(schema, format_checker=FormatChecker()).validate(out)
 
 
 def test_server_full_name_strips_credential_fragments() -> None:

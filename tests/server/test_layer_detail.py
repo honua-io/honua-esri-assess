@@ -52,6 +52,45 @@ def test_parses_relationships_attachments_subtypes_and_symbology() -> None:
     assert rel.role == "esriRelRoleOrigin"
 
 
+def test_parses_versioning_and_attribute_rules() -> None:
+    detail = parse_layer_detail(_load("featureserver-watersheds-layer-0.json"))
+
+    # Branch versioning wins over traditional when both are advertised.
+    assert detail.versioning is not None
+    assert detail.versioning.mode == "branch"
+    assert detail.versioning.archived is True
+
+    # hasAttributeRules flag plus an inlined read-only rules array.
+    assert detail.attribute_rules is not None
+    assert detail.attribute_rules.present is True
+    assert detail.attribute_rules.count == 2
+
+
+def test_traditional_versioning_and_explicit_no_rules() -> None:
+    detail = parse_layer_detail(
+        {"isDataVersioned": True, "hasAttributeRules": False}
+    )
+    assert detail.versioning is not None
+    assert detail.versioning.mode == "traditional"
+    assert detail.versioning.archived is None
+    assert detail.attribute_rules is not None
+    assert detail.attribute_rules.present is False
+    assert detail.attribute_rules.count is None
+
+
+def test_explicit_unversioned_is_recorded_as_none_mode() -> None:
+    detail = parse_layer_detail({"isDataVersioned": False})
+    assert detail.versioning is not None
+    assert detail.versioning.mode == "none"
+
+
+def test_attribute_rules_count_implies_presence() -> None:
+    detail = parse_layer_detail({"attributeRules": [{"id": 1}, {"id": 2}]})
+    assert detail.attribute_rules is not None
+    assert detail.attribute_rules.present is True
+    assert detail.attribute_rules.count == 2
+
+
 def test_minimal_layer_has_no_optional_signals() -> None:
     detail = parse_layer_detail(_load("featureserver-watersheds-layer-1.json"))
 
@@ -64,6 +103,9 @@ def test_minimal_layer_has_no_optional_signals() -> None:
     assert detail.has_popups is None
     assert detail.definition_query is None
     assert detail.spatial_reference == {"wkid": 3857}
+    # No versioning/attribute-rule hints -> not determinable, blocks omitted.
+    assert detail.versioning is None
+    assert detail.attribute_rules is None
 
 
 def test_empty_body_yields_empty_detail() -> None:
@@ -73,6 +115,8 @@ def test_empty_body_yields_empty_detail() -> None:
     assert detail.has_attachments is None
     assert detail.editor_tracking is None
     assert detail.spatial_reference == {}
+    assert detail.versioning is None
+    assert detail.attribute_rules is None
 
 
 def test_html_popup_none_marks_popups_disabled() -> None:

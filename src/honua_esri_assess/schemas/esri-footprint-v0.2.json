@@ -1111,7 +1111,7 @@
         },
         "layers": {
           "type": "array",
-          "description": "Additive at v0.2: per-layer schema and behavior detail captured from each FeatureServer/MapServer layer's read-only metadata (fields, domains, relationships, attachments, editor tracking, renderer/labels/popups, definition query, spatial reference). Present only when the layer-detail probe ran and at least one layer was resolved; absent otherwise so plain probes are unchanged. v0.1 readers ignore this property.",
+          "description": "Additive at v0.2: per-layer schema and behavior detail captured from each FeatureServer/MapServer layer's read-only metadata (fields, domains, relationships, attachments, editor tracking, renderer/labels/popups, definition query, spatial reference, versioning hints, attribute-rule presence). Present only when the layer-detail probe ran and at least one layer was resolved; absent otherwise so plain probes are unchanged. v0.1 readers ignore this property.",
           "items": {
             "$ref": "#/$defs/ServerLayerDetail"
           }
@@ -1216,6 +1216,12 @@
         },
         "sr": {
           "$ref": "#/$defs/SpatialReference"
+        },
+        "versioning": {
+          "$ref": "#/$defs/ServerLayerVersioning"
+        },
+        "attributeRules": {
+          "$ref": "#/$defs/ServerLayerAttributeRules"
         }
       }
     },
@@ -1298,6 +1304,42 @@
         },
         "editDateField": {
           "type": "string"
+        }
+      }
+    },
+    "ServerLayerVersioning": {
+      "type": "object",
+      "description": "Normalized versioning indicator read from a layer's read-only metadata (isDataBranchVersioned/isDataVersioned/isDataArchived). No version-management/admin endpoints are called. Present only when the metadata advertised a versioning hint.",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "branch",
+            "traditional",
+            "none"
+          ],
+          "description": "branch when the layer advertises branch versioning, traditional for state-based versioned data, none when the layer explicitly reports it is not versioned."
+        },
+        "archived": {
+          "type": "boolean",
+          "description": "Mirrors isDataArchived when advertised."
+        }
+      }
+    },
+    "ServerLayerAttributeRules": {
+      "type": "object",
+      "description": "Attribute-rule presence summarized from a layer's read-only metadata. present is true/false when the layer advertises a hasAttributeRules-style flag; the whole block is omitted (not-determinable) when presence cannot be read without admin endpoints, which this tool does not call. count is populated only when the metadata inlines an attributeRules array read-only.",
+      "additionalProperties": false,
+      "properties": {
+        "present": {
+          "type": "boolean",
+          "description": "Whether the layer advertises attribute rules in its read-only metadata."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of attribute rules, when the metadata inlines them read-only."
         }
       }
     },

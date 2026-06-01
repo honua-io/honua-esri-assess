@@ -14,10 +14,12 @@ from __future__ import annotations
 from typing import Any
 
 from .models import (
+    AttributeRulesInfo,
     EditorTracking,
     FieldDetail,
     LayerDetail,
     RelationshipDetail,
+    VersioningInfo,
 )
 
 __all__ = ["parse_layer_detail"]
@@ -39,6 +41,8 @@ def parse_layer_detail(body: dict[str, Any]) -> LayerDetail:
         has_popups=_has_popups(body),
         definition_query=_definition_query(body),
         spatial_reference=_parse_spatial_reference(body.get("extent")),
+        versioning=_parse_versioning(body),
+        attribute_rules=_parse_attribute_rules(body),
     )
 
 
@@ -181,6 +185,58 @@ def _definition_query(body: dict[str, Any]) -> str | None:
         if isinstance(value, str) and value.strip():
             return value
     return None
+
+
+def _parse_versioning(body: dict[str, Any]) -> VersioningInfo | None:
+    """Normalize traditional/branch versioning hints from layer metadata.
+
+    Reads only documented, read-only layer fields (``isDataBranchVersioned``,
+    ``isDataVersioned``, ``isDataArchived``). No version-management/admin
+    endpoints are consulted. Branch versioning wins over traditional when both
+    are advertised. Returns ``None`` when no versioning hint is present so the
+    additive block is omitted entirely.
+    """
+
+    branch = _optional_bool(body.get("isDataBranchVersioned"))
+    traditional = _optional_bool(body.get("isDataVersioned"))
+    archived = _optional_bool(body.get("isDataArchived"))
+
+    mode: str | None = None
+    if branch:
+        mode = "branch"
+    elif traditional:
+        mode = "traditional"
+    elif branch is False or traditional is False:
+        # The layer explicitly advertises that its data is not versioned.
+        mode = "none"
+
+    if mode is None and archived is None:
+        return None
+    return VersioningInfo(mode=mode, archived=archived)
+
+
+def _parse_attribute_rules(body: dict[str, Any]) -> AttributeRulesInfo | None:
+    """Summarize attribute-rule presence from read-only layer metadata.
+
+    The layer resource may advertise a ``hasAttributeRules`` flag and, on some
+    servers, inline the rules read-only as an ``attributeRules`` array. When
+    neither is present, presence is *not determinable* without admin endpoints
+    (which this tool does not call), so the block is omitted rather than
+    asserting absence.
+    """
+
+    rules = body.get("attributeRules")
+    count: int | None = None
+    if isinstance(rules, list):
+        count = sum(1 for entry in rules if isinstance(entry, dict))
+
+    present = _optional_bool(body.get("hasAttributeRules"))
+    if present is None and count is not None:
+        present = count > 0
+
+    if present is None and count is None:
+        return None
+    return AttributeRulesInfo(present=present, count=count)
 
 
 def _parse_spatial_reference(extent: Any) -> dict[str, Any]:

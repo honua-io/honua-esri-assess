@@ -68,6 +68,38 @@ class EditorTracking:
 
 
 @dataclass(frozen=True)
+class VersioningInfo:
+    """Normalized versioning indicator read from a layer's metadata.
+
+    ``mode`` is ``branch`` when the layer advertises branch versioning,
+    ``traditional`` when it advertises traditional (state-based) versioned
+    data, ``none`` when the layer explicitly reports it is not versioned, and
+    ``None`` (the whole block omitted) when no versioning hint is present in
+    the read-only metadata. ``archived`` mirrors ``isDataArchived`` when the
+    layer advertises it. Only documented read-only fields are consulted; no
+    version-management/admin endpoints are called.
+    """
+
+    mode: str | None = None
+    archived: bool | None = None
+
+
+@dataclass(frozen=True)
+class AttributeRulesInfo:
+    """Attribute-rule presence summarized from a layer's read-only metadata.
+
+    ``present`` is ``True``/``False`` when the layer advertises a
+    ``hasAttributeRules``-style flag, and ``None`` when presence cannot be
+    determined without admin endpoints (which this tool does not call).
+    ``count`` is populated only when the layer metadata itself carries an
+    attribute-rules array read-only; otherwise it is ``None``.
+    """
+
+    present: bool | None = None
+    count: int | None = None
+
+
+@dataclass(frozen=True)
 class LayerDetail:
     """Schema and behavior detail read from a single layer's JSON.
 
@@ -86,6 +118,8 @@ class LayerDetail:
     has_popups: bool | None = None
     definition_query: str | None = None
     spatial_reference: dict[str, Any] = field(default_factory=dict)
+    versioning: VersioningInfo | None = None
+    attribute_rules: AttributeRulesInfo | None = None
 
 
 @dataclass(frozen=True)
@@ -181,6 +215,7 @@ class ServerScanResult:
 
 
 __all__ = [
+    "AttributeRulesInfo",
     "EditorTracking",
     "FieldDetail",
     "FolderRecord",
@@ -192,4 +227,5 @@ __all__ = [
     "ServerInfo",
     "ServerScanResult",
     "ServiceRecord",
+    "VersioningInfo",
 ]

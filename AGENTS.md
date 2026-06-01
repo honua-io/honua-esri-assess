@@ -139,6 +139,15 @@ scripts/                 # check_dep_licenses.py, validate_publish_tag.py
   command layer, not in `report/`.
 - `scan filegdb` reads a local `_inventory.json` descriptor only and never
   touches the network; the `pyogrio` workspace scanner stays library-only.
+- Esri IP & licensing guardrails: API reimplementation is fair use under
+  *Google v. Oracle* (2021) and is not gated, but proprietary file FORMATS must
+  be clean-room (published specs / community readers such as GDAL `OpenFileGDB`;
+  never decompile or run licensed Esri software to learn internals),
+  Esri-licensed DATA/CONTENT must not be rehosted, proprietary ASSETS
+  (symbols/fonts) must not be embedded, software EULA terms must be respected,
+  and any published benchmark/comparison is gated on legal counsel sign-off.
+  See [`docs/compliance/esri-ip-and-licensing-guardrails.md`](docs/compliance/esri-ip-and-licensing-guardrails.md)
+  for the per-ticket checklist and clean-room provenance expectations.
 ```
 
 ## Shared dev-environment rules (multi-agent WSL)

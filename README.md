@@ -436,6 +436,12 @@ fixture layout and refresh protocol.
 - `EsriFootprint.json` follows semver, with a pre-1.0 stance that lets minor
   bumps break and guarantees no breaks within a minor line. See
   [`docs/schemas/versioning.md`](docs/schemas/versioning.md).
+- Esri IP & licensing posture (clean-room formats, no rehosting of licensed
+  data/content, no embedding of proprietary assets, EULA respect, and
+  counsel-gated benchmark/comparison publishing) is documented in
+  [`docs/compliance/esri-ip-and-licensing-guardrails.md`](docs/compliance/esri-ip-and-licensing-guardrails.md).
+  API reimplementation is treated as fair use under *Google v. Oracle* (2021)
+  and is not constrained.
 
 ## Validating the schema locally
 

@@ -856,6 +856,38 @@
           "minimum": 0,
           "description": "Number of layers observed for the service. Current ArcGIS Server producer output fills this from deep service probes; shallow or unprobed services emit 0."
         },
+        "serviceKind": {
+          "type": "string",
+          "enum": [
+            "mapService",
+            "featureService",
+            "imageService",
+            "vectorTileService",
+            "geoprocessingService",
+            "geocodeService",
+            "networkAnalysisService",
+            "geometryService",
+            "sceneService",
+            "streamService",
+            "globeService",
+            "mobileService",
+            "other"
+          ],
+          "description": "Coarse migration bucket for serviceType. Non-feature/map services (image, geocode, geoprocessing, scene, stream, network-analysis, vector-tile, ...) are classified explicitly; unrecognized raw types map to \"other\" rather than being dropped."
+        },
+        "ogcCapabilities": {
+          "type": "array",
+          "description": "OGC interfaces advertised on the service via its supportedExtensions (WMS/WFS/WCS). Omitted when the service advertises none. Deterministic, sorted, de-duplicated.",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "WMS",
+              "WFS",
+              "WCS"
+            ]
+          }
+        },
         "geometryType": {
           "$ref": "#/$defs/GeometryType"
         },

@@ -115,6 +115,7 @@ def test_footprint_inventory_includes_layer_count_when_deep() -> None:
         "serviceType": "FeatureServer",
         "folder": "Hydrology",
         "layerCount": 1,
+        "serviceKind": "featureService",
     }
 
 
@@ -293,3 +294,93 @@ def test_emitter_does_not_emit_auth_info_outside_v01_contract(auth_info: dict) -
     )
     fp = to_footprint_v0_1(result, tool_version="0.0.0")
     assert "tokenBasedSecurity" not in fp["source"]
+
+
+def test_footprint_classifies_non_feature_map_services_with_capabilities() -> None:
+    """Each non-feature/map service emits its serviceKind and OGC flags."""
+
+    info = ServerInfo(url="https://gis.example.com/arcgis/rest/services")
+    services = (
+        ServiceRecord(
+            name="NAIP2024",
+            folder="Imagery",
+            service_type="ImageServer",
+            kind="imageService",
+            url="https://gis.example.com/arcgis/rest/services/Imagery/NAIP2024/ImageServer",
+            ogc_capabilities=("WCS", "WMS"),
+        ),
+        ServiceRecord(
+            name="Locator",
+            folder=None,
+            service_type="GeocodeServer",
+            kind="geocodeService",
+            url="https://gis.example.com/arcgis/rest/services/Locator/GeocodeServer",
+        ),
+        ServiceRecord(
+            name="Knowledge",
+            folder=None,
+            service_type="KnowledgeGraphServer",
+            kind="other",
+            url="https://gis.example.com/arcgis/rest/services/Knowledge/KnowledgeGraphServer",
+        ),
+    )
+    result = ServerScanResult(
+        info=info,
+        auth_mode="anonymous",
+        deep=False,
+        folders=(),
+        services=services,
+        diagnostics=(),
+    )
+    fp = to_footprint_v0_1(result, tool_version="0.0.0")
+    by_url = {item["serviceUrl"]: item for item in fp["inventory"]}
+
+    image = by_url["https://gis.example.com/arcgis/rest/services/Imagery/NAIP2024/ImageServer"]
+    assert image["serviceType"] == "ImageServer"
+    assert image["serviceKind"] == "imageService"
+    assert image["ogcCapabilities"] == ["WCS", "WMS"]
+
+    geocode = by_url["https://gis.example.com/arcgis/rest/services/Locator/GeocodeServer"]
+    assert geocode["serviceKind"] == "geocodeService"
+    # No advertised OGC interfaces -> the optional array is omitted.
+    assert "ogcCapabilities" not in geocode
+
+    # Unknown service types are recorded explicitly as "other", never dropped.
+    unknown = by_url[
+        "https://gis.example.com/arcgis/rest/services/Knowledge/KnowledgeGraphServer"
+    ]
+    assert unknown["serviceType"] == "KnowledgeGraphServer"
+    assert unknown["serviceKind"] == "other"
+
+
+def test_footprint_with_service_breadth_validates_against_schema() -> None:
+    """The additive serviceKind/ogcCapabilities fields validate under v0.2."""
+
+    from honua_esri_assess.footprint.schema import validate_footprint
+
+    result = ServerScanResult(
+        info=ServerInfo(url="https://gis.example.com/arcgis/rest/services"),
+        auth_mode="anonymous",
+        deep=False,
+        folders=(),
+        services=(
+            ServiceRecord(
+                name="Parcels",
+                folder="Planning",
+                service_type="MapServer",
+                kind="mapService",
+                url="https://gis.example.com/arcgis/rest/services/Planning/Parcels/MapServer",
+                ogc_capabilities=("WFS", "WMS"),
+            ),
+            ServiceRecord(
+                name="Surface",
+                folder=None,
+                service_type="GPServer",
+                kind="geoprocessingService",
+                url="https://gis.example.com/arcgis/rest/services/Surface/GPServer",
+            ),
+        ),
+        diagnostics=(),
+    )
+    fp = to_footprint_v0_1(result, tool_version="0.0.0")
+    assert validate_footprint(fp) is True

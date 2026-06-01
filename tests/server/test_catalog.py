@@ -6,7 +6,9 @@ from honua_esri_assess.server.catalog import (
     SERVICE_TYPE_TO_KIND,
     UNKNOWN_KIND,
     classify_geometry,
+    classify_ogc_capabilities,
     classify_service,
+    is_known_service_type,
 )
 
 
@@ -56,3 +58,37 @@ def test_geometry_type_unknown_returns_input_string() -> None:
 
 def test_geometry_type_none_passthrough() -> None:
     assert classify_geometry(None) is None
+
+
+@pytest.mark.parametrize(
+    "raw_type",
+    ["MapServer", "FeatureServer", "ImageServer", "GeocodeServer", "SceneServer"],
+)
+def test_is_known_service_type_true_for_table_entries(raw_type: str) -> None:
+    assert is_known_service_type(raw_type) is True
+
+
+def test_is_known_service_type_false_for_unknown() -> None:
+    assert is_known_service_type("ZorpServer") is False
+
+
+@pytest.mark.parametrize(
+    ("supported_extensions", "expected"),
+    [
+        ("WMSServer", ("WMS",)),
+        ("WFSServer,WMSServer", ("WFS", "WMS")),
+        ("WCSServer", ("WCS",)),
+        ("WMSServer,WFSServer,WCSServer", ("WCS", "WFS", "WMS")),
+        # SOEs and unknown extensions are ignored, not surfaced as flags.
+        ("KmlServer,FeatureServer,LRServer", ()),
+        # Whitespace tolerated; duplicates collapse deterministically.
+        (" WMSServer , WMSServer ", ("WMS",)),
+        ("", ()),
+        (None, ()),
+    ],
+)
+def test_classify_ogc_capabilities(
+    supported_extensions: str | None,
+    expected: tuple[str, ...],
+) -> None:
+    assert classify_ogc_capabilities(supported_extensions) == expected

@@ -54,6 +54,7 @@ class ServiceRecord:
     url: str
     description: str | None = None
     capabilities: tuple[str, ...] = ()
+    ogc_capabilities: tuple[str, ...] = ()
     layers: tuple[LayerRecord, ...] = ()
     tables: tuple[LayerRecord, ...] = ()
     service_data_type: str | None = None

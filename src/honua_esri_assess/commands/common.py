@@ -54,6 +54,7 @@ class ScanOptions:
     max_retries: int
     timeout: float
     validate: bool
+    admin_usage: bool = False
     token: str | None = field(default=None, repr=False)
 
 
@@ -139,6 +140,19 @@ ValidateOption = Annotated[
         help="Validate the generated EsriFootprint.json against the bundled schema.",
     ),
 ]
+AdminUsageOption = Annotated[
+    bool,
+    typer.Option(
+        "--admin-usage/--no-admin-usage",
+        help=(
+            "Read-only ArcGIS Server: also pull /admin/usagereports and "
+            "/admin/data/items (requires an admin token) to emit usage-ranked "
+            "migration ordering and per-dataset binding-mode recommendations. "
+            "Degrades to a diagnostic and omits the facet when the admin "
+            "endpoints are unreachable or denied."
+        ),
+    ),
+]
 
 
 def build_scan_options(
@@ -153,6 +167,7 @@ def build_scan_options(
     max_retries: int,
     timeout: float,
     validate: bool,
+    admin_usage: bool = False,
 ) -> ScanOptions:
     configure_logging(level=log_level.value, log_format=log_format.value)
     token = os.environ.get(token_env) if token_env else None
@@ -169,6 +184,7 @@ def build_scan_options(
         max_retries=max_retries,
         timeout=timeout,
         validate=validate,
+        admin_usage=admin_usage,
         token=token,
     )
 
@@ -204,6 +220,7 @@ def run_scan_command(
     max_retries: int,
     timeout: float,
     validate: bool,
+    admin_usage: bool = False,
 ) -> None:
     from honua_esri_assess.commands.scan_handlers import get_handler
 
@@ -218,6 +235,7 @@ def run_scan_command(
         max_retries=max_retries,
         timeout=timeout,
         validate=validate,
+        admin_usage=admin_usage,
     )
     try:
         result = get_handler(handler_name).run(options)

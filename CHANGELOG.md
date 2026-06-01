@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.2.0...honua-esri-assess-v0.3.0) (2026-06-01)
+
+
+### Features
+
+* **cli:** wire pyogrio FileGDB workspace scanner to a scan filegdb-workspace command ([#26](https://github.com/honua-io/honua-esri-assess/issues/26)) ([9497864](https://github.com/honua-io/honua-esri-assess/commit/94978644d52f88f400321ac31d7e761b2862f2dd))
+
+
+### Bug Fixes
+
+* **build:** drop redundant schema force-include that breaks wheel build ([#34](https://github.com/honua-io/honua-esri-assess/issues/34)) ([87c4690](https://github.com/honua-io/honua-esri-assess/commit/87c469044fa7b957479c3ede6b950d98c427f205))
+* declare click as an explicit runtime dependency ([0db51ec](https://github.com/honua-io/honua-esri-assess/commit/0db51ec36873cc33f17950f88c46052ce4812dfe))
+* map Typer-vendored Click exceptions to exit codes ([b969985](https://github.com/honua-io/honua-esri-assess/commit/b9699858d2c99ccb61b100ef5c053dd82fb67ab9))
+
 ## [0.2.0](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.1.0...honua-esri-assess-v0.2.0) (2026-05-23)
 
 

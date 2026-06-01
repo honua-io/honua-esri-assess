@@ -1,4 +1,4 @@
-"""EsriAccessFootprint v0.1 models, builder, and schema validation.
+"""EsriAccessFootprint v0.2 models, builder, and schema validation.
 
 ``EsriAccessFootprint.json`` is a documented **sibling** of
 ``EsriFootprint.json``. It captures the identity / RBAC posture of an Esri
@@ -34,9 +34,9 @@ from honua_esri_assess.diagnostics import Diagnostic, PortalSchemaError
 from honua_esri_assess.footprint.artifact import installed_tool_version
 from honua_esri_assess.redaction import sanitize_handoff_url
 
-SCHEMA_VERSION = "v0.1"
+SCHEMA_VERSION = "v0.2"
 TOOL_NAME = "honua-esri-assess"
-SCHEMA_FILENAME = "esri-access-footprint-v0.1.json"
+SCHEMA_FILENAME = "esri-access-footprint-v0.2.json"
 SCHEMA_PACKAGE = "honua_esri_assess.schemas"
 
 SourceKind = Literal["arcgis-online", "arcgis-server"]
@@ -84,6 +84,18 @@ class ServicePermission:
     principal_type: PrincipalType
     principal: str
     access: AceAccess
+    operations: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class EffectivePermission:
+    """A resolved grant collapsing every ACE for one (service, principal)."""
+
+    service_url: str
+    principal_type: PrincipalType
+    principal: str
+    effect: AceAccess
+    operations: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -112,6 +124,7 @@ class AccessFootprint:
     roles: list[AccessRole] = field(default_factory=list)
     groups: list[AccessGroup] = field(default_factory=list)
     service_permissions: list[ServicePermission] = field(default_factory=list)
+    effective_permissions: list[EffectivePermission] = field(default_factory=list)
     item_sharing: list[ItemSharing] = field(default_factory=list)
     org_security: OrgSecurity = field(default_factory=OrgSecurity)
     diagnostics: list[Diagnostic] = field(default_factory=list)
@@ -165,12 +178,74 @@ def _group_to_dict(group: AccessGroup) -> dict[str, Any]:
 
 
 def _permission_to_dict(perm: ServicePermission) -> dict[str, Any]:
-    return {
+    out: dict[str, Any] = {
         "serviceUrl": sanitize_handoff_url(perm.service_url),
         "principalType": perm.principal_type,
         "principal": perm.principal,
         "access": perm.access,
     }
+    if perm.operations:
+        out["operations"] = list(perm.operations)
+    return out
+
+
+def _effective_to_dict(perm: EffectivePermission) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "serviceUrl": sanitize_handoff_url(perm.service_url),
+        "principalType": perm.principal_type,
+        "principal": perm.principal,
+        "effect": perm.effect,
+    }
+    if perm.operations:
+        out["operations"] = list(perm.operations)
+    return out
+
+
+def resolve_effective_permissions(
+    permissions: list[ServicePermission],
+) -> list[EffectivePermission]:
+    """Collapse raw ACEs into one effective grant per (service, principal).
+
+    Documented, deterministic resolution:
+
+    * Group by ``(serviceUrl, principalType, principal)``. The ``everyone``
+      principal is a group key like any other; precedence between principal
+      kinds is intentionally *not* applied here -- a downstream policy engine
+      decides whether a user inherits a role/group/everyone grant. This keeps
+      the collapse lossless and re-derivable.
+    * ``deny`` overrides ``allow``: if any ACE in a group denies, the effective
+      effect is ``deny``.
+    * ``operations`` is the sorted union of every operation seen across the
+      collapsed ACEs, so the breakdown survives the collapse.
+    * Output order is sorted by ``(serviceUrl, principalType, principal)`` so the
+      artifact is byte-stable across runs.
+    """
+
+    grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for perm in permissions:
+        url = sanitize_handoff_url(perm.service_url)
+        key = (url, perm.principal_type, perm.principal)
+        slot = grouped.get(key)
+        if slot is None:
+            slot = {"effect": "allow", "operations": set()}
+            grouped[key] = slot
+        if perm.access == "deny":
+            slot["effect"] = "deny"
+        slot["operations"].update(perm.operations)
+
+    resolved: list[EffectivePermission] = []
+    for (url, principal_type, principal), slot in grouped.items():
+        resolved.append(
+            EffectivePermission(
+                service_url=url,
+                principal_type=principal_type,  # type: ignore[arg-type]
+                principal=principal,
+                effect=slot["effect"],  # type: ignore[arg-type]
+                operations=sorted(slot["operations"]),
+            )
+        )
+    resolved.sort(key=lambda p: (p.service_url, p.principal_type, p.principal))
+    return resolved
 
 
 def _sharing_to_dict(sharing: ItemSharing) -> dict[str, Any]:
@@ -201,7 +276,17 @@ def build_access_footprint(
     generated_at: datetime | None = None,
     captured_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """Render an :class:`AccessFootprint` to the v0.1 wire shape."""
+    """Render an :class:`AccessFootprint` to the v0.2 wire shape.
+
+    ``effectivePermissions`` is derived from ``service_permissions`` via
+    :func:`resolve_effective_permissions` when the footprint does not already
+    carry an explicit collapse, so the artifact always ships the resolved view
+    alongside the raw ACEs.
+    """
+
+    effective = footprint.effective_permissions or resolve_effective_permissions(
+        footprint.service_permissions
+    )
 
     return {
         "schemaVersion": SCHEMA_VERSION,
@@ -218,6 +303,7 @@ def build_access_footprint(
         "servicePermissions": [
             _permission_to_dict(p) for p in footprint.service_permissions
         ],
+        "effectivePermissions": [_effective_to_dict(p) for p in effective],
         "itemSharing": [_sharing_to_dict(s) for s in footprint.item_sharing],
         "orgSecurity": _org_security_to_dict(footprint.org_security),
         "diagnostics": [d.to_dict() for d in footprint.diagnostics],
@@ -277,7 +363,7 @@ def validate_access_footprint(footprint: Mapping[str, Any]) -> bool:
         field_path = ".".join(str(part) for part in exc.absolute_path)
         context = {"field": field_path} if field_path else {}
         raise PortalSchemaError(
-            "Generated EsriAccessFootprint.json does not match the v0.1 schema.",
+            "Generated EsriAccessFootprint.json does not match the v0.2 schema.",
             context=context,
         ) from exc
     return True
@@ -288,6 +374,7 @@ __all__ = [
     "AccessGroup",
     "AccessRole",
     "AccessUser",
+    "EffectivePermission",
     "ItemSharing",
     "OrgSecurity",
     "SCHEMA_FILENAME",
@@ -298,6 +385,7 @@ __all__ = [
     "access_footprint_to_json",
     "build_access_footprint",
     "load_access_schema",
+    "resolve_effective_permissions",
     "validate_access_footprint",
     "write_access_footprint",
 ]

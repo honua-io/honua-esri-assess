@@ -1,0 +1,14 @@
+{
+  "permissions": [
+    {
+      "principal": "publishers",
+      "childURL": null,
+      "permission": { "isAllowed": true, "operations": ["Query", "Create"] }
+    },
+    {
+      "principal": "publishers",
+      "childURL": null,
+      "permission": { "isAllowed": false, "operations": ["Delete"] }
+    }
+  ]
+}

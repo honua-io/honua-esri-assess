@@ -1,0 +1,291 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.honua.io/esri-access-footprint/v0.2.0/esri-access-footprint.json",
+  "title": "EsriAccessFootprint",
+  "description": "Read-only export of an Esri estate's identity / RBAC posture (users, roles+privileges, groups, per-service permissions, item sharing, org security config) produced by honua-esri-assess from documented ArcGIS /arcgis/admin/security, /arcgis/admin/services, and Portal admin/community endpoints. It is a documented SIBLING of EsriFootprint.json and drives Honua RBAC + the Portal facade. Schema version esri-access-footprint/v0.2 (full SemVer in $id) is an additive successor to v0.1: it adds per-service ACE detail (operations) and a resolved effectivePermissions collapse. Schema version is carried in-band. v0.x is unstable; v1.0 is the first stable promise. Credentials, tokens, query strings, and URL userinfo are never present in any field.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "tool",
+    "source",
+    "users",
+    "roles",
+    "groups",
+    "servicePermissions",
+    "itemSharing",
+    "orgSecurity",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "enum": ["v0.1", "v0.2"],
+      "description": "Major.minor of the access-footprint contract carried in-band. v0.2 is additive over v0.1. Full SemVer (e.g. v0.2.0) lives in $id."
+    },
+    "generatedAt": {
+      "$ref": "#/$defs/RFC3339",
+      "description": "When the scanner finished producing this artifact (RFC3339 UTC)."
+    },
+    "tool": { "$ref": "#/$defs/ToolProvenance" },
+    "source": { "$ref": "#/$defs/Source" },
+    "users": {
+      "type": "array",
+      "description": "Identity principals enumerated from the source. Never carries passwords, tokens, or secrets.",
+      "items": { "$ref": "#/$defs/User" }
+    },
+    "roles": {
+      "type": "array",
+      "description": "Roles and their granted privileges.",
+      "items": { "$ref": "#/$defs/Role" }
+    },
+    "groups": {
+      "type": "array",
+      "description": "Groups and their membership/role linkage.",
+      "items": { "$ref": "#/$defs/Group" }
+    },
+    "servicePermissions": {
+      "type": "array",
+      "description": "Per-service access-control entries (ACEs) observed by crawling documented admin security endpoints (/arcgis/admin/services/<service>/permissions). Each entry is one principal->effect ACE on one service.",
+      "items": { "$ref": "#/$defs/ServicePermission" }
+    },
+    "effectivePermissions": {
+      "type": "array",
+      "description": "Resolved, deterministic collapse of the raw servicePermissions ACEs into one effective grant per (service, principal). Additive in v0.2. Resolution is documented: deny overrides allow for the same principal; the union of operations is preserved; principalType precedence and the 'everyone' principal are recorded verbatim so a downstream policy engine can re-derive grants.",
+      "items": { "$ref": "#/$defs/EffectivePermission" }
+    },
+    "itemSharing": {
+      "type": "array",
+      "description": "Item sharing posture (private/org/public/shared) for portal items.",
+      "items": { "$ref": "#/$defs/ItemSharing" }
+    },
+    "orgSecurity": { "$ref": "#/$defs/OrgSecurity" },
+    "diagnostics": {
+      "type": "array",
+      "description": "Typed, prospect-safe diagnostics. Raw exceptions and stack traces are forbidden and excluded from the schema.",
+      "items": { "$ref": "#/$defs/Diagnostic" }
+    }
+  },
+  "$defs": {
+    "RFC3339": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$",
+      "description": "RFC3339 UTC timestamp with an explicit Z suffix."
+    },
+    "SemVer": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-.]+)?(?:\\+[0-9A-Za-z-.]+)?$"
+    },
+    "ToolProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "const": "honua-esri-assess",
+          "description": "Only honua-esri-assess is part of the contract at v0.2."
+        },
+        "version": { "$ref": "#/$defs/SemVer" }
+      }
+    },
+    "Source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "locator", "capturedAt"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["arcgis-online", "arcgis-server"],
+          "description": "RBAC export targets ArcGIS Online/Enterprise Portal and ArcGIS Server only. FileGDB has no identity surface."
+        },
+        "locator": {
+          "type": "string",
+          "pattern": "^[^@?#\\s]+$",
+          "description": "Prospect-safe identifier. Never includes credentials, query strings, fragments, or URL userinfo."
+        },
+        "capturedAt": { "$ref": "#/$defs/RFC3339" }
+      }
+    },
+    "User": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["username", "roleId", "disabled"],
+      "properties": {
+        "username": { "type": "string", "description": "Stable principal identifier. Not an email or secret." },
+        "fullName": { "type": "string", "description": "Display name when exposed." },
+        "roleId": { "type": "string", "description": "Identifier of the role granted to this user." },
+        "groupIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Group ids this user belongs to."
+        },
+        "userType": { "type": "string", "description": "Esri user-type license id when exposed." },
+        "provider": {
+          "type": "string",
+          "enum": ["arcgis", "enterprise", "saml", "oidc", "unknown"],
+          "description": "Identity provider that backs this principal."
+        },
+        "disabled": { "type": "boolean", "description": "Whether the account is disabled at the source." }
+      }
+    },
+    "Role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "type", "privileges"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["administrator", "publisher", "user", "viewer", "custom"],
+          "description": "Built-in role family, or custom for org-defined roles."
+        },
+        "description": { "type": "string" },
+        "privileges": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Documented Esri privilege identifiers granted to the role (e.g. portal:user:createItem)."
+        }
+      }
+    },
+    "Group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "access", "memberCount"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "access": {
+          "type": "string",
+          "enum": ["private", "org", "public"],
+          "description": "Group visibility scope."
+        },
+        "owner": { "type": "string" },
+        "memberCount": { "type": "integer", "minimum": 0 },
+        "roleId": { "type": "string", "description": "Role linked to this group, when the org maps group->role." }
+      }
+    },
+    "ServicePermission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serviceUrl", "principalType", "principal", "access"],
+      "properties": {
+        "serviceUrl": {
+          "type": "string",
+          "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$",
+          "description": "Credentials-stripped service URL; userinfo, query strings, and fragments are rejected."
+        },
+        "principalType": {
+          "type": "string",
+          "enum": ["role", "user", "group", "everyone"],
+          "description": "Kind of principal the ACE applies to."
+        },
+        "principal": {
+          "type": "string",
+          "description": "Identifier of the principal (role id, username, group id, or '*' for everyone)."
+        },
+        "access": {
+          "type": "string",
+          "enum": ["allow", "deny"],
+          "description": "Effect of the access-control entry."
+        },
+        "operations": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Documented Esri operations the ACE governs (e.g. Query, Create, Update, Delete, Uploads). Empty means the service-level grant with no operation breakdown. Additive in v0.2."
+        }
+      }
+    },
+    "EffectivePermission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serviceUrl", "principalType", "principal", "effect"],
+      "properties": {
+        "serviceUrl": {
+          "type": "string",
+          "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$",
+          "description": "Credentials-stripped service URL the effective grant applies to."
+        },
+        "principalType": {
+          "type": "string",
+          "enum": ["role", "user", "group", "everyone"],
+          "description": "Kind of principal the effective grant applies to."
+        },
+        "principal": {
+          "type": "string",
+          "description": "Identifier of the principal (role id, username, group id, or '*' for everyone)."
+        },
+        "effect": {
+          "type": "string",
+          "enum": ["allow", "deny"],
+          "description": "Resolved effect after collapsing every ACE for this (service, principal). Deny overrides allow."
+        },
+        "operations": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Union of every operation observed across the collapsed ACEs for this (service, principal), sorted for determinism."
+        }
+      }
+    },
+    "ItemSharing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["itemId", "owner", "access"],
+      "properties": {
+        "itemId": { "type": "string" },
+        "owner": { "type": "string" },
+        "access": {
+          "type": "string",
+          "enum": ["private", "org", "public", "shared"],
+          "description": "Effective sharing level of the item."
+        },
+        "sharedGroupIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Group ids the item is explicitly shared with."
+        }
+      }
+    },
+    "OrgSecurity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowedProviders"],
+      "properties": {
+        "allowedProviders": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["arcgis", "enterprise", "saml", "oidc"]
+          },
+          "description": "Identity providers the org accepts."
+        },
+        "multiFactorAuthRequired": { "type": "boolean" },
+        "anonymousAccessAllowed": { "type": "boolean" },
+        "defaultRoleId": { "type": "string", "description": "Role assigned to new members, when exposed." }
+      }
+    },
+    "Diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "scope"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "rate-limited",
+            "partial-coverage",
+            "missing-permission",
+            "unresolved-reference",
+            "unsupported-item-type",
+            "redacted-field"
+          ]
+        },
+        "severity": { "type": "string", "enum": ["info", "warn", "error"] },
+        "message": { "type": "string" },
+        "scope": { "type": "string" },
+        "hint": { "type": "string" }
+      }
+    }
+  }
+}

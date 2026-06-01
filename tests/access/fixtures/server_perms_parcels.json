@@ -1,0 +1,19 @@
+{
+  "permissions": [
+    {
+      "principal": "publishers",
+      "childURL": null,
+      "permission": { "isAllowed": true, "operations": ["Query", "Create", "Update", "Delete"] }
+    },
+    {
+      "principal": "viewers",
+      "childURL": null,
+      "permission": { "isAllowed": true, "operations": ["Query"] }
+    },
+    {
+      "principal": "esriEveryone",
+      "childURL": null,
+      "permission": { "isAllowed": false, "operations": [] }
+    }
+  ]
+}

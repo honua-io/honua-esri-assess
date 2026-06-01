@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import urlparse, urlsplit, urlunsplit
 
 from honua_esri_assess.diagnostics import Diagnostic
+from honua_esri_assess.footprint.binding import BindingPlan
 from honua_esri_assess.footprint.licensing import (
     licensing_facet_to_dict,
     portal_licensing_to_dict,
@@ -104,8 +105,15 @@ def to_footprint_v0_1(
     generated_at: datetime | None = None,
     captured_at: datetime | None = None,
     target_url: str | None = None,
+    binding_plan: BindingPlan | None = None,
 ) -> dict[str, Any]:
-    """Return a JSON-serializable EsriFootprint.json v0.1 object."""
+    """Return a JSON-serializable EsriFootprint.json v0.1 object.
+
+    ``binding_plan`` is an additive v0.2 server-only facet: when supplied (the
+    admin usage pull ran and reached the Admin-API), the usage-ranked service
+    ordering and per-dataset binding-mode recommendations are emitted under
+    ``server.bindingPlan``. It is ignored for portal scans.
+    """
 
     if isinstance(result, PortalScanResult):
         return _portal_to_footprint(
@@ -120,6 +128,7 @@ def to_footprint_v0_1(
             generated_at=generated_at,
             captured_at=captured_at,
             target_url=target_url,
+            binding_plan=binding_plan,
         )
     raise TypeError(f"unsupported v0.1 footprint source: {type(result).__name__}")
 
@@ -187,6 +196,7 @@ def _server_to_footprint(
     generated_at: datetime | None = None,
     captured_at: datetime | None = None,
     target_url: str | None = None,
+    binding_plan: BindingPlan | None = None,
 ) -> dict[str, Any]:
     generated_stamp = _utc(generated_at or datetime.now(timezone.utc))
     captured_stamp = _utc(captured_at or generated_stamp)
@@ -213,6 +223,14 @@ def _server_to_footprint(
     version = result.info.current_version or result.info.full_version
     if version:
         server["version"] = version
+    # Additive v0.2 planning facet: usage-ranked migration ordering plus
+    # per-dataset binding-mode recommendations, populated only when the
+    # read-only Admin-API usage pull ran and reached the endpoints. Omitted
+    # otherwise so plain scans and v0.1 readers are unchanged.
+    if binding_plan is not None and (
+        binding_plan.usage_ranked_services or binding_plan.dataset_bindings
+    ):
+        server["bindingPlan"] = binding_plan.to_dict()
 
     footprint: dict[str, Any] = {
         "schemaVersion": SCHEMA_VERSION,

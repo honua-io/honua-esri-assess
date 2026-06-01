@@ -547,6 +547,107 @@
         "licensing": {
           "$ref": "#/$defs/ServerLicensing",
           "description": "Read-only license entitlement observations from documented ArcGIS Server REST/admin endpoints."
+        },
+        "bindingPlan": {
+          "$ref": "#/$defs/BindingPlan",
+          "description": "Additive at v0.2: usage-ranked migration ordering and per-dataset binding-mode recommendations derived from read-only Admin-API usage reports (/admin/usagereports) and data-store registrations (/admin/data/items). Present only when the admin usage pull was enabled and the admin endpoints were reachable; absent otherwise so plain scans and v0.1 readers are unchanged."
+        }
+      }
+    },
+    "UsageRankedService": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One service ranked by observed request volume from /admin/usagereports. Drives usage-driven migration sequencing rather than alphabetical/folder heuristics.",
+      "required": [
+        "service",
+        "requests",
+        "rank"
+      ],
+      "properties": {
+        "service": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Service identifier as the Admin-API reports it (folder/Name.Type style), with the leading services/ prefix stripped. Never carries credentials or query strings."
+        },
+        "requests": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total observed request count summed across the usage-report samples."
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based migration rank; lower rank = higher observed usage. Ties break alphabetically for determinism."
+        }
+      }
+    },
+    "DatasetBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Per-dataset binding-mode recommendation derived only from a data-store registration's declared storage type. Connection strings, hosts, usernames, and passwords are never read or emitted; ArcSDE/GDB internals are never parsed.",
+      "required": [
+        "datasetId",
+        "storageType",
+        "connectionKind",
+        "bindingMode"
+      ],
+      "properties": {
+        "datasetId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Registration path/id as reported by /admin/data/items (e.g. /enterpriseDatabases/parcels_egdb). Never carries a connection string or credentials."
+        },
+        "storageType": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Declared registration type token verbatim (e.g. egdb, cloudStore, folder). Read from the registration's declared type only, never inferred from internals."
+        },
+        "connectionKind": {
+          "type": "string",
+          "enum": [
+            "enterprise-geodatabase",
+            "relational",
+            "cloud-store",
+            "file-share",
+            "object-store",
+            "big-data-file-share",
+            "unknown"
+          ],
+          "description": "Coarse, credential-free classification of the registration derived from its declared storageType. Unknown tokens map to \"unknown\"."
+        },
+        "bindingMode": {
+          "type": "string",
+          "enum": [
+            "federate",
+            "connect-in-place",
+            "materialize"
+          ],
+          "description": "Recommended Honua binding mode. federate: query in place at scale (enterprise geodatabases / relational stores). connect-in-place: register a direct read-only connection without copying (cloud/object/big-data file shares). materialize: copy/snapshot into Honua-managed storage (file shares and unmapped types)."
+        }
+      }
+    },
+    "BindingPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Combined usage-ranking + binding-mode planning facet derived from read-only Admin-API endpoints. Both arrays may be empty when the corresponding endpoint returned no data.",
+      "required": [
+        "usageRankedServices",
+        "datasetBindings"
+      ],
+      "properties": {
+        "usageRankedServices": {
+          "type": "array",
+          "description": "Services ranked by observed request volume (descending), used to drive usage-driven migration sequencing.",
+          "items": {
+            "$ref": "#/$defs/UsageRankedService"
+          }
+        },
+        "datasetBindings": {
+          "type": "array",
+          "description": "Per-dataset binding-mode recommendations derived only from data-store registration storage types.",
+          "items": {
+            "$ref": "#/$defs/DatasetBinding"
+          }
         }
       }
     },

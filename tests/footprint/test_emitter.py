@@ -640,3 +640,83 @@ def test_lock_in_footprint_validates_against_v02_schema() -> None:
 
     fp = to_footprint_v0_1(_lock_in_result(), tool_version="0.0.0")
     assert validate_footprint(fp) is True
+
+
+def _binding_plan() -> "object":
+    from honua_esri_assess.footprint.binding import (
+        DatastoreRegistration,
+        build_binding_plan,
+    )
+
+    return build_binding_plan(
+        usage={
+            "Hydrology/Watersheds.FeatureServer": 120,
+            "Basemaps/Topo.MapServer": 3,
+        },
+        registrations=[
+            DatastoreRegistration(
+                item_id="/enterpriseDatabases/parcels_egdb",
+                type="egdb",
+                connection_kind="enterprise-geodatabase",
+            ),
+            DatastoreRegistration(
+                item_id="/cloudStores/imagery_s3",
+                type="cloudStore",
+                connection_kind="cloud-store",
+            ),
+            DatastoreRegistration(
+                item_id="/fileShares/legacy_gdb",
+                type="folder",
+                connection_kind="file-share",
+            ),
+        ],
+    )
+
+
+def test_footprint_emits_usage_ranking_and_binding_modes() -> None:
+    fp = to_footprint_v0_1(
+        _make_result(),
+        tool_version="0.0.0",
+        binding_plan=_binding_plan(),
+    )
+    plan = fp["server"]["bindingPlan"]
+    # Usage-driven ordering (descending request volume), not heuristic.
+    assert [s["service"] for s in plan["usageRankedServices"]] == [
+        "Hydrology/Watersheds.FeatureServer",
+        "Basemaps/Topo.MapServer",
+    ]
+    assert plan["usageRankedServices"][0]["rank"] == 1
+    # Storage type from registrations only -> binding-mode routing.
+    by_id = {b["datasetId"]: b for b in plan["datasetBindings"]}
+    assert by_id["/enterpriseDatabases/parcels_egdb"]["bindingMode"] == "federate"
+    assert by_id["/cloudStores/imagery_s3"]["bindingMode"] == "connect-in-place"
+    assert by_id["/fileShares/legacy_gdb"]["bindingMode"] == "materialize"
+
+
+def test_footprint_omits_binding_plan_when_admin_usage_not_collected() -> None:
+    # Plain scans (no admin usage pull) leave the artifact unchanged for v0.1
+    # readers — no bindingPlan key at all.
+    fp = to_footprint_v0_1(_make_result(), tool_version="0.0.0")
+    assert "bindingPlan" not in fp["server"]
+
+
+def test_footprint_omits_empty_binding_plan() -> None:
+    from honua_esri_assess.footprint.binding import build_binding_plan
+
+    fp = to_footprint_v0_1(
+        _make_result(),
+        tool_version="0.0.0",
+        binding_plan=build_binding_plan(usage={}, registrations=[]),
+    )
+    assert "bindingPlan" not in fp["server"]
+
+
+def test_binding_plan_footprint_validates_against_v02_schema() -> None:
+    from honua_esri_assess.footprint.schema import validate_footprint
+
+    fp = to_footprint_v0_1(
+        _make_result(),
+        tool_version="0.0.0",
+        binding_plan=_binding_plan(),
+    )
+    assert validate_footprint(fp) is True

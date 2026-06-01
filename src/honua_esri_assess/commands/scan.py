@@ -8,6 +8,7 @@ from honua_esri_assess.commands.common import (
     DEFAULT_ACCESS_OUTPUT,
     DEFAULT_OUTPUT,
     DEFAULT_USER_AGENT,
+    AdminUsageOption,
     AccessOutputOption,
     AccessValidateOption,
     LogFormat,
@@ -74,6 +75,7 @@ def scan_server(
     max_retries: MaxRetriesOption = 3,
     timeout: TimeoutOption = 30.0,
     validate: ValidateOption = False,
+    admin_usage: AdminUsageOption = False,
 ) -> None:
     run_scan_command(
         handler_name="server",
@@ -87,6 +89,7 @@ def scan_server(
         max_retries=max_retries,
         timeout=timeout,
         validate=validate,
+        admin_usage=admin_usage,
     )
 
 

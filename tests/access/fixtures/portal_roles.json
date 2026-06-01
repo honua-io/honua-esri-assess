@@ -1,0 +1,14 @@
+{
+  "roles": [
+    {
+      "id": "custom-editor",
+      "name": "Field Editor",
+      "description": "Custom publishing role",
+      "privileges": [
+        "portal:user:createItem",
+        "portal:publisher:publishFeatures",
+        "portal:user:doSomethingUndocumented"
+      ]
+    }
+  ]
+}

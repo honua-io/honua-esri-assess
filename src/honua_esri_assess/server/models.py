@@ -122,6 +122,11 @@ class ServiceRecord:
     service_data_type: str | None = None
     single_fused_map_cache: bool | None = None
     deep_scanned: bool = False
+    # Geoprocessing task names advertised on a GPServer's service body (its
+    # ``tasks`` array). Empty for non-GP services and for GP services that were
+    # not deep-probed; geoprocessing migration itself is out of scope here and
+    # is handled by honua-sdk-python's ArcPy scanner/translator/runner.
+    gp_tasks: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

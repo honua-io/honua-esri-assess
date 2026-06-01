@@ -935,6 +935,40 @@
           "items": {
             "$ref": "#/$defs/ServerLayerDetail"
           }
+        },
+        "migrationHandoff": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Additive at v0.2: cross-repo migration handoff for geoprocessing (GPServer) services. Geoprocessing migration is owned by honua-sdk-python's ArcPy scanner/translator/runner; this footprint records only a read-only pointer (service URL, any known task names, and a note). Present only on geoprocessingService entries; absent otherwise. v0.1 readers ignore this property.",
+          "required": [
+            "target",
+            "serviceUrl",
+            "note"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "description": "Repository/pipeline that owns the migration (e.g. \"honua-sdk-python:arcpy\")."
+            },
+            "serviceUrl": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$",
+              "description": "Credential-free GPServer URL. Credentials must never appear in this field."
+            },
+            "note": {
+              "type": "string",
+              "description": "Human-readable note pointing migration at the owning ArcPy pipeline."
+            },
+            "taskNames": {
+              "type": "array",
+              "description": "Geoprocessing task names read from the GPServer body's tasks array (deep probe only). Omitted when no tasks were resolved. Deterministic, sorted, de-duplicated.",
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },

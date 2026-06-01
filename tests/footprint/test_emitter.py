@@ -386,6 +386,77 @@ def test_footprint_with_service_breadth_validates_against_schema() -> None:
     assert validate_footprint(fp) is True
 
 
+def test_footprint_emits_gpserver_cross_repo_handoff() -> None:
+    """GP services surface a cross-repo migration handoff; others do not."""
+
+    from honua_esri_assess.footprint.schema import validate_footprint
+    from honua_esri_assess.footprint.v0_1 import GP_HANDOFF_NOTE, GP_HANDOFF_TARGET
+
+    result = ServerScanResult(
+        info=ServerInfo(url="https://gis.example.com/arcgis/rest/services"),
+        auth_mode="anonymous",
+        deep=True,
+        folders=(),
+        services=(
+            ServiceRecord(
+                name="ElevationProfile",
+                folder="Analysis",
+                service_type="GPServer",
+                kind="geoprocessingService",
+                url=(
+                    "https://gis.example.com/arcgis/rest/services/"
+                    "Analysis/ElevationProfile/GPServer"
+                ),
+                gp_tasks=("ExtractProfile", "Viewshed"),
+                deep_scanned=True,
+            ),
+            # A GP service that was only shallow-walked still gets a handoff
+            # (URL + note), just without task names.
+            ServiceRecord(
+                name="Surface",
+                folder=None,
+                service_type="GPServer",
+                kind="geoprocessingService",
+                url="https://gis.example.com/arcgis/rest/services/Surface/GPServer",
+            ),
+            # A non-GP service must not carry the handoff field.
+            ServiceRecord(
+                name="Parcels",
+                folder="Planning",
+                service_type="MapServer",
+                kind="mapService",
+                url="https://gis.example.com/arcgis/rest/services/Planning/Parcels/MapServer",
+            ),
+        ),
+        diagnostics=(),
+    )
+    fp = to_footprint_v0_1(result, tool_version="0.0.0")
+    by_url = {item["serviceUrl"]: item for item in fp["inventory"]}
+
+    elevation = by_url[
+        "https://gis.example.com/arcgis/rest/services/Analysis/ElevationProfile/GPServer"
+    ]
+    handoff = elevation["migrationHandoff"]
+    assert handoff["target"] == GP_HANDOFF_TARGET
+    assert handoff["note"] == GP_HANDOFF_NOTE
+    assert handoff["serviceUrl"] == elevation["serviceUrl"]
+    assert handoff["taskNames"] == ["ExtractProfile", "Viewshed"]
+
+    # Shallow GP service: handoff present, task names omitted.
+    surface = by_url["https://gis.example.com/arcgis/rest/services/Surface/GPServer"]
+    assert surface["migrationHandoff"]["target"] == GP_HANDOFF_TARGET
+    assert "taskNames" not in surface["migrationHandoff"]
+
+    # Non-GP service: no handoff field at all.
+    parcels = by_url[
+        "https://gis.example.com/arcgis/rest/services/Planning/Parcels/MapServer"
+    ]
+    assert "migrationHandoff" not in parcels
+
+    # The additive field validates under the v0.2 schema and v0.1 readers ignore it.
+    assert validate_footprint(fp) is True
+
+
 def _layer_detail_result() -> ServerScanResult:
     from honua_esri_assess.server.models import (
         EditorTracking,

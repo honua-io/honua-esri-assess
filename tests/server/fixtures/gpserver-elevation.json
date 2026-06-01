@@ -1,0 +1,6 @@
+{
+  "currentVersion": 11.2,
+  "description": "Elevation analysis geoprocessing service",
+  "tasks": ["Viewshed", "ExtractProfile", "Viewshed"],
+  "executionType": "esriExecutionTypeAsynchronous"
+}

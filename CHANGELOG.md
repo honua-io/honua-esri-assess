@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.0](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.5.0...honua-esri-assess-v0.6.0) (2026-06-01)
+
+
+### Features
+
+* **cli:** add scan rbac command writing EsriAccessFootprint.json ([#30](https://github.com/honua-io/honua-esri-assess/issues/30)) ([#55](https://github.com/honua-io/honua-esri-assess/issues/55)) ([7993086](https://github.com/honua-io/honua-esri-assess/commit/7993086e631b847b60a10bfa49fbc6d17d71e08f))
+* **footprint:** persist usage ranking and datastore binding-mode ([#31](https://github.com/honua-io/honua-esri-assess/issues/31)) ([#57](https://github.com/honua-io/honua-esri-assess/issues/57)) ([d1bc6a3](https://github.com/honua-io/honua-esri-assess/commit/d1bc6a3e0247e57e10431e0e3bb64489291ddaf7))
+* **footprint:** record federation topology and advanced server roles ([#54](https://github.com/honua-io/honua-esri-assess/issues/54)) ([#58](https://github.com/honua-io/honua-esri-assess/issues/58)) ([f1fff24](https://github.com/honua-io/honua-esri-assess/commit/f1fff2429bf90bfd8971c84393b085d3c9eba9e2))
+* **rbac:** per-service ACE crawl and effective-permission resolution ([#30](https://github.com/honua-io/honua-esri-assess/issues/30)) ([#59](https://github.com/honua-io/honua-esri-assess/issues/59)) ([d818ad9](https://github.com/honua-io/honua-esri-assess/commit/d818ad9d9cc849578bc9849771a2d1eb82dd8cda))
+* **server:** capture layer versioning and attribute-rule presence ([#44](https://github.com/honua-io/honua-esri-assess/issues/44)) ([#60](https://github.com/honua-io/honua-esri-assess/issues/60)) ([e926708](https://github.com/honua-io/honua-esri-assess/commit/e926708303eb33c22e16448f65d43f7be897f20e))
+
 ## [0.5.0](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.4.0...honua-esri-assess-v0.5.0) (2026-06-01)
 
 

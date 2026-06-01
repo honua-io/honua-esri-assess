@@ -43,6 +43,12 @@ Still out of scope for this line:
 
 ## Quick start
 
+> **Before you run:** see
+> [Prerequisites & least-privilege access](docs/operators/prerequisites-and-least-privilege.md)
+> for the required URLs, the anonymous vs. token tiers, and the minimum access
+> to grant. The scanner is strictly read-only (`GET`-only), mints no
+> credentials, and never touches your databases.
+
 Install the console script in an isolated Python 3.11+ environment:
 
 ```bash

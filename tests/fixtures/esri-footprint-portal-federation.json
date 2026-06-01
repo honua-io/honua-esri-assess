@@ -1,0 +1,107 @@
+{
+  "schemaVersion": "v0.2",
+  "generatedAt": "2026-05-31T16:10:00Z",
+  "tool": {
+    "name": "honua-esri-assess",
+    "version": "0.1.0"
+  },
+  "source": {
+    "kind": "arcgis-online",
+    "locator": "org.example.com/ORG123",
+    "capturedAt": "2026-05-31T16:05:00Z"
+  },
+  "inventory": [
+    {
+      "kind": "portal-item",
+      "id": "aaaa1111bbbb2222cccc3333dddd4444",
+      "type": "Web Map",
+      "owner": "gis",
+      "title": "City Operations",
+      "sharing": "org",
+      "modified": "2026-04-01T00:00:00Z"
+    },
+    {
+      "kind": "portal-item",
+      "id": "eeee5555ffff6666aaaa7777bbbb8888",
+      "type": "Feature Service",
+      "owner": "gis",
+      "title": "Parcels",
+      "sharing": "org",
+      "modified": "2026-03-01T00:00:00Z"
+    },
+    {
+      "kind": "portal-item",
+      "id": "cccc9999dddd0000eeee1111ffff2222",
+      "type": "Dashboard",
+      "owner": "gis",
+      "title": "Ops Dashboard",
+      "sharing": "org",
+      "modified": "2026-02-01T00:00:00Z"
+    }
+  ],
+  "portal": {
+    "orgId": "ORG123",
+    "orgUrl": "https://org.example.com/portal",
+    "itemCounts": {
+      "Web Map": 1,
+      "Feature Service": 1,
+      "Dashboard": 1
+    },
+    "contentTypeCounts": {
+      "web-map": 1,
+      "hosted-feature-layer": 1,
+      "dashboard": 1
+    },
+    "federation": {
+      "servers": [
+        {
+          "url": "https://gis.example.com/arcgis",
+          "role": "hosting",
+          "functions": [
+            "GeoEvent"
+          ],
+          "advancedRoles": [
+            "geoevent"
+          ]
+        },
+        {
+          "url": "https://analytics.example.com/arcgis",
+          "role": "federated",
+          "functions": [
+            "GeoAnalytics",
+            "NotebookServer"
+          ],
+          "advancedRoles": [
+            "geoanalytics",
+            "notebook"
+          ]
+        }
+      ],
+      "advancedRoles": [
+        "geoanalytics",
+        "geoevent",
+        "notebook"
+      ]
+    }
+  },
+  "counts": {
+    "items": {
+      "portal-item": 3
+    },
+    "layers": 0,
+    "featureClasses": 0
+  },
+  "diagnostics": [],
+  "dependencyEdges": [
+    {
+      "from": "cccc9999dddd0000eeee1111ffff2222",
+      "to": "aaaa1111bbbb2222cccc3333dddd4444",
+      "relation": "webmap-references-service"
+    },
+    {
+      "from": "aaaa1111bbbb2222cccc3333dddd4444",
+      "to": "eeee5555ffff6666aaaa7777bbbb8888",
+      "relation": "webmap-references-service"
+    }
+  ]
+}

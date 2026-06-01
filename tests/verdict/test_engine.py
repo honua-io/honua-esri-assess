@@ -14,6 +14,8 @@ FIXTURES = REPO_ROOT / "tests" / "fixtures"
 SAMPLE = FIXTURES / "esri-footprint-sample.json"
 UTILITY_NETWORK = FIXTURES / "esri-footprint-utility-network.json"
 LOCK_IN_EXTENT = FIXTURES / "esri-footprint-lock-in-extent.json"
+SERVER_USAGE_BREADTH = FIXTURES / "esri-footprint-server-usage-breadth.json"
+PORTAL_FEDERATION = FIXTURES / "esri-footprint-portal-federation.json"
 
 
 def _load(path: Path) -> dict:
@@ -156,3 +158,137 @@ def test_lock_in_detected_without_extent_block_still_flags() -> None:
     un = next(b for b in result.hard_lock_ins if b.key == "utility-network")
     assert un.extent is None
     assert "Enumerated extent" not in un.detail
+
+
+# --- #61: enriched footprint signals feed verdict + ordering --------------
+
+
+def test_usage_ranking_drives_migration_order() -> None:
+    # #31: server.bindingPlan.usageRankedServices sequences the migration by
+    # observed request volume, highest first, with the producer's 1-based rank.
+    result = evaluate(_load(SERVER_USAGE_BREADTH))
+    assert result.signals.usage_ranked is True
+    assert [s.identifier for s in result.migration_order] == [
+        "Base/Parcels.FeatureServer",
+        "Imagery/Ortho2024.ImageServer",
+        "Tools/Geocode.GeocodeServer",
+        "Roads/Network.NAServer",
+    ]
+    first = result.migration_order[0]
+    assert first.rank == 1
+    assert first.source == "usage"
+    assert first.requests == 12840
+
+
+def test_usage_ranking_resorts_unsorted_input_deterministically() -> None:
+    footprint = {
+        "schemaVersion": "v0.2",
+        "inventory": [],
+        "server": {
+            "bindingPlan": {
+                "usageRankedServices": [
+                    {"service": "b/B.MapServer", "requests": 5, "rank": 2},
+                    {"service": "a/A.FeatureServer", "requests": 9, "rank": 1},
+                ]
+            }
+        },
+    }
+    result = evaluate(footprint)
+    assert [s.rank for s in result.migration_order] == [1, 2]
+    assert result.migration_order[0].identifier == "a/A.FeatureServer"
+
+
+def test_non_feature_map_service_breadth_lifts_effort() -> None:
+    # #43: image/geocode/network-analysis service kinds widen the migration
+    # surface, lifting the effort band beyond the capability-tier baseline.
+    result = evaluate(_load(SERVER_USAGE_BREADTH))
+    assert result.signals.non_feature_map_service_kinds == (
+        "geocodeService",
+        "imageService",
+        "networkAnalysisService",
+    )
+    web = _profile(result, "web-map-and-services")
+    # Web/feature only -> would be "Low"; breadth lifts it one step.
+    assert web.effort == "Moderate"
+    raster = _profile(result, "raster/imagery")
+    assert raster.verdict == "conditional"
+    # conditional baseline "Moderate" + breadth lift -> "High".
+    assert raster.effort == "High"
+    assert any(
+        "Non-feature/map service breadth" in line for line in web.rationale
+    )
+
+
+def test_feature_map_only_does_not_register_breadth() -> None:
+    # The lock-in-extent fixture is feature/map only -> no breadth signal.
+    result = evaluate(_load(LOCK_IN_EXTENT))
+    assert result.signals.non_feature_map_service_kinds == ()
+
+
+def test_federation_advanced_roles_feed_verdict_and_effort() -> None:
+    # #54: federated advanced server roles change the migration story; they
+    # surface in the rationale and lift the effort band.
+    result = evaluate(_load(PORTAL_FEDERATION))
+    assert result.signals.advanced_roles == ("geoanalytics", "geoevent", "notebook")
+    gov = _profile(result, "gov")
+    # Dashboards make gov "conditional" (Moderate base) + role lift -> "High".
+    assert gov.effort == "High"
+    assert any(
+        "Federated advanced server roles present" in line for line in gov.rationale
+    )
+
+
+def test_federation_falls_back_to_per_server_roles() -> None:
+    # When the rolled-up advancedRoles union is absent, the per-server roles
+    # are still unioned so the signal is never lost.
+    footprint = {
+        "schemaVersion": "v0.2",
+        "inventory": [],
+        "portal": {
+            "federation": {
+                "servers": [
+                    {"url": "https://a.example.com/arcgis", "advancedRoles": ["notebook"]},
+                    {"url": "https://b.example.com/arcgis", "advancedRoles": ["geoevent"]},
+                ]
+            }
+        },
+    }
+    result = evaluate(footprint)
+    assert result.signals.advanced_roles == ("geoevent", "notebook")
+
+
+def test_dependency_order_drives_migration_when_no_usage_signal() -> None:
+    # #42: with no usage ranking, the dependency graph orders dependencies
+    # first (referenced service before the web map before the dashboard).
+    result = evaluate(_load(PORTAL_FEDERATION))
+    assert result.signals.usage_ranked is False
+    assert all(step.source == "dependency" for step in result.migration_order)
+    assert [s.identifier for s in result.migration_order] == [
+        "eeee5555ffff6666aaaa7777bbbb8888",  # Parcels feature service (referenced)
+        "aaaa1111bbbb2222cccc3333dddd4444",  # Web Map references it
+        "cccc9999dddd0000eeee1111ffff2222",  # Dashboard references the web map
+    ]
+
+
+def test_no_signals_yields_empty_order_and_summary() -> None:
+    result = evaluate({"schemaVersion": "v0.1", "inventory": []})
+    assert result.migration_order == ()
+    assert result.signals.non_feature_map_service_kinds == ()
+    assert result.signals.advanced_roles == ()
+    assert result.signals.usage_ranked is False
+
+
+def test_render_surfaces_usage_ordering() -> None:
+    markdown = verdict.render(_load(SERVER_USAGE_BREADTH))
+    assert "## Recommended Migration Order" in markdown
+    assert "usage-ranked" in markdown
+    assert "Base/Parcels.FeatureServer" in markdown
+    assert "12840" in markdown
+    assert "imageService" in markdown  # breadth surfaced in a rationale
+
+
+def test_render_surfaces_dependency_ordering_and_federation() -> None:
+    markdown = verdict.render(_load(PORTAL_FEDERATION))
+    assert "## Recommended Migration Order" in markdown
+    assert "dependency graph" in markdown
+    assert "geoevent" in markdown

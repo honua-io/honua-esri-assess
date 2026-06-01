@@ -11,7 +11,7 @@ SCHEMA_VERSION = "v0.2"
 try:
     __version__ = version("honua-esri-assess")
 except PackageNotFoundError:
-    __version__ = "0.3.0"
+    __version__ = "0.4.0"
 
 
 def bundled_schema_version() -> str:

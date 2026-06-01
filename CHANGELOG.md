@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.3.0...honua-esri-assess-v0.4.0) (2026-06-01)
+
+
+### Features
+
+* **footprint:** v0.2 dependency edges (webmap-&gt;service-&gt;layer) ([#32](https://github.com/honua-io/honua-esri-assess/issues/32)) ([#40](https://github.com/honua-io/honua-esri-assess/issues/40)) ([d1830cc](https://github.com/honua-io/honua-esri-assess/commit/d1830cc049a95cbb4ab5102f073f5ccaf058df29))
+* **rbac:** authorized Admin-API RBAC/access export slice ([#30](https://github.com/honua-io/honua-esri-assess/issues/30)) ([#39](https://github.com/honua-io/honua-esri-assess/issues/39)) ([0eaa961](https://github.com/honua-io/honua-esri-assess/commit/0eaa96180e9f33dc45d108a8fc85b77f2ef3d5c4))
+* **scan:** usage-ranked services + datastore binding-mode routing ([#31](https://github.com/honua-io/honua-esri-assess/issues/31)) ([#37](https://github.com/honua-io/honua-esri-assess/issues/37)) ([7dd9d7a](https://github.com/honua-io/honua-esri-assess/commit/7dd9d7a9d81eb9a5fa583a23deb65e6ab1a36e49))
+* **verdict:** migratability verdict by shop profile ([#28](https://github.com/honua-io/honua-esri-assess/issues/28)) ([#36](https://github.com/honua-io/honua-esri-assess/issues/36)) ([cd2797b](https://github.com/honua-io/honua-esri-assess/commit/cd2797b4588b3c067c678a5f2c480dc22e835f72))
+
+
+### Documentation
+
+* **compliance:** add Esri IP and licensing clean-room guardrails ([#33](https://github.com/honua-io/honua-esri-assess/issues/33)) ([#35](https://github.com/honua-io/honua-esri-assess/issues/35)) ([90eab25](https://github.com/honua-io/honua-esri-assess/commit/90eab25a2a1f4a017770445f7715842e739a228e))
+
 ## [0.3.0](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.2.0...honua-esri-assess-v0.3.0) (2026-06-01)
 
 

@@ -1,0 +1,43 @@
+{
+  "rootItems": ["/enterpriseDatabases", "/fileShares", "/cloudStores"],
+  "items": [
+    {
+      "path": "/enterpriseDatabases/parcels_egdb",
+      "type": "egdb",
+      "info": {
+        "type": "egdb",
+        "isManaged": false,
+        "connectionString": "ENCRYPTED:DSID=parcels;USER=sde;PASSWORD=topsecret-db-pw;SERVER=sql.internal",
+        "dataStoreConnectionType": "shared"
+      }
+    },
+    {
+      "path": "/cloudStores/imagery_s3",
+      "type": "cloudStore",
+      "info": {
+        "connectionString": "{\"accessKeyId\":\"AKIAEXAMPLE\",\"secretAccessKey\":\"super-secret-key\"}"
+      }
+    },
+    {
+      "path": "/fileShares/legacy_gdb",
+      "type": "folder",
+      "info": {
+        "path": "\\\\fileserver\\gis\\legacy.gdb"
+      }
+    },
+    {
+      "path": "/bigDataFileShares/sensor_bds",
+      "type": "bigDataFileShare",
+      "info": {
+        "connectionString": "{\"path\":\"/cloudStores/sensor\"}"
+      }
+    },
+    {
+      "path": "/enterpriseDatabases/mystery_store",
+      "type": "someFutureStoreType",
+      "info": {
+        "connectionString": "secret-future-conn"
+      }
+    }
+  ]
+}

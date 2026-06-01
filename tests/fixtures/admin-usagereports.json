@@ -1,0 +1,25 @@
+{
+  "reports": [
+    {
+      "reportname": "honua-assess-usage",
+      "metadata": "{\"queries\": [\"RequestCount\"]}",
+      "queries": [
+        {
+          "resourceURIs": [
+            "services/Parcels.MapServer",
+            "services/Planning/Zoning.FeatureServer",
+            "services/Hydro/Streams.MapServer"
+          ],
+          "metrics": "RequestCount",
+          "report-data": [
+            [
+              [10, 20, 30],
+              [1, 1, 0],
+              [5, 5, 5]
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}

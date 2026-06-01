@@ -606,6 +606,59 @@ def test_shallow_walk_classifies_service_breadth_and_ogc() -> None:
 
 
 @responses.activate
+def test_deep_walk_captures_gpserver_task_names() -> None:
+    """A deep GPServer probe records its ``tasks`` array as migration handoff seed.
+
+    Task names are de-duplicated and sorted for determinism; only the names
+    already present on the service body are read (no task is crawled).
+    """
+
+    _register_info()
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services",
+        json={
+            "folders": [],
+            "services": [{"name": "ElevationProfile", "type": "GPServer"}],
+        },
+        status=200,
+    )
+    _register_service("ElevationProfile/GPServer", "gpserver-elevation.json")
+
+    client = ServerClient("https://gis.example.com/arcgis")
+    result = ServerScanner(deep=True).scan(client)
+
+    gp = {s.name: s for s in result.services}["ElevationProfile"]
+    assert gp.kind == "geoprocessingService"
+    assert gp.deep_scanned is True
+    # Duplicates collapsed, sorted; no task resource was fetched beyond the body.
+    assert gp.gp_tasks == ("ExtractProfile", "Viewshed")
+
+
+@responses.activate
+def test_shallow_gpserver_has_no_tasks() -> None:
+    """Without a deep probe, GP task names stay empty (no extra fetch)."""
+
+    _register_info()
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services",
+        json={
+            "folders": [],
+            "services": [{"name": "ElevationProfile", "type": "GPServer"}],
+        },
+        status=200,
+    )
+
+    client = ServerClient("https://gis.example.com/arcgis")
+    result = ServerScanner().scan(client)
+
+    gp = {s.name: s for s in result.services}["ElevationProfile"]
+    assert gp.kind == "geoprocessingService"
+    assert gp.gp_tasks == ()
+
+
+@responses.activate
 def test_deep_walk_enumerates_utility_network_lock_in() -> None:
     """Deep probe enumerates a hard lock-in (#46) with extent, never just a flag."""
 

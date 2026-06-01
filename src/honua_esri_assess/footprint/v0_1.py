@@ -39,11 +39,22 @@ PRODUCER_NAME = "honua-esri-assess"
 RELATION_WEBMAP_SERVICE = "webmap-references-service"
 RELATION_SERVICE_LAYER = "service-contains-layer"
 
+#: Cross-repo handoff target for geoprocessing migration. GPServer/GP task
+#: migration is owned by honua-sdk-python's ArcPy scanner/translator/runner;
+#: this repo only records a read-only pointer at it, never the translation.
+GP_HANDOFF_TARGET = "honua-sdk-python:arcpy"
+GP_HANDOFF_NOTE = (
+    "Geoprocessing migration is handled by honua-sdk-python's ArcPy "
+    "scanner/translator/runner; this footprint only records a pointer."
+)
+
 __all__ = [
     "SCHEMA_VERSION",
     "PRODUCER_NAME",
     "RELATION_WEBMAP_SERVICE",
     "RELATION_SERVICE_LAYER",
+    "GP_HANDOFF_TARGET",
+    "GP_HANDOFF_NOTE",
     "licensing_facet_to_dict",
     "portal_licensing_to_dict",
     "server_licensing_to_dict",
@@ -322,6 +333,13 @@ def _server_service_to_dict(service: ServiceRecord) -> dict[str, Any]:
     ]
     if layer_details:
         payload["layers"] = layer_details
+    # Additive v0.2 cross-repo handoff for geoprocessing services. GPServer
+    # migration is owned by honua-sdk-python's ArcPy pipeline, so the footprint
+    # records only a pointer (service URL + any known task names + a note).
+    # Emitted for GP services exclusively; v0.1/v0.2 readers ignore the field.
+    handoff = _gp_migration_handoff(service)
+    if handoff is not None:
+        payload["migrationHandoff"] = handoff
     # Additive v0.2 hard lock-in enumeration. Utility Network / Parcel Fabric /
     # LRS are surfaced with their observed extent (counts) so the verdict can
     # report detail, not just presence. Omitted when the service carries none,
@@ -343,6 +361,28 @@ def _lock_in_to_dict(lock_in: LockInDetail) -> dict[str, Any]:
     if lock_in.network_count is not None:
         payload["networkCount"] = lock_in.network_count
     return payload
+
+
+def _gp_migration_handoff(service: ServiceRecord) -> dict[str, Any] | None:
+    """Return a cross-repo migration-handoff pointer for a GPServer service.
+
+    Returns ``None`` for any non-geoprocessing service so the additive field is
+    present only where it applies. The pointer is fully read-only: it captures
+    the credential-free service URL, the geoprocessing task names already read
+    from the service body (if a deep probe ran), and a note that the ArcPy
+    translation lives in honua-sdk-python. No task is crawled or translated.
+    """
+
+    if service.kind != "geoprocessingService":
+        return None
+    handoff: dict[str, Any] = {
+        "target": GP_HANDOFF_TARGET,
+        "serviceUrl": credential_free_url(service.url),
+        "note": GP_HANDOFF_NOTE,
+    }
+    if service.gp_tasks:
+        handoff["taskNames"] = list(service.gp_tasks)
+    return handoff
 
 
 def _server_layer_detail_to_dict(layer: LayerRecord) -> dict[str, Any]:

@@ -26,10 +26,11 @@ SERVICE_TYPE_TO_KIND: dict[str, str] = {
 
 UNKNOWN_KIND = "other"
 
-# Service-types that have a per-service body with layers/tables worth probing
-# during a deep scan.
+# Service-types that have a per-service body worth probing during a deep scan
+# (layers/tables for map/feature/image/scene/stream; the ``tasks`` array for
+# GPServer, used only to record cross-repo migration-handoff task names).
 DEEP_PROBE_TYPES: frozenset[str] = frozenset(
-    {"MapServer", "FeatureServer", "ImageServer", "SceneServer", "StreamServer"}
+    {"MapServer", "FeatureServer", "ImageServer", "SceneServer", "StreamServer", "GPServer"}
 )
 
 # Raw Esri supported-extension string -> normalized OGC capability flag. ArcGIS

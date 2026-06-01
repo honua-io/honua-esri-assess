@@ -266,6 +266,7 @@ class ServerScanner:
         ogc_capabilities = classify_ogc_capabilities(raw_service.get("supportedExtensions"))
         layers: tuple[LayerRecord, ...] = ()
         tables: tuple[LayerRecord, ...] = ()
+        gp_tasks: tuple[str, ...] = ()
         lock_ins: tuple[LockInDetail, ...] = ()
         description: str | None = None
         service_data_type: str | None = None
@@ -315,6 +316,11 @@ class ServerScanner:
                     ogc_capabilities = tuple(sorted(set(ogc_capabilities) | set(body_ogc)))
                 layers = tuple(_parse_layers(body.get("layers")))
                 tables = tuple(_parse_layers(body.get("tables")))
+                # A GPServer body advertises its geoprocessing tasks in a flat
+                # ``tasks`` array (task-name strings). They are recorded only to
+                # seed the cross-repo migration handoff; no task is crawled.
+                if raw_type == "GPServer":
+                    gp_tasks = _parse_gp_tasks(body.get("tasks"))
                 service_data_type = _stringify(body.get("serviceDataType"))
                 if "singleFusedMapCache" in body:
                     single_fused_map_cache = bool(body.get("singleFusedMapCache"))
@@ -360,6 +366,7 @@ class ServerScanner:
                 ogc_capabilities=ogc_capabilities,
                 layers=layers,
                 tables=tables,
+                gp_tasks=gp_tasks,
                 lock_ins=lock_ins,
                 service_data_type=service_data_type,
                 single_fused_map_cache=single_fused_map_cache,
@@ -469,6 +476,21 @@ def _parse_layers(value: Any) -> Iterable[LayerRecord]:
             )
         )
     return parsed
+
+
+def _parse_gp_tasks(value: Any) -> tuple[str, ...]:
+    """Extract GPServer task names from a service body's ``tasks`` array.
+
+    ArcGIS publishes a GPServer's geoprocessing tasks as a flat array of
+    task-name strings. Entries are de-duplicated and ordered for determinism;
+    non-string and empty entries are ignored. No task resource is fetched —
+    only the names already present on the service body are read.
+    """
+
+    if not isinstance(value, list):
+        return ()
+    names = {item.strip() for item in value if isinstance(item, str) and item.strip()}
+    return tuple(sorted(names))
 
 
 def _deep_failure_code(exc: AssessmentError) -> str:

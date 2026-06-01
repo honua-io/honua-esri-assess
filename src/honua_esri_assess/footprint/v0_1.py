@@ -446,6 +446,12 @@ def _server_layer_detail_to_dict(layer: LayerRecord) -> dict[str, Any]:
     sr = _spatial_reference_to_dict(detail.spatial_reference)
     if sr is not None:
         payload["sr"] = sr
+    versioning = _versioning_to_dict(detail)
+    if versioning is not None:
+        payload["versioning"] = versioning
+    attribute_rules = _attribute_rules_to_dict(detail)
+    if attribute_rules is not None:
+        payload["attributeRules"] = attribute_rules
     return payload
 
 
@@ -495,6 +501,30 @@ def _editor_tracking_to_dict(detail: LayerDetail) -> dict[str, Any] | None:
     if tracking.edit_date_field:
         payload["editDateField"] = tracking.edit_date_field
     return payload
+
+
+def _versioning_to_dict(detail: LayerDetail) -> dict[str, Any] | None:
+    versioning = detail.versioning
+    if versioning is None:
+        return None
+    payload: dict[str, Any] = {}
+    if versioning.mode:
+        payload["mode"] = versioning.mode
+    if versioning.archived is not None:
+        payload["archived"] = versioning.archived
+    return payload or None
+
+
+def _attribute_rules_to_dict(detail: LayerDetail) -> dict[str, Any] | None:
+    rules = detail.attribute_rules
+    if rules is None:
+        return None
+    payload: dict[str, Any] = {}
+    if rules.present is not None:
+        payload["present"] = rules.present
+    if rules.count is not None:
+        payload["count"] = rules.count
+    return payload or None
 
 
 def _spatial_reference_to_dict(sr: dict[str, Any]) -> dict[str, Any] | None:

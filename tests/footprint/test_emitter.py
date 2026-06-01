@@ -460,10 +460,12 @@ def test_footprint_emits_gpserver_cross_repo_handoff() -> None:
 
 def _layer_detail_result() -> ServerScanResult:
     from honua_esri_assess.server.models import (
+        AttributeRulesInfo,
         EditorTracking,
         FieldDetail,
         LayerDetail,
         RelationshipDetail,
+        VersioningInfo,
     )
 
     detail = LayerDetail(
@@ -498,6 +500,8 @@ def _layer_detail_result() -> ServerScanResult:
         has_popups=True,
         definition_query="STATUS = 'active'",
         spatial_reference={"wkid": 4326, "latestWkid": 4326},
+        versioning=VersioningInfo(mode="branch", archived=True),
+        attribute_rules=AttributeRulesInfo(present=True, count=2),
     )
     table_detail = LayerDetail(
         fields=(FieldDetail(name="OBJECTID", type="esriFieldTypeOID"),),
@@ -554,6 +558,8 @@ def test_emitter_includes_layer_detail_block() -> None:
     assert layer0["definitionQuery"] == "STATUS = 'active'"
     assert layer0["sr"] == {"wkid": 4326, "latestWkid": 4326}
     assert layer0["editorTracking"] == {"enabled": True, "creatorField": "created_user"}
+    assert layer0["versioning"] == {"mode": "branch", "archived": True}
+    assert layer0["attributeRules"] == {"present": True, "count": 2}
 
     status_field = next(f for f in layer0["fields"] if f["name"] == "STATUS")
     assert status_field["domainType"] == "coded"

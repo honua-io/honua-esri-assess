@@ -20,6 +20,14 @@
     "labelingInfo": [{"labelExpression": "[NAME]"}]
   },
   "htmlPopupType": "esriServerHTMLPopupTypeAsHTMLText",
+  "isDataVersioned": false,
+  "isDataBranchVersioned": true,
+  "isDataArchived": true,
+  "hasAttributeRules": true,
+  "attributeRules": [
+    {"id": 1, "name": "CalcStatus", "type": "esriARTCalculation"},
+    {"id": 2, "name": "ValidateArea", "type": "esriARTValidation"}
+  ],
   "fields": [
     {"name": "OBJECTID", "type": "esriFieldTypeOID", "alias": "OBJECTID", "nullable": false},
     {"name": "NAME", "type": "esriFieldTypeString", "alias": "Name", "nullable": true},

@@ -495,6 +495,11 @@ def test_layer_detail_walk_attaches_schema_detail() -> None:
     assert {f.name for f in layer0.detail.fields} >= {"OBJECTID", "STATUS", "AREA"}
     assert any(f.domain_type == "coded" for f in layer0.detail.fields)
     assert len(layer0.detail.relationships) == 1
+    assert layer0.detail.versioning is not None
+    assert layer0.detail.versioning.mode == "branch"
+    assert layer0.detail.attribute_rules is not None
+    assert layer0.detail.attribute_rules.present is True
+    assert layer0.detail.attribute_rules.count == 2
 
     table = next(t for t in watersheds.tables if t.id == 2)
     assert table.detail is not None

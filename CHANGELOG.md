@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.6.0...honua-esri-assess-v0.7.0) (2026-06-01)
+
+
+### Features
+
+* **verdict:** consume usage, service-type and federation signals ([#61](https://github.com/honua-io/honua-esri-assess/issues/61)) ([#62](https://github.com/honua-io/honua-esri-assess/issues/62)) ([454bd1a](https://github.com/honua-io/honua-esri-assess/commit/454bd1ae9aa5280ef75b8537a047c2432d3176df))
+
 ## [0.6.0](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.5.0...honua-esri-assess-v0.6.0) (2026-06-01)
 
 

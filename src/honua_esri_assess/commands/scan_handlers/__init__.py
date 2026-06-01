@@ -26,12 +26,13 @@ def get_handler(name: str) -> ScanHandler:
 
 
 def _register_default_handlers() -> None:
-    from . import agol, filegdb, filegdb_workspace, server
+    from . import agol, filegdb, filegdb_workspace, rbac, server
 
     register(ScanHandler(name="agol", run=agol.run))
     register(ScanHandler(name="server", run=server.run))
     register(ScanHandler(name="filegdb", run=filegdb.run))
     register(ScanHandler(name="filegdb-workspace", run=filegdb_workspace.run))
+    register(ScanHandler(name="rbac", run=rbac.run))
 
 
 _register_default_handlers()

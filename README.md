@@ -80,6 +80,7 @@ honua-esri-assess schema validate EsriFootprint.json
 | ArcGIS Server | `scan server --target <rest-url> --output EsriFootprint.json` | none | Uses ArcGIS Server REST service metadata read-only. |
 | FileGDB (descriptor) | `scan filegdb --target <path> --output EsriFootprint.json` | none | Reads `<path>/_inventory.json` when `<path>` is a directory, or the descriptor file directly. |
 | FileGDB (workspace) | `scan filegdb-workspace --target <path.gdb> --output EsriFootprint.json` | `filegdb` extra (`pyogrio`) | Read-only `pyogrio`/GDAL metadata calls against a local `.gdb` directory. Also available as the `honua_esri_assess.filegdb.scan_filegdb_workspace` library function. |
+| RBAC / access | `scan rbac --target <portal-or-server-admin-url> [--kind portal\|server]` | none | Reads documented Portal `admin`/`community` or ArcGIS Server `admin/security` endpoints read-only and writes the sibling `EsriAccessFootprint.json` (defaults to stdout). |
 
 ## Command-line usage
 
@@ -112,6 +113,14 @@ honua-esri-assess scan filegdb \
 honua-esri-assess scan filegdb-workspace \
   --target ./sample.gdb \
   --output EsriFootprint.json
+
+# Export the identity / RBAC posture to the sibling EsriAccessFootprint.json
+# artifact. --kind portal (default) reads the Portal Sharing REST base;
+# --kind server reads an ArcGIS Server admin endpoint. Defaults to stdout.
+honua-esri-assess scan rbac \
+  --target https://yourorg.maps.arcgis.com/sharing/rest \
+  --token-env AGOL_TOKEN \
+  --output EsriAccessFootprint.json
 
 # Render the Markdown readiness report from a footprint to a file.
 honua-esri-assess report \

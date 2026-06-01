@@ -64,11 +64,13 @@ pytest config (`pyproject.toml`): `pythonpath = ["src"]`, `testpaths = ["tests"]
 
 ### CLI surface
 
-`scan agol`, `scan server`, `scan filegdb` (descriptor only), `schema show`,
-`schema validate <file>`, `report`, `version` (and root `--version`). Tokens are
-supplied only via `--token-env VAR` — there is intentionally no `--token` flag.
-`scan` writes `./EsriFootprint.json` by default; pass `--validate` to validate
-against the bundled schema before writing.
+`scan agol`, `scan server`, `scan filegdb` (descriptor only), `scan rbac`,
+`schema show`, `schema validate <file>`, `report`, `version` (and root
+`--version`). Tokens are supplied only via `--token-env VAR` — there is
+intentionally no `--token` flag. `scan` writes `./EsriFootprint.json` by
+default; pass `--validate` to validate against the bundled schema before
+writing. `scan rbac` instead writes the sibling `EsriAccessFootprint.json`
+(read-only RBAC export; `--kind portal|server`, default to stdout).
 
 ## Architecture
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from .pyogrio_reader import PyogrioFileGdbReader
 from .scanner import (
     FileGdbLayer,
+    FileGdbMetadataReader,
     FileGdbReaderUnavailable,
     FileGdbScanOptions,
     hash_filegdb_path,
@@ -13,6 +14,7 @@ from .scanner import (
 
 __all__ = [
     "FileGdbLayer",
+    "FileGdbMetadataReader",
     "FileGdbReaderUnavailable",
     "FileGdbScanOptions",
     "PyogrioFileGdbReader",

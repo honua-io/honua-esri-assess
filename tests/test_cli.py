@@ -68,11 +68,11 @@ def test_scan_help_lists_backend_slots(runner: CliRunner) -> None:
     output = visible_cli_output(result.output)
 
     assert result.exit_code == 0
-    for command in ("agol", "server", "filegdb"):
+    for command in ("agol", "server", "filegdb", "filegdb-workspace"):
         assert command in output
 
 
-@pytest.mark.parametrize("backend", ["agol", "server", "filegdb"])
+@pytest.mark.parametrize("backend", ["agol", "server", "filegdb", "filegdb-workspace"])
 def test_scan_backend_help_has_common_options_without_mutation_words(
     runner: CliRunner,
     backend: str,

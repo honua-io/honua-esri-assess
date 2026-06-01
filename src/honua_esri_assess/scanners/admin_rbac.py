@@ -13,10 +13,13 @@ Documented endpoints consumed (all read-only):
   ``/sharing/rest/portals/self/roles`` (custom roles),
   ``/sharing/rest/portals/self/roles/<id>/privileges`` (role privileges),
   ``/sharing/rest/community/groups`` (groups).
-* ArcGIS Server admin security (``/arcgis/admin/security/*``):
+* ArcGIS Server admin (``/arcgis/admin/*``):
   ``/arcgis/admin/security/roles/getRoles`` (roles),
   ``/arcgis/admin/security/users/getUsers`` (users),
-  ``/arcgis/admin/services/<svc>/permissions`` (per-service permissions).
+  ``/arcgis/admin/services`` and ``/arcgis/admin/services/<folder>``
+  (service catalog, root plus one level of sub-folders),
+  ``/arcgis/admin/services/<service>/permissions`` (per-service ACEs, crawled
+  across the whole catalog and collapsed into effective grants).
 
 Soft failures (a token without admin scope, a denied endpoint) become typed
 :class:`~honua_esri_assess.diagnostics.Diagnostic` records so a partial export
@@ -47,6 +50,7 @@ from honua_esri_assess.footprint.access import (
     ItemSharing,
     OrgSecurity,
     ServicePermission,
+    resolve_effective_permissions,
 )
 from honua_esri_assess.redaction import sanitize_handoff_url
 
@@ -126,13 +130,133 @@ def scan_server_rbac(
     )
     users = _server_users(users_payload)
 
+    service_permissions = _crawl_service_permissions(
+        base, target, client, diagnostics, timeout
+    )
+    effective_permissions = resolve_effective_permissions(service_permissions)
+
     return AccessFootprint(
         source_kind="arcgis-server",
         locator=sanitize_handoff_url(target),
         users=users,
         roles=roles,
+        service_permissions=service_permissions,
+        effective_permissions=effective_permissions,
         diagnostics=diagnostics,
     )
+
+
+# Esri's admin services permission response names the "everyone" principal with
+# this reserved id. We model it as the schema's ``everyone`` principal type so
+# downstream policy mapping can recognise anonymous access uniformly.
+_EVERYONE_PRINCIPAL = "esriEveryone"
+
+
+def _crawl_service_permissions(
+    base: str,
+    target: str,
+    client: HttpClient,
+    diagnostics: list[Diagnostic],
+    timeout: float | None,
+) -> list[ServicePermission]:
+    """Crawl ``/arcgis/admin/services`` and read each service's ACEs.
+
+    Read-only: lists the service catalog (root folder plus one level of
+    sub-folders, the documented admin layout) and issues a GET against
+    ``services/<service>/permissions`` for every discovered service. Any soft
+    failure (denied, missing, rate limited, unreachable) for a single service
+    becomes a typed diagnostic and is skipped -- the crawl never aborts.
+    """
+
+    services = _list_services(base, client, diagnostics, timeout)
+    permissions: list[ServicePermission] = []
+    for service in services:
+        scope = f"server.services.{service}.permissions"
+        payload = _get(
+            client,
+            urljoin(base, f"services/{service}/permissions"),
+            scope,
+            diagnostics,
+            timeout,
+        )
+        if not isinstance(payload, dict):
+            continue
+        service_url = _service_admin_url(target, service)
+        permissions.extend(_service_aces(service_url, payload))
+    return permissions
+
+
+def _list_services(
+    base: str,
+    client: HttpClient,
+    diagnostics: list[Diagnostic],
+    timeout: float | None,
+) -> list[str]:
+    """Return fully-qualified service names (``Folder/Name.Type`` or ``Name.Type``)."""
+
+    root = _get(client, urljoin(base, "services"), "server.services", diagnostics, timeout)
+    if not isinstance(root, dict):
+        return []
+    names: list[str] = _services_in_folder(root, prefix="")
+    for folder in root.get("folders", []) or []:
+        if not isinstance(folder, str) or folder in ("", "/"):
+            continue
+        scope = f"server.services.{folder}"
+        sub = _get(client, urljoin(base, f"services/{folder}"), scope, diagnostics, timeout)
+        if isinstance(sub, dict):
+            names.extend(_services_in_folder(sub, prefix=f"{folder}/"))
+    return names
+
+
+def _services_in_folder(payload: Mapping[str, Any], *, prefix: str) -> list[str]:
+    out: list[str] = []
+    for svc in payload.get("services", []) or []:
+        if not isinstance(svc, dict):
+            continue
+        name = svc.get("serviceName") or svc.get("name")
+        svc_type = svc.get("type")
+        if not isinstance(name, str) or not isinstance(svc_type, str):
+            continue
+        out.append(f"{prefix}{name}.{svc_type}")
+    return out
+
+
+def _service_admin_url(target: str, service: str) -> str:
+    base = sanitize_handoff_url(target).rstrip("/")
+    return f"{base}/services/{service}"
+
+
+def _service_aces(service_url: str, payload: Mapping[str, Any]) -> list[ServicePermission]:
+    aces: list[ServicePermission] = []
+    for raw in payload.get("permissions", []) or []:
+        if not isinstance(raw, dict):
+            continue
+        principal_raw = raw.get("principal")
+        if not isinstance(principal_raw, str) or not principal_raw:
+            continue
+        permission = raw.get("permission")
+        permission = permission if isinstance(permission, dict) else {}
+        is_allowed = permission.get("isAllowed")
+        access = "allow" if is_allowed else "deny"
+        if principal_raw == _EVERYONE_PRINCIPAL:
+            principal_type = "everyone"
+            principal = "*"
+        else:
+            principal_type = "role"
+            principal = principal_raw
+        operations = [
+            str(op) for op in permission.get("operations", []) or [] if op
+        ]
+        aces.append(
+            ServicePermission(
+                service_url=service_url,
+                principal_type=principal_type,  # type: ignore[arg-type]
+                principal=principal,
+                access=access,  # type: ignore[arg-type]
+                operations=operations,
+            )
+        )
+    return aces
 
 
 def _get(

@@ -41,13 +41,29 @@ def test_scan_portal_rbac_models_identity_and_validates() -> None:
     assert validate_access_footprint(artifact) is True
 
 
-def test_scan_server_rbac_reads_admin_security_endpoints() -> None:
-    client = StubHttpClient(
+def _server_client() -> StubHttpClient:
+    return StubHttpClient(
         handlers={
             "security/roles/getRoles": respond_fixture("server_roles.json"),
             "security/users/getUsers": respond_fixture("server_users.json"),
+            "services/Parcels.MapServer/permissions": respond_fixture(
+                "server_perms_parcels.json"
+            ),
+            "services/Hosted/Wells.FeatureServer/permissions": respond_fixture(
+                "server_perms_wells.json"
+            ),
+            "services/Utilities/PrintingTools.GPServer/permissions": respond_fixture(
+                "server_perms_printing.json"
+            ),
+            "services/Hosted": respond_fixture("server_services_hosted.json"),
+            "services/Utilities": respond_fixture("server_services_utilities.json"),
+            "services": respond_fixture("server_services_root.json"),
         }
     )
+
+
+def test_scan_server_rbac_reads_admin_security_endpoints() -> None:
+    client = _server_client()
 
     footprint = scan_server_rbac("https://host.local/arcgis/admin", client)
 
@@ -56,6 +72,55 @@ def test_scan_server_rbac_reads_admin_security_endpoints() -> None:
     assert footprint.users[0].username == "svc_publish"
     assert footprint.users[0].provider == "enterprise"
     assert validate_access_footprint(build_access_footprint(footprint)) is True
+
+
+def test_scan_server_rbac_crawls_aces_across_catalog() -> None:
+    client = _server_client()
+    footprint = scan_server_rbac("https://host.local/arcgis/admin", client)
+
+    # Services from the root folder and both sub-folders were crawled.
+    crawled_urls = {p.service_url for p in footprint.service_permissions}
+    assert crawled_urls == {
+        "https://host.local/arcgis/admin/services/Parcels.MapServer",
+        "https://host.local/arcgis/admin/services/Hosted/Wells.FeatureServer",
+        "https://host.local/arcgis/admin/services/Utilities/PrintingTools.GPServer",
+    }
+
+    parcels = [
+        p
+        for p in footprint.service_permissions
+        if p.service_url.endswith("Parcels.MapServer")
+    ]
+    by_principal = {p.principal: p for p in parcels}
+    assert by_principal["publishers"].access == "allow"
+    assert by_principal["publishers"].operations == ["Query", "Create", "Update", "Delete"]
+    assert by_principal["viewers"].operations == ["Query"]
+    # The reserved esriEveryone principal becomes the schema 'everyone' type.
+    everyone = by_principal["*"]
+    assert everyone.principal_type == "everyone"
+    assert everyone.access == "deny"
+
+
+def test_scan_server_rbac_resolves_effective_permissions() -> None:
+    client = _server_client()
+    footprint = scan_server_rbac("https://host.local/arcgis/admin", client)
+
+    wells_url = "https://host.local/arcgis/admin/services/Hosted/Wells.FeatureServer"
+    wells = [
+        p for p in footprint.effective_permissions if p.service_url == wells_url
+    ]
+    # Two ACEs for publishers (allow + deny) collapse to a single deny grant
+    # (deny overrides allow) whose operations are the sorted union.
+    assert len(wells) == 1
+    assert wells[0].principal == "publishers"
+    assert wells[0].effect == "deny"
+    assert wells[0].operations == ["Create", "Delete", "Query"]
+
+    artifact = build_access_footprint(footprint)
+    assert validate_access_footprint(artifact) is True
+    # The artifact ships both the raw ACEs and the resolved collapse.
+    assert artifact["effectivePermissions"]
+    assert all("effect" in e for e in artifact["effectivePermissions"])
 
 
 def test_denied_endpoint_becomes_missing_permission_diagnostic() -> None:
@@ -74,6 +139,42 @@ def test_denied_endpoint_becomes_missing_permission_diagnostic() -> None:
     codes = {d.code for d in footprint.diagnostics}
     assert "missing-permission" in codes
     # A denied users endpoint still produces a schema-valid (partial) artifact.
+    assert validate_access_footprint(build_access_footprint(footprint)) is True
+
+
+def test_ace_crawl_soft_failures_degrade_to_diagnostics() -> None:
+    # The Wells permissions endpoint is denied (403), the Utilities folder
+    # listing 404s, and the PrintingTools permissions endpoint is rate limited.
+    # None of these abort the crawl; each becomes a typed diagnostic and the
+    # reachable services still land in the artifact.
+    client = StubHttpClient(
+        handlers={
+            "security/roles/getRoles": respond_fixture("server_roles.json"),
+            "security/users/getUsers": respond_fixture("server_users.json"),
+            "services/Parcels.MapServer/permissions": respond_fixture(
+                "server_perms_parcels.json"
+            ),
+            "services/Hosted/Wells.FeatureServer/permissions": respond(
+                403, {"error": {"code": 403}}
+            ),
+            "services/Utilities": respond(404, {"error": {"code": 404}}),
+            "services/Hosted": respond_fixture("server_services_hosted.json"),
+            "services": respond_fixture("server_services_root.json"),
+        }
+    )
+
+    footprint = scan_server_rbac("https://host.local/arcgis/admin", client)
+
+    crawled = {p.service_url for p in footprint.service_permissions}
+    # Parcels (reachable) is present; Wells/PrintingTools (soft-failed) are absent.
+    assert any(u.endswith("Parcels.MapServer") for u in crawled)
+    assert not any(u.endswith("Wells.FeatureServer") for u in crawled)
+    assert not any(u.endswith("PrintingTools.GPServer") for u in crawled)
+
+    codes = {d.code for d in footprint.diagnostics}
+    assert "missing-permission" in codes  # the denied Wells permissions read
+    assert "partial-coverage" in codes  # the 404 Utilities folder listing
+    # The partial export still validates.
     assert validate_access_footprint(build_access_footprint(footprint)) is True
 
 

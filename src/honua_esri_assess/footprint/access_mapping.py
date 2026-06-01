@@ -136,22 +136,31 @@ def _facade_policies(
 ) -> list[dict[str, Any]]:
     policies: list[dict[str, Any]] = []
 
-    for perm in data.get("servicePermissions", []) or []:
+    # Prefer the resolved effective grants (deny-overrides-allow, one row per
+    # (service, principal)) when the footprint carries them; fall back to the
+    # raw ACEs for v0.1 artifacts that predate effective-permission resolution.
+    effective = data.get("effectivePermissions") or []
+    service_source = effective if effective else (data.get("servicePermissions") or [])
+    effect_key = "effect" if effective else "access"
+
+    for perm in service_source:
         if not isinstance(perm, Mapping):
             continue
         principal_type = str(perm.get("principalType", "everyone"))
         principal = str(perm.get("principal", "*"))
         if principal_type == "role":
             principal = role_id_index.get(principal, principal)
-        policies.append(
-            {
-                "resource": str(perm.get("serviceUrl", "")),
-                "resourceType": "service",
-                "principalType": principal_type,
-                "principal": principal,
-                "effect": str(perm.get("access", "deny")),
-            }
-        )
+        policy: dict[str, Any] = {
+            "resource": str(perm.get("serviceUrl", "")),
+            "resourceType": "service",
+            "principalType": principal_type,
+            "principal": principal,
+            "effect": str(perm.get(effect_key, "deny")),
+        }
+        operations = perm.get("operations") or []
+        if operations:
+            policy["operations"] = [str(op) for op in operations]
+        policies.append(policy)
 
     for sharing in data.get("itemSharing", []) or []:
         if not isinstance(sharing, Mapping):

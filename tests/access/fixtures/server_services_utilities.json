@@ -1,0 +1,6 @@
+{
+  "folderName": "Utilities",
+  "services": [
+    { "serviceName": "PrintingTools", "type": "GPServer" }
+  ]
+}

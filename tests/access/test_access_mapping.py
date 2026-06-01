@@ -82,6 +82,29 @@ def test_facade_policies_resolve_role_principal_to_honua_id() -> None:
     assert item["principal"] == "*"
 
 
+def test_facade_policies_prefer_effective_permissions_with_operations() -> None:
+    url = "https://host.local/server/rest/services/X/FeatureServer"
+    footprint = AccessFootprint(
+        source_kind="arcgis-server",
+        locator="https://host.local/arcgis/admin",
+        roles=[
+            AccessRole(id="publishers", name="publishers", type="custom", privileges=[]),
+        ],
+        service_permissions=[
+            ServicePermission(url, "role", "publishers", "allow", operations=["Query", "Create"]),
+            ServicePermission(url, "role", "publishers", "deny", operations=["Delete"]),
+        ],
+    )
+
+    policies = map_to_honua_rbac(footprint)["accessPolicies"]
+    svc = [p for p in policies if p["resourceType"] == "service"]
+    # The two ACEs collapsed into one effective grant -> a single facade policy.
+    assert len(svc) == 1
+    assert svc[0]["effect"] == "deny"
+    assert svc[0]["principal"] == "honua.custom.publishers"
+    assert svc[0]["operations"] == ["Create", "Delete", "Query"]
+
+
 def test_round_trip_from_scanned_footprint() -> None:
     client = StubHttpClient(
         handlers={

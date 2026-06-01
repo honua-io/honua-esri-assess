@@ -1,0 +1,8 @@
+{
+  "folderName": "/",
+  "description": "Root services folder",
+  "folders": ["Hosted", "Utilities"],
+  "services": [
+    { "serviceName": "Parcels", "type": "MapServer" }
+  ]
+}

@@ -51,6 +51,14 @@ def _server_handlers() -> dict[str, object]:
     return {
         "security/roles/getRoles": respond_fixture("server_roles.json"),
         "security/users/getUsers": respond_fixture("server_users.json"),
+        "services/Parcels.MapServer/permissions": respond_fixture("server_perms_parcels.json"),
+        "services/Hosted/Wells.FeatureServer/permissions": respond_fixture("server_perms_wells.json"),
+        "services/Utilities/PrintingTools.GPServer/permissions": respond_fixture(
+            "server_perms_printing.json"
+        ),
+        "services/Hosted": respond_fixture("server_services_hosted.json"),
+        "services/Utilities": respond_fixture("server_services_utilities.json"),
+        "services": respond_fixture("server_services_root.json"),
     }
 
 
@@ -116,7 +124,7 @@ def test_rbac_portal_writes_access_footprint_to_file(
 
     assert result.exit_code == 0, result.output
     artifact = json.loads(output.read_text(encoding="utf-8"))
-    assert artifact["schemaVersion"] == "v0.1"
+    assert artifact["schemaVersion"] == "v0.2"
     assert artifact["source"]["kind"] == "arcgis-online"
     assert {u["username"] for u in artifact["users"]} == {"alice", "bob"}
     # Portal is the default --kind, so portal endpoints were queried.
@@ -136,7 +144,7 @@ def test_rbac_writes_to_stdout_by_default(
 
     assert result.exit_code == 0, result.output
     artifact = json.loads(result.stdout)
-    assert artifact["schemaVersion"] == "v0.1"
+    assert artifact["schemaVersion"] == "v0.2"
     assert artifact["source"]["kind"] == "arcgis-online"
 
 
@@ -166,7 +174,11 @@ def test_rbac_server_kind_reads_admin_security(
     assert result.exit_code == 0, result.output
     artifact = json.loads(output.read_text(encoding="utf-8"))
     assert artifact["source"]["kind"] == "arcgis-server"
-    assert all("security/" in url for url in stub.seen)
+    # Server scan reads only the documented admin security + services endpoints.
+    assert all(("security/" in url or "/services" in url) for url in stub.seen)
+    # ACE crawl produced per-service permissions and resolved effective grants.
+    assert artifact["servicePermissions"], "expected crawled per-service ACEs"
+    assert artifact["effectivePermissions"], "expected resolved effective grants"
 
 
 def test_rbac_token_from_env_never_reaches_artifact_or_logs(

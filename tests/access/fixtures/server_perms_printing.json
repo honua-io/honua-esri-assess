@@ -1,0 +1,9 @@
+{
+  "permissions": [
+    {
+      "principal": "esriEveryone",
+      "childURL": null,
+      "permission": { "isAllowed": true, "operations": [] }
+    }
+  ]
+}

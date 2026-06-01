@@ -83,6 +83,13 @@ def test_server_scan_locator_is_credential_free() -> None:
         handlers={
             "security/roles/getRoles": lambda u, p: HttpResponse(200, {"roles": []}),
             "security/users/getUsers": lambda u, p: HttpResponse(200, {"users": []}),
+            "services/Secret.MapServer/permissions": lambda u, p: HttpResponse(
+                200,
+                {"permissions": [{"principal": "publishers", "permission": {"isAllowed": True}}]},
+            ),
+            "services": lambda u, p: HttpResponse(
+                200, {"folders": [], "services": [{"serviceName": "Secret", "type": "MapServer"}]}
+            ),
         }
     )
     footprint = scan_server_rbac(
@@ -90,4 +97,7 @@ def test_server_scan_locator_is_credential_free() -> None:
     )
     artifact = build_access_footprint(footprint)
     assert "@" not in artifact["source"]["locator"]
+    # The crawled service URLs carry no credentials from the secret-laden target.
+    for perm in artifact["servicePermissions"]:
+        assert "@" not in perm["serviceUrl"] and "token" not in perm["serviceUrl"]
     _assert_no_secrets(artifact)

@@ -1,0 +1,6 @@
+{
+  "folderName": "Hosted",
+  "services": [
+    { "serviceName": "Wells", "type": "FeatureServer" }
+  ]
+}

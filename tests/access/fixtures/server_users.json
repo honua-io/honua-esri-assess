@@ -1,0 +1,5 @@
+{
+  "users": [
+    { "username": "svc_publish", "fullname": "Service Publisher", "roles": ["publishers"], "disabled": false }
+  ]
+}

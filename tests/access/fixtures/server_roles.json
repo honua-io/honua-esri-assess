@@ -1,0 +1,6 @@
+{
+  "roles": [
+    { "rolename": "publishers", "description": "Service publishers" },
+    { "rolename": "viewers", "description": "Read-only service consumers" }
+  ]
+}

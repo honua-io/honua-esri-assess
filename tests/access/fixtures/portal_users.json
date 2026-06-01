@@ -1,0 +1,22 @@
+{
+  "total": 2,
+  "users": [
+    {
+      "username": "alice",
+      "fullName": "Alice Admin",
+      "roleId": "org_admin",
+      "userType": "creatorUT",
+      "provider": "saml",
+      "groups": ["g-ops"],
+      "disabled": false
+    },
+    {
+      "username": "bob",
+      "fullName": "Bob Builder",
+      "roleId": "custom-editor",
+      "provider": "arcgis",
+      "groups": [],
+      "disabled": true
+    }
+  ]
+}

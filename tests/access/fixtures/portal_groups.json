@@ -1,0 +1,12 @@
+{
+  "total": 1,
+  "results": [
+    {
+      "id": "g-ops",
+      "title": "Operations",
+      "owner": "alice",
+      "access": "org",
+      "memberCount": 12
+    }
+  ]
+}

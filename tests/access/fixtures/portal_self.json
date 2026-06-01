@@ -1,0 +1,9 @@
+{
+  "id": "0123ABCDEF456789",
+  "name": "Demo Org",
+  "access": "private",
+  "samlEnabled": true,
+  "openIdConnectEnabled": true,
+  "mfaEnabled": true,
+  "defaultRoleForUser": "org_user"
+}

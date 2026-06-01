@@ -928,6 +928,155 @@
         },
         "sr": {
           "$ref": "#/$defs/SpatialReference"
+        },
+        "layers": {
+          "type": "array",
+          "description": "Additive at v0.2: per-layer schema and behavior detail captured from each FeatureServer/MapServer layer's read-only metadata (fields, domains, relationships, attachments, editor tracking, renderer/labels/popups, definition query, spatial reference). Present only when the layer-detail probe ran and at least one layer was resolved; absent otherwise so plain probes are unchanged. v0.1 readers ignore this property.",
+          "items": {
+            "$ref": "#/$defs/ServerLayerDetail"
+          }
+        }
+      }
+    },
+    "ServerLayerDetail": {
+      "type": "object",
+      "description": "Schema and behavior detail for one FeatureServer/MapServer layer or table, read-only from its metadata resource. Closed object: extras require a schema bump.",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Layer/table id within the service."
+        },
+        "name": {
+          "type": "string",
+          "description": "Layer/table name as reported by the service."
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ServerLayerField"
+          }
+        },
+        "relationships": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ServerLayerRelationship"
+          }
+        },
+        "subtypeCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of subtypes defined on the layer."
+        },
+        "hasAttachments": {
+          "type": "boolean"
+        },
+        "editorTracking": {
+          "$ref": "#/$defs/ServerLayerEditorTracking"
+        },
+        "rendererType": {
+          "type": "string",
+          "description": "drawingInfo renderer type (e.g. simple, uniqueValue, classBreaks)."
+        },
+        "hasLabels": {
+          "type": "boolean"
+        },
+        "hasPopups": {
+          "type": "boolean"
+        },
+        "definitionQuery": {
+          "type": "string",
+          "description": "Layer definition expression/query, when present."
+        },
+        "sr": {
+          "$ref": "#/$defs/SpatialReference"
+        }
+      }
+    },
+    "ServerLayerField": {
+      "type": "object",
+      "description": "One attribute field on a layer/table. Domain presence is summarized as a coded/range/inherited type plus the domain name; coded-value lists are not copied.",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "description": "Esri field type tag (e.g. esriFieldTypeOID, esriFieldTypeString)."
+        },
+        "alias": {
+          "type": "string"
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "domainType": {
+          "type": "string",
+          "description": "Domain kind summary: coded, range, inherited, or a raw type when unrecognized."
+        },
+        "domainName": {
+          "type": "string"
+        },
+        "editorTracking": {
+          "type": "boolean",
+          "description": "True when the field is one of the layer's editor-tracking columns."
+        }
+      }
+    },
+    "ServerLayerRelationship": {
+      "type": "object",
+      "description": "One relationship class advertised on a layer.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "relatedTableId": {
+          "type": "integer"
+        },
+        "cardinality": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      }
+    },
+    "ServerLayerEditorTracking": {
+      "type": "object",
+      "description": "Editor-tracking configuration observed on a layer.",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "creatorField": {
+          "type": "string"
+        },
+        "creationDateField": {
+          "type": "string"
+        },
+        "editorField": {
+          "type": "string"
+        },
+        "editDateField": {
+          "type": "string"
         }
       }
     },

@@ -1,0 +1,10 @@
+{
+  "id": 2,
+  "name": "WatershedAttributes",
+  "type": "Table",
+  "hasAttachments": false,
+  "fields": [
+    {"name": "OBJECTID", "type": "esriFieldTypeOID", "alias": "OBJECTID", "nullable": false},
+    {"name": "WATERSHED_ID", "type": "esriFieldTypeInteger", "alias": "Watershed Id", "nullable": true}
+  ]
+}

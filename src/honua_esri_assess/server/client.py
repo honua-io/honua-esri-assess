@@ -187,6 +187,27 @@ class ServerClient:
             url = f"{self.base_url}/{name}/{service_type}"
         return self.get_json(url)
 
+    def get_layer(
+        self,
+        *,
+        name: str,
+        service_type: str,
+        folder: str | None,
+        layer_id: int,
+    ) -> dict[str, Any]:
+        """``GET`` one layer/table resource under a service (``.../<service>/<id>``).
+
+        Read-only like every other helper: this fetches the documented layer
+        metadata JSON (fields, domains, relationships, capabilities) and never
+        queries row/feature data.
+        """
+
+        if folder:
+            url = f"{self.base_url}/{folder}/{name}/{service_type}/{layer_id}"
+        else:
+            url = f"{self.base_url}/{name}/{service_type}/{layer_id}"
+        return self.get_json(url)
+
     # --- core ----------------------------------------------------------
 
     def get_json(self, url: str, *, params: dict[str, str] | None = None) -> dict[str, Any]:

@@ -445,6 +445,131 @@ def test_deep_failure_diagnostic_uses_full_service_identity() -> None:
 
 
 @responses.activate
+def test_layer_detail_walk_attaches_schema_detail() -> None:
+    _register_info()
+    _register_root()
+    _register_folder("Hydrology", "folder-hydrology.json")
+    _register_folder("Basemaps", "folder-basemaps.json")
+    _register_folder("Imagery", "folder-imagery.json")
+    _register_folder("Restricted", "folder-imagery.json")
+    _register_service("SampleWorldCities/MapServer", "mapserver-basemap.json")
+    _register_service("Hydrology/Watersheds/FeatureServer", "featureserver-watersheds.json")
+    _register_service("Hydrology/Watersheds/MapServer", "mapserver-basemap.json")
+    _register_service("Basemaps/Topo/MapServer", "mapserver-basemap.json")
+    _register_service("Imagery/NAIP2024/ImageServer", "imageserver-naip.json")
+    # Per-layer detail resources for the watershed FeatureServer.
+    _register_service(
+        "Hydrology/Watersheds/FeatureServer/0",
+        "featureserver-watersheds-layer-0.json",
+    )
+    _register_service(
+        "Hydrology/Watersheds/FeatureServer/1",
+        "featureserver-watersheds-layer-1.json",
+    )
+    _register_service(
+        "Hydrology/Watersheds/FeatureServer/2",
+        "featureserver-watersheds-table-2.json",
+    )
+    # The basemap MapServer fixture reports two layers (ids 0 and 1); register a
+    # detail body for each so the layer-detail walk resolves them cleanly. The
+    # same MapServer fixture backs SampleWorldCities, Topo, and Watersheds.
+    for service_path in (
+        "SampleWorldCities/MapServer",
+        "Hydrology/Watersheds/MapServer",
+        "Basemaps/Topo/MapServer",
+    ):
+        _register_service(f"{service_path}/0", "featureserver-watersheds-layer-1.json")
+        _register_service(f"{service_path}/1", "featureserver-watersheds-layer-1.json")
+
+    client = ServerClient("https://gis.example.com/arcgis")
+    result = ServerScanner(deep=True, layer_detail=True).scan(client)
+
+    watersheds = next(
+        s for s in result.services if s.folder == "Hydrology" and s.service_type == "FeatureServer"
+    )
+    layer0 = next(layer for layer in watersheds.layers if layer.id == 0)
+    assert layer0.detail is not None
+    assert layer0.detail.has_attachments is True
+    assert layer0.detail.subtype_count == 2
+    assert layer0.detail.editor_tracking is not None
+    assert {f.name for f in layer0.detail.fields} >= {"OBJECTID", "STATUS", "AREA"}
+    assert any(f.domain_type == "coded" for f in layer0.detail.fields)
+    assert len(layer0.detail.relationships) == 1
+
+    table = next(t for t in watersheds.tables if t.id == 2)
+    assert table.detail is not None
+    assert {f.name for f in table.detail.fields} == {"OBJECTID", "WATERSHED_ID"}
+
+
+@responses.activate
+def test_layer_detail_partial_failure_keeps_layer_and_diagnoses() -> None:
+    _register_info()
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services",
+        json={"folders": ["Hydrology"], "services": []},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/Hydrology",
+        json={
+            "folders": [],
+            "services": [{"name": "Hydrology/Watersheds", "type": "FeatureServer"}],
+        },
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/Hydrology/Watersheds/FeatureServer",
+        json={"layers": [{"id": 0, "name": "Watersheds"}], "tables": []},
+        status=200,
+    )
+    # Layer-detail probe is forbidden but must not abort the scan.
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/Hydrology/Watersheds/FeatureServer/0",
+        body="",
+        status=403,
+    )
+
+    client = ServerClient(
+        "https://gis.example.com/arcgis",
+        retry=RetryPolicy(max_attempts=1),
+    )
+    result = ServerScanner(deep=True, layer_detail=True).scan(client)
+
+    watersheds = result.services[0]
+    assert watersheds.deep_scanned is True
+    # The layer summary survives even though its detail probe failed.
+    assert len(watersheds.layers) == 1
+    assert watersheds.layers[0].detail is None
+    assert any(
+        d.code == "server.service.missing-permission"
+        and d.field == "services/Hydrology/Watersheds/FeatureServer/0"
+        for d in result.diagnostics
+    )
+
+
+@responses.activate
+def test_layer_detail_requires_deep() -> None:
+    """layer_detail without deep is a no-op (no per-layer routes fetched)."""
+
+    _register_info()
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services",
+        json={"folders": [], "services": [{"name": "Topo", "type": "FeatureServer"}]},
+        status=200,
+    )
+
+    client = ServerClient("https://gis.example.com/arcgis")
+    result = ServerScanner(deep=False, layer_detail=True).scan(client)
+    # No deep probe, so no service body and no layer-detail fetch occurred.
+    assert all(not s.deep_scanned for s in result.services)
+
+
+@responses.activate
 def test_shallow_walk_classifies_service_breadth_and_ogc() -> None:
     """Shallow catalog walk classifies every service type and reads OGC flags.
 

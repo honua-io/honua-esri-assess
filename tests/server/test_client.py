@@ -91,6 +91,45 @@ def test_get_json_anonymous_omits_token() -> None:
 
 
 @responses.activate
+def test_get_layer_builds_layer_url() -> None:
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/Hydro/Watersheds/FeatureServer/0",
+        json={"id": 0, "name": "Watersheds"},
+        status=200,
+    )
+    client = ServerClient("https://gis.example.com/arcgis")
+    body = client.get_layer(
+        name="Watersheds",
+        service_type="FeatureServer",
+        folder="Hydro",
+        layer_id=0,
+    )
+    assert body["name"] == "Watersheds"
+    assert responses.calls[0].request.url.startswith(
+        "https://gis.example.com/arcgis/rest/services/Hydro/Watersheds/FeatureServer/0"
+    )
+
+
+@responses.activate
+def test_get_layer_root_service_omits_folder() -> None:
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services/Cities/MapServer/2",
+        json={"id": 2, "name": "Cities"},
+        status=200,
+    )
+    client = ServerClient("https://gis.example.com/arcgis")
+    body = client.get_layer(
+        name="Cities",
+        service_type="MapServer",
+        folder=None,
+        layer_id=2,
+    )
+    assert body["id"] == 2
+
+
+@responses.activate
 def test_http_401_raises_typed_auth_error() -> None:
     responses.add(
         responses.GET,

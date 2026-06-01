@@ -20,11 +20,42 @@ mirrored as a package resource at
 | `dependencyEdges` | New **optional** top-level array of [`DependencyEdge`](#dependencyedge). Absent or empty when no edges resolve. |
 | `portal.contentTypeCounts` | New **optional** `EsriTypeCountMap` of [functional content category](#portal-content-type-classification) → count, alongside the existing raw `portal.itemCounts`. |
 | `PortalItem.contentCategory` | New **optional** per-item string drawn from the functional-category enum. |
+| `ServerService.layers` | New **optional** array of [`ServerLayerDetail`](#serverlayerdetail) capturing per-layer schema & behavior for FeatureServer/MapServer layers. Absent when no layer detail was resolved. |
 
 No fields were removed, renamed, or made stricter. A v0.1 artifact is a valid
 v0.2 artifact, and a v0.1 reader can ignore the unknown `dependencyEdges`,
-`contentTypeCounts`, and `contentCategory` keys, so the bump is back-compatible
-in both directions.
+`contentTypeCounts`, `contentCategory`, and `layers` keys, so the bump is
+back-compatible in both directions.
+
+## ServerLayerDetail
+
+For ArcGIS Server `FeatureServer` / `MapServer` services, a deep scan can
+follow each layer/table to its read-only metadata resource
+(`.../<service>/<id>`) and record a schema & behavior detail block under
+`ServerService.layers`. The probe is strictly read-only — it reads the
+documented layer description and never queries row/feature data.
+
+Each entry carries:
+
+- `id`, `name` — layer/table identity within the service.
+- `fields` — attribute fields with `type`, `alias`, `nullable`, a
+  `domainType` summary (`coded` / `range` / `inherited`) plus `domainName`,
+  and an `editorTracking` flag for editor-tracking columns. Coded-value lists
+  are summarized, not copied.
+- `relationships` — relationship classes (`id`, `name`, `relatedTableId`,
+  `cardinality`, `role`).
+- `subtypeCount` — number of subtypes defined on the layer.
+- `hasAttachments` — attachment support.
+- `editorTracking` — editor-tracking configuration (enabled + tracking field
+  names).
+- `rendererType`, `hasLabels`, `hasPopups` — symbology / labeling / popup
+  presence from `drawingInfo` and popup metadata.
+- `definitionQuery` — the layer's definition expression, when present.
+- `sr` — the layer's spatial reference.
+
+The block is emitted only for layers whose detail probe resolved; a per-layer
+failure leaves that layer out of `layers` and records a `partial-coverage`
+diagnostic. v0.1 readers ignore the property.
 
 ## Portal content-type classification
 

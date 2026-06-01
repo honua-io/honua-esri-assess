@@ -22,7 +22,12 @@ from honua_esri_assess.footprint.licensing import (
     server_licensing_to_dict,
 )
 from honua_esri_assess.portal.classification import CATEGORY_UNKNOWN
-from honua_esri_assess.portal.models import ItemRecord, PortalScanResult
+from honua_esri_assess.portal.models import (
+    FederatedServer,
+    FederationInfo,
+    ItemRecord,
+    PortalScanResult,
+)
 from honua_esri_assess.server._safe import credential_free_url
 from honua_esri_assess.server.models import (
     LayerDetail,
@@ -77,6 +82,9 @@ DIAGNOSTIC_CODE_MAP = {
     "portal.item-probe.rate-limited": "rate-limited",
     "portal.item-probe.failed": "unresolved-reference",
     "portal.org-id.missing": "partial-coverage",
+    "portal.federation.forbidden": "missing-permission",
+    "portal.federation.rate-limited": "rate-limited",
+    "portal.federation.failed": "partial-coverage",
 }
 
 SERVER_DIAGNOSTIC_CODE_MAP = {
@@ -183,6 +191,14 @@ def _portal_to_footprint(
             for diagnostic in result.diagnostics
         ],
     }
+    # Additive v0.2 federation facet: portal + federated server URLs, their
+    # assigned hosting/federated roles, and any advanced server roles
+    # (GeoEvent / GeoAnalytics / Notebook / Knowledge) advertised read-only.
+    # Emitted only when the documented federation surface was reachable and
+    # returned servers, so unfederated/AGOL orgs and v0.1 readers are unchanged.
+    federation = _portal_federation_to_dict(result.federation)
+    if federation is not None:
+        footprint["portal"]["federation"] = federation
     edges = _portal_dependency_edges(result.items)
     if edges:
         footprint["dependencyEdges"] = edges
@@ -495,6 +511,60 @@ def _spatial_reference_to_dict(sr: dict[str, Any]) -> dict[str, Any] | None:
     if isinstance(wkt, str) and wkt:
         out["wkt"] = wkt
     return out or None
+
+
+def _portal_federation_to_dict(
+    federation: FederationInfo | None,
+) -> dict[str, Any] | None:
+    """Render the federation topology block for the portal facet.
+
+    Returns ``None`` when no federation was discovered so the additive block is
+    omitted. Server URLs are run through ``credential_free_url`` again here as a
+    defense-in-depth measure even though the scanner already redacts them.
+    """
+
+    if federation is None or not federation.servers:
+        return None
+    servers = [_federated_server_to_dict(server) for server in federation.servers]
+    servers.sort(key=lambda entry: entry["url"])
+    advanced_roles = sorted(
+        {role for server in federation.servers for role in server.advanced_roles}
+    )
+    payload: dict[str, Any] = {"servers": servers}
+    if advanced_roles:
+        payload["advancedRoles"] = advanced_roles
+    return payload
+
+
+def _federated_server_to_dict(server: FederatedServer) -> dict[str, Any]:
+    payload: dict[str, Any] = {"url": credential_free_url(server.url)}
+    role = _federation_role(server)
+    if role is not None:
+        payload["role"] = role
+    if server.functions:
+        payload["functions"] = list(server.functions)
+    if server.advanced_roles:
+        payload["advancedRoles"] = list(server.advanced_roles)
+    return payload
+
+
+def _federation_role(server: FederatedServer) -> str | None:
+    """Coarse hosting/federated role for a federated server.
+
+    Prefers the explicit ``isHosted`` flag, then falls back to the
+    ``serverRole`` token (e.g. ``HOSTING_SERVER`` / ``FEDERATED_SERVER``).
+    """
+
+    if server.is_hosted is True:
+        return "hosting"
+    role = (server.server_role or "").strip().upper()
+    if "HOSTING" in role:
+        return "hosting"
+    if "FEDERATED" in role:
+        return "federated"
+    if server.is_hosted is False:
+        return "federated"
+    return None
 
 
 def _portal_dependency_edges(items: list[ItemRecord]) -> list[dict[str, str]]:

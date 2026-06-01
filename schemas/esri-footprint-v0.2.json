@@ -517,6 +517,85 @@
         "licensing": {
           "$ref": "#/$defs/PortalLicensing",
           "description": "Read-only license entitlement observations from documented Portal Sharing endpoints."
+        },
+        "federation": {
+          "$ref": "#/$defs/Federation",
+          "description": "Additive at v0.2: federation topology (federated server URLs + assigned hosting/federated roles) and advanced server roles (GeoEvent/GeoAnalytics/Notebook/Knowledge) advertised by the documented portals/self/servers surface. Present only when the federation surface was reachable and returned servers; absent for unfederated orgs and ignored by v0.1 readers."
+        }
+      }
+    },
+    "Federation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Federation topology of a Portal: the server sites federated with it and the advanced server roles observed across them. Deep per-server configuration is intentionally excluded (covered by the per-service migration children). Read-only: server URLs are credential-free with no query string, fragment, or userinfo.",
+      "required": [
+        "servers"
+      ],
+      "properties": {
+        "servers": {
+          "type": "array",
+          "description": "Federated server sites, sorted by url for determinism.",
+          "items": {
+            "$ref": "#/$defs/FederatedServer"
+          }
+        },
+        "advancedRoles": {
+          "type": "array",
+          "description": "Union of advanced server roles observed across all federated servers. Sorted, de-duplicated. Omitted when none are advertised.",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/AdvancedServerRole"
+          }
+        }
+      }
+    },
+    "AdvancedServerRole": {
+      "type": "string",
+      "enum": [
+        "geoevent",
+        "geoanalytics",
+        "notebook",
+        "knowledge"
+      ],
+      "description": "Advanced ArcGIS server product/role whose presence changes the migration story. Recorded as presence only; deep configuration is out of scope."
+    },
+    "FederatedServer": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One server site federated with a Portal, with its assigned role and any advanced server functions advertised read-only. Credential-free.",
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://[^@?#\\s]+(/[^?#\\s]*)?$",
+          "description": "Credential-free federated server URL with no query string, fragment, or userinfo."
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "hosting",
+            "federated"
+          ],
+          "description": "Coarse hosting vs federated role assignment derived from the federation surface (isHosted / serverRole). Omitted when undeterminable."
+        },
+        "functions": {
+          "type": "array",
+          "description": "Raw serverFunction tokens advertised for the server (e.g. GeoAnalytics, GeoEvent, NotebookServer). Preserves source order. Omitted when none are advertised.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "advancedRoles": {
+          "type": "array",
+          "description": "Advanced server roles recognized for this server, normalized from its functions. Sorted, de-duplicated. Omitted when none.",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/AdvancedServerRole"
+          }
         }
       }
     },

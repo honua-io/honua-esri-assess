@@ -1,0 +1,22 @@
+{
+  "servers": [
+    {
+      "id": "hostingServer",
+      "name": "hosting.demo.local",
+      "url": "https://hosting.demo.local/server",
+      "adminUrl": "https://hosting.demo.local:6443/arcgis/admin",
+      "isHosted": true,
+      "serverRole": "HOSTING_SERVER",
+      "serverFunction": ""
+    },
+    {
+      "id": "federatedServer",
+      "name": "rt.demo.local",
+      "url": "https://rt.demo.local/server?token=secret-token",
+      "adminUrl": "https://rt.demo.local:6443/arcgis/admin",
+      "isHosted": false,
+      "serverRole": "FEDERATED_SERVER",
+      "serverFunction": "GeoEvent,GeoAnalytics,NotebookServer,KnowledgeServer"
+    }
+  ]
+}

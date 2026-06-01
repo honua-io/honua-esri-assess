@@ -20,6 +20,7 @@ from honua_esri_assess.footprint.licensing import (
     portal_licensing_to_dict,
     server_licensing_to_dict,
 )
+from honua_esri_assess.portal.classification import CATEGORY_UNKNOWN
 from honua_esri_assess.portal.models import ItemRecord, PortalScanResult
 from honua_esri_assess.server._safe import credential_free_url
 from honua_esri_assess.server.models import (
@@ -118,6 +119,9 @@ def _portal_to_footprint(
     emitted_at = _utc(generated_at or datetime.now(timezone.utc))
     captured_at = _utc(result.captured_at)
     item_counts = Counter(item.item_type or "Unknown" for item in result.items)
+    content_type_counts = Counter(
+        item.content_category or CATEGORY_UNKNOWN for item in result.items
+    )
     sharing_summary = Counter(_sharing_value(item.access) for item in result.items)
 
     footprint: dict[str, Any] = {
@@ -133,6 +137,7 @@ def _portal_to_footprint(
             "orgId": result.org.id or "unknown",
             "orgUrl": result.org.portal_url,
             "itemCounts": dict(sorted(item_counts.items())),
+            "contentTypeCounts": dict(sorted(content_type_counts.items())),
             "sharingSummary": {
                 "private": sharing_summary.get("private", 0),
                 "org": sharing_summary.get("org", 0),
@@ -228,6 +233,7 @@ def _portal_item_to_dict(item: ItemRecord) -> dict[str, Any]:
         "kind": "portal-item",
         "id": item.id,
         "type": item.item_type or "Unknown",
+        "contentCategory": item.content_category or CATEGORY_UNKNOWN,
         "owner": item.owner or "unknown",
         "title": item.title or item.id,
         "sharing": _sharing_value(item.access),

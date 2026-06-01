@@ -9,6 +9,7 @@ preserve the partial record; only top-level identity failures abort.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
 from typing import Any
 
 from ..diagnostics import (
@@ -29,6 +30,7 @@ from .catalog import (
     classify_service,
 )
 from .client import ServerClient
+from .layer_detail import parse_layer_detail
 from .models import (
     FolderRecord,
     LayerRecord,
@@ -37,6 +39,10 @@ from .models import (
     ServerScanResult,
     ServiceRecord,
 )
+
+# Service types whose layers expose a per-layer schema/behavior resource worth
+# fetching when layer-detail capture is enabled.
+LAYER_DETAIL_TYPES: frozenset[str] = frozenset({"MapServer", "FeatureServer"})
 
 
 class ServerScanner:
@@ -57,9 +63,13 @@ class ServerScanner:
         *,
         deep: bool = False,
         folder: str | None = None,
+        layer_detail: bool = False,
     ) -> None:
         self.deep = deep
         self.folder_filter = folder
+        # Layer-detail capture implies a deep walk (the per-service body is
+        # needed to enumerate layer ids before each layer can be probed).
+        self.layer_detail = layer_detail and deep
         self._log = get_logger("server.scanner")
 
     def scan(self, client: ServerClient) -> ServerScanResult:
@@ -73,15 +83,14 @@ class ServerScanner:
         service_records: list[ServiceRecord] = []
 
         for raw_service in root_services:
-            record, diag = self._build_service_record(
+            record, diags = self._build_service_record(
                 client=client,
                 folder=None,
                 raw_service=raw_service,
             )
             if record is not None:
                 service_records.append(record)
-            if diag is not None:
-                diagnostics.append(diag)
+            diagnostics.extend(diags)
 
         for folder_name in root_folders:
             if self.folder_filter and folder_name != self.folder_filter:
@@ -213,15 +222,14 @@ class ServerScanner:
 
         raw_services = _ensure_service_list(body.get("services"))
         for raw_service in raw_services:
-            record, diag = self._build_service_record(
+            record, diags = self._build_service_record(
                 client=client,
                 folder=folder_name,
                 raw_service=raw_service,
             )
             if record is not None:
                 services.append(record)
-            if diag is not None:
-                diagnostics.append(diag)
+            diagnostics.extend(diags)
         return (
             FolderRecord(name=folder_name, service_count=len(services)),
             services,
@@ -234,16 +242,18 @@ class ServerScanner:
         client: ServerClient,
         folder: str | None,
         raw_service: dict[str, Any],
-    ) -> tuple[ServiceRecord | None, ScanDiagnostic | None]:
+    ) -> tuple[ServiceRecord | None, list[ScanDiagnostic]]:
         raw_name = raw_service.get("name")
         raw_type = raw_service.get("type")
         if not isinstance(raw_name, str) or not isinstance(raw_type, str):
-            return None, ScanDiagnostic(
-                code="server.service.malformed",
-                severity="warning",
-                message="catalog entry missing name/type; skipped",
-                field=f"folders/{folder or '_root'}/services",
-            )
+            return None, [
+                ScanDiagnostic(
+                    code="server.service.malformed",
+                    severity="warning",
+                    message="catalog entry missing name/type; skipped",
+                    field=f"folders/{folder or '_root'}/services",
+                )
+            ]
         bare_name = raw_name.split("/")[-1]
         kind = classify_service(raw_type)
         url = _build_service_url(client.rest_root, folder, bare_name, raw_type)
@@ -258,15 +268,17 @@ class ServerScanner:
         service_data_type: str | None = None
         single_fused_map_cache: bool | None = None
         deep_scanned = False
-        diagnostic: ScanDiagnostic | None = None
+        diagnostics: list[ScanDiagnostic] = []
         identity_field = _service_identity_field(folder, bare_name, raw_type)
 
         if kind == UNKNOWN_KIND:
-            diagnostic = ScanDiagnostic(
-                code="server.service.unknown-type",
-                severity="info",
-                message=f"unrecognized service type {raw_type!r} mapped to 'other'",
-                field=identity_field,
+            diagnostics.append(
+                ScanDiagnostic(
+                    code="server.service.unknown-type",
+                    severity="info",
+                    message=f"unrecognized service type {raw_type!r} mapped to 'other'",
+                    field=identity_field,
+                )
             )
 
         if self.deep and raw_type in DEEP_PROBE_TYPES:
@@ -284,11 +296,13 @@ class ServerScanner:
                 ServerConnectionError,
                 ServerApiError,
             ) as exc:
-                diagnostic = ScanDiagnostic(
-                    code=_deep_failure_code(exc),
-                    severity="warning",
-                    message=f"deep scan of {bare_name!r} failed: {exc.message}",
-                    field=identity_field,
+                diagnostics.append(
+                    ScanDiagnostic(
+                        code=_deep_failure_code(exc),
+                        severity="warning",
+                        message=f"deep scan of {bare_name!r} failed: {exc.message}",
+                        field=identity_field,
+                    )
                 )
             else:
                 description = _stringify(body.get("description")) or None
@@ -302,6 +316,26 @@ class ServerScanner:
                 if "singleFusedMapCache" in body:
                     single_fused_map_cache = bool(body.get("singleFusedMapCache"))
                 deep_scanned = True
+
+                if self.layer_detail and raw_type in LAYER_DETAIL_TYPES:
+                    layers = self._attach_layer_detail(
+                        client=client,
+                        folder=folder,
+                        bare_name=bare_name,
+                        service_type=raw_type,
+                        layers=layers,
+                        identity_field=identity_field,
+                        diagnostics=diagnostics,
+                    )
+                    tables = self._attach_layer_detail(
+                        client=client,
+                        folder=folder,
+                        bare_name=bare_name,
+                        service_type=raw_type,
+                        layers=tables,
+                        identity_field=identity_field,
+                        diagnostics=diagnostics,
+                    )
 
         return (
             ServiceRecord(
@@ -319,8 +353,59 @@ class ServerScanner:
                 single_fused_map_cache=single_fused_map_cache,
                 deep_scanned=deep_scanned,
             ),
-            diagnostic,
+            diagnostics,
         )
+
+    def _attach_layer_detail(
+        self,
+        *,
+        client: ServerClient,
+        folder: str | None,
+        bare_name: str,
+        service_type: str,
+        layers: tuple[LayerRecord, ...],
+        identity_field: str,
+        diagnostics: list[ScanDiagnostic],
+    ) -> tuple[LayerRecord, ...]:
+        """Fetch each layer/table resource and attach parsed schema detail.
+
+        Per-layer failures are non-fatal: the layer keeps its summary and a
+        ``partial-coverage`` diagnostic records the gap.
+        """
+
+        detailed: list[LayerRecord] = []
+        for layer in layers:
+            try:
+                body = client.get_layer(
+                    name=bare_name,
+                    service_type=service_type,
+                    folder=folder,
+                    layer_id=layer.id,
+                )
+            except (
+                ServerAuthError,
+                ServerForbiddenError,
+                ServerNotFoundError,
+                ServerRateLimitedError,
+                ServerConnectionError,
+                ServerApiError,
+            ) as exc:
+                diagnostics.append(
+                    ScanDiagnostic(
+                        code=_deep_failure_code(exc),
+                        severity="warning",
+                        message=(
+                            f"layer-detail probe of {bare_name!r} "
+                            f"layer {layer.id} failed: {exc.message}"
+                        ),
+                        field=f"{identity_field}/{layer.id}",
+                    )
+                )
+                detailed.append(layer)
+                continue
+            detail = parse_layer_detail(body)
+            detailed.append(replace(layer, detail=detail))
+        return tuple(detailed)
 
 
 # ---------------------------------------------------------------------------

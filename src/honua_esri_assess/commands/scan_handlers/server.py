@@ -29,7 +29,7 @@ def run(options: ScanOptions) -> ScanResult:
             retry=RetryPolicy(max_attempts=max(1, options.max_retries + 1)),
             user_agent=options.user_agent,
         )
-        result = ServerScanner(deep=True).scan(client)
+        result = ServerScanner(deep=True, layer_detail=True).scan(client)
     except AssessmentError as exc:
         error = DiagnosticError(
             exc.message,

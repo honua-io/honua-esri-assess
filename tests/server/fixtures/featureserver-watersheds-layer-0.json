@@ -1,0 +1,55 @@
+{
+  "id": 0,
+  "name": "Watersheds",
+  "type": "Feature Layer",
+  "geometryType": "esriGeometryPolygon",
+  "hasAttachments": true,
+  "editFieldsInfo": {
+    "creatorField": "created_user",
+    "creationDateField": "created_date",
+    "editorField": "last_edited_user",
+    "editDateField": "last_edited_date"
+  },
+  "subtypes": [
+    {"code": 1, "name": "Primary"},
+    {"code": 2, "name": "Secondary"}
+  ],
+  "definitionExpression": "STATUS = 'active'",
+  "drawingInfo": {
+    "renderer": {"type": "uniqueValue", "field1": "STATUS"},
+    "labelingInfo": [{"labelExpression": "[NAME]"}]
+  },
+  "htmlPopupType": "esriServerHTMLPopupTypeAsHTMLText",
+  "fields": [
+    {"name": "OBJECTID", "type": "esriFieldTypeOID", "alias": "OBJECTID", "nullable": false},
+    {"name": "NAME", "type": "esriFieldTypeString", "alias": "Name", "nullable": true},
+    {
+      "name": "STATUS",
+      "type": "esriFieldTypeString",
+      "alias": "Status",
+      "nullable": true,
+      "domain": {"type": "codedValue", "name": "StatusDomain", "codedValues": [{"name": "Active", "code": "active"}]}
+    },
+    {
+      "name": "AREA",
+      "type": "esriFieldTypeDouble",
+      "alias": "Area",
+      "nullable": true,
+      "domain": {"type": "range", "name": "AreaRange", "range": [0, 100000]}
+    },
+    {"name": "created_user", "type": "esriFieldTypeString", "alias": "created_user", "nullable": true},
+    {"name": "created_date", "type": "esriFieldTypeDate", "alias": "created_date", "nullable": true},
+    {"name": "last_edited_user", "type": "esriFieldTypeString", "alias": "last_edited_user", "nullable": true},
+    {"name": "last_edited_date", "type": "esriFieldTypeDate", "alias": "last_edited_date", "nullable": true}
+  ],
+  "relationships": [
+    {"id": 3, "name": "WatershedToOutlets", "relatedTableId": 1, "cardinality": "esriRelCardinalityOneToMany", "role": "esriRelRoleOrigin"}
+  ],
+  "extent": {
+    "xmin": -120.0,
+    "ymin": 30.0,
+    "xmax": -110.0,
+    "ymax": 40.0,
+    "spatialReference": {"wkid": 4326, "latestWkid": 4326}
+  }
+}

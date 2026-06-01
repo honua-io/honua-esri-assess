@@ -1,0 +1,21 @@
+{
+  "id": 1,
+  "name": "Outlets",
+  "type": "Feature Layer",
+  "geometryType": "esriGeometryPoint",
+  "hasAttachments": false,
+  "drawingInfo": {
+    "renderer": {"type": "simple"}
+  },
+  "fields": [
+    {"name": "OBJECTID", "type": "esriFieldTypeOID", "alias": "OBJECTID", "nullable": false},
+    {"name": "NAME", "type": "esriFieldTypeString", "alias": "Name", "nullable": true}
+  ],
+  "extent": {
+    "xmin": -120.0,
+    "ymin": 30.0,
+    "xmax": -110.0,
+    "ymax": 40.0,
+    "spatialReference": {"wkid": 3857}
+  }
+}

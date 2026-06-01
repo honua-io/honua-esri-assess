@@ -24,6 +24,8 @@ from honua_esri_assess.portal.classification import CATEGORY_UNKNOWN
 from honua_esri_assess.portal.models import ItemRecord, PortalScanResult
 from honua_esri_assess.server._safe import credential_free_url
 from honua_esri_assess.server.models import (
+    LayerDetail,
+    LayerRecord,
     ScanDiagnostic,
     ServerScanResult,
     ServiceRecord,
@@ -309,7 +311,111 @@ def _server_service_to_dict(service: ServiceRecord) -> dict[str, Any]:
     payload["serviceKind"] = service.kind
     if service.ogc_capabilities:
         payload["ogcCapabilities"] = list(service.ogc_capabilities)
+    # Additive v0.2 per-layer schema/behavior detail. Emitted only when the
+    # layer-detail probe actually resolved a layer body, so plain deep probes
+    # (and v0.1 readers) are unchanged.
+    layer_details = [
+        _server_layer_detail_to_dict(layer)
+        for layer in (*service.layers, *service.tables)
+        if layer.detail is not None
+    ]
+    if layer_details:
+        payload["layers"] = layer_details
     return payload
+
+
+def _server_layer_detail_to_dict(layer: LayerRecord) -> dict[str, Any]:
+    detail = layer.detail or LayerDetail()
+    payload: dict[str, Any] = {"id": layer.id, "name": layer.name}
+    if detail.fields:
+        payload["fields"] = [_field_detail_to_dict(field) for field in detail.fields]
+    if detail.relationships:
+        payload["relationships"] = [
+            _relationship_to_dict(rel) for rel in detail.relationships
+        ]
+    if detail.subtype_count:
+        payload["subtypeCount"] = detail.subtype_count
+    if detail.has_attachments is not None:
+        payload["hasAttachments"] = detail.has_attachments
+    editor_tracking = _editor_tracking_to_dict(detail)
+    if editor_tracking is not None:
+        payload["editorTracking"] = editor_tracking
+    if detail.renderer_type:
+        payload["rendererType"] = detail.renderer_type
+    if detail.has_labels is not None:
+        payload["hasLabels"] = detail.has_labels
+    if detail.has_popups is not None:
+        payload["hasPopups"] = detail.has_popups
+    if detail.definition_query:
+        payload["definitionQuery"] = detail.definition_query
+    sr = _spatial_reference_to_dict(detail.spatial_reference)
+    if sr is not None:
+        payload["sr"] = sr
+    return payload
+
+
+def _field_detail_to_dict(field: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {"name": field.name}
+    if field.type:
+        payload["type"] = field.type
+    if field.alias:
+        payload["alias"] = field.alias
+    if field.nullable is not None:
+        payload["nullable"] = field.nullable
+    if field.domain_type:
+        payload["domainType"] = field.domain_type
+    if field.domain_name:
+        payload["domainName"] = field.domain_name
+    if field.editor_tracking:
+        payload["editorTracking"] = True
+    return payload
+
+
+def _relationship_to_dict(rel: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    if rel.id is not None:
+        payload["id"] = rel.id
+    if rel.name:
+        payload["name"] = rel.name
+    if rel.related_table_id is not None:
+        payload["relatedTableId"] = rel.related_table_id
+    if rel.cardinality:
+        payload["cardinality"] = rel.cardinality
+    if rel.role:
+        payload["role"] = rel.role
+    return payload
+
+
+def _editor_tracking_to_dict(detail: LayerDetail) -> dict[str, Any] | None:
+    tracking = detail.editor_tracking
+    if tracking is None:
+        return None
+    payload: dict[str, Any] = {"enabled": tracking.enabled}
+    if tracking.creator_field:
+        payload["creatorField"] = tracking.creator_field
+    if tracking.creation_date_field:
+        payload["creationDateField"] = tracking.creation_date_field
+    if tracking.editor_field:
+        payload["editorField"] = tracking.editor_field
+    if tracking.edit_date_field:
+        payload["editDateField"] = tracking.edit_date_field
+    return payload
+
+
+def _spatial_reference_to_dict(sr: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(sr, dict):
+        return None
+    out: dict[str, Any] = {}
+    wkid = sr.get("wkid")
+    if isinstance(wkid, int) and not isinstance(wkid, bool):
+        out["wkid"] = wkid
+    latest = sr.get("latestWkid")
+    if isinstance(latest, int) and not isinstance(latest, bool):
+        out["latestWkid"] = latest
+    wkt = sr.get("wkt")
+    if isinstance(wkt, str) and wkt:
+        out["wkt"] = wkt
+    return out or None
 
 
 def _portal_dependency_edges(items: list[ItemRecord]) -> list[dict[str, str]]:

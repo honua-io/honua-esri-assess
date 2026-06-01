@@ -384,3 +384,125 @@ def test_footprint_with_service_breadth_validates_against_schema() -> None:
     )
     fp = to_footprint_v0_1(result, tool_version="0.0.0")
     assert validate_footprint(fp) is True
+
+
+def _layer_detail_result() -> ServerScanResult:
+    from honua_esri_assess.server.models import (
+        EditorTracking,
+        FieldDetail,
+        LayerDetail,
+        RelationshipDetail,
+    )
+
+    detail = LayerDetail(
+        fields=(
+            FieldDetail(name="OBJECTID", type="esriFieldTypeOID", nullable=False),
+            FieldDetail(
+                name="STATUS",
+                type="esriFieldTypeString",
+                domain_type="coded",
+                domain_name="StatusDomain",
+            ),
+            FieldDetail(
+                name="created_user",
+                type="esriFieldTypeString",
+                editor_tracking=True,
+            ),
+        ),
+        relationships=(
+            RelationshipDetail(
+                id=3,
+                name="WatershedToOutlets",
+                related_table_id=1,
+                cardinality="esriRelCardinalityOneToMany",
+                role="esriRelRoleOrigin",
+            ),
+        ),
+        subtype_count=2,
+        has_attachments=True,
+        editor_tracking=EditorTracking(enabled=True, creator_field="created_user"),
+        renderer_type="uniqueValue",
+        has_labels=True,
+        has_popups=True,
+        definition_query="STATUS = 'active'",
+        spatial_reference={"wkid": 4326, "latestWkid": 4326},
+    )
+    table_detail = LayerDetail(
+        fields=(FieldDetail(name="OBJECTID", type="esriFieldTypeOID"),),
+    )
+    return ServerScanResult(
+        info=ServerInfo(url="https://gis.example.com/arcgis/rest/services"),
+        auth_mode="anonymous",
+        deep=True,
+        folders=(),
+        services=(
+            ServiceRecord(
+                name="Watersheds",
+                folder="Hydrology",
+                service_type="FeatureServer",
+                kind="featureService",
+                url=(
+                    "https://gis.example.com/arcgis/rest/services/"
+                    "Hydrology/Watersheds/FeatureServer"
+                ),
+                layers=(
+                    LayerRecord(
+                        id=0,
+                        name="Watersheds",
+                        type="Feature Layer",
+                        geometry_type="polygon",
+                        detail=detail,
+                    ),
+                    LayerRecord(id=1, name="Outlets", detail=None),
+                ),
+                tables=(
+                    LayerRecord(id=2, name="WatershedAttributes", detail=table_detail),
+                ),
+                deep_scanned=True,
+            ),
+        ),
+        diagnostics=(),
+    )
+
+
+def test_emitter_includes_layer_detail_block() -> None:
+    fp = to_footprint_v0_1(_layer_detail_result(), tool_version="0.0.0")
+    service = fp["inventory"][0]
+
+    # Only layers/tables with resolved detail appear; the bare layer is omitted.
+    layers = {layer["id"]: layer for layer in service["layers"]}
+    assert set(layers) == {0, 2}
+
+    layer0 = layers[0]
+    assert layer0["hasAttachments"] is True
+    assert layer0["subtypeCount"] == 2
+    assert layer0["rendererType"] == "uniqueValue"
+    assert layer0["hasLabels"] is True
+    assert layer0["hasPopups"] is True
+    assert layer0["definitionQuery"] == "STATUS = 'active'"
+    assert layer0["sr"] == {"wkid": 4326, "latestWkid": 4326}
+    assert layer0["editorTracking"] == {"enabled": True, "creatorField": "created_user"}
+
+    status_field = next(f for f in layer0["fields"] if f["name"] == "STATUS")
+    assert status_field["domainType"] == "coded"
+    assert status_field["domainName"] == "StatusDomain"
+    tracking_field = next(f for f in layer0["fields"] if f["name"] == "created_user")
+    assert tracking_field["editorTracking"] is True
+
+    rel = layer0["relationships"][0]
+    assert rel["name"] == "WatershedToOutlets"
+    assert rel["relatedTableId"] == 1
+
+
+def test_emitter_omits_layers_when_no_detail() -> None:
+    result = _make_result(deep=True)
+    fp = to_footprint_v0_1(result, tool_version="0.0.0")
+    # _make_result layers carry no detail, so the additive block is absent.
+    assert all("layers" not in item for item in fp["inventory"])
+
+
+def test_layer_detail_footprint_validates_against_schema() -> None:
+    from honua_esri_assess.footprint.schema import validate_footprint
+
+    fp = to_footprint_v0_1(_layer_detail_result(), tool_version="0.0.0")
+    assert validate_footprint(fp) is True

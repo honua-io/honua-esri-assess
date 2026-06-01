@@ -215,8 +215,9 @@ def test_network_scan_options_reach_builtin_handlers_without_secret_leakage(
                 self.rest_root = "https://fixture.local/server/rest/services"
 
         class FakeServerScanner:
-            def __init__(self, *, deep: bool) -> None:
+            def __init__(self, *, deep: bool, layer_detail: bool = False) -> None:
                 seen["deep"] = deep
+                seen["layer_detail"] = layer_detail
 
             def scan(self, client: FakeServerClient) -> ServerScanResult:
                 return ServerScanResult(
@@ -263,6 +264,7 @@ def test_network_scan_options_reach_builtin_handlers_without_secret_leakage(
     else:
         assert seen["credential"].apply({})["token"] == "top-secret-token"
         assert seen["deep"] is True
+        assert seen["layer_detail"] is True
     assert seen["user_agent"] == "honua-test/1.0"
     assert seen["attempts"] == 2
     assert seen["timeout"] == 7.5

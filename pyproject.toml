@@ -62,10 +62,14 @@ smoke = [
 reproducible = true
 
 [tool.hatch.build.targets.wheel]
+# The package ships its own schema copy at
+# ``src/honua_esri_assess/schemas/esri-footprint-v0.1.json`` (the resource read
+# at runtime via importlib.resources), so it is already included here. A
+# ``force-include`` of the repo-root ``schemas/`` copy onto the same wheel path
+# is redundant and, under hatchling >=1.27, a hard "second file at the same
+# path" error. The repo-root copy remains the canonical human-readable source
+# and is shipped in the sdist below; test_schema_packaging keeps the two in sync.
 packages = ["src/honua_esri_assess"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"schemas/esri-footprint-v0.1.json" = "honua_esri_assess/schemas/esri-footprint-v0.1.json"
 
 [tool.hatch.build.targets.sdist]
 include = [

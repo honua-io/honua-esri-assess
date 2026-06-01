@@ -969,6 +969,13 @@
               }
             }
           }
+        },
+        "lockIns": {
+          "type": "array",
+          "description": "Additive at v0.2: enumerated hard Esri lock-ins (Utility Network / Parcel Fabric / LRS) carried by the service, with observed extent. Present only when the service carries at least one lock-in; absent otherwise so plain feature/map services and v0.1 readers are unchanged.",
+          "items": {
+            "$ref": "#/$defs/LockIn"
+          }
         }
       }
     },
@@ -1111,6 +1118,45 @@
         },
         "editDateField": {
           "type": "string"
+        }
+      }
+    },
+    "LockIn": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "An enumerated hard Esri lock-in (Utility Network, Parcel Fabric, LRS) observed on a service, with extent. Additive at v0.2; v0.1 readers ignore it. The tool never migrates these capabilities \u2014 the enumeration exists so the migratability verdict can report extent (e.g. \"UN: N feature classes\") rather than a bare presence flag.",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "utility-network",
+            "parcel-fabric",
+            "lrs"
+          ],
+          "description": "Hard lock-in identifier, matching the verdict capability registry keys."
+        },
+        "featureClassCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of feature classes participating in the lock-in (Utility Network / Parcel Fabric)."
+        },
+        "domainNetworkCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of Utility Network domain networks observed."
+        },
+        "ruleCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of Utility Network rules observed."
+        },
+        "networkCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of LRS networks observed."
         }
       }
     },

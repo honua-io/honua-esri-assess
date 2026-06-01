@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "v0.2",
+  "generatedAt": "2026-05-31T14:08:33Z",
+  "tool": {
+    "name": "honua-esri-assess",
+    "version": "0.1.0"
+  },
+  "source": {
+    "kind": "arcgis-server",
+    "locator": "gis.example.com/arcgis",
+    "capturedAt": "2026-05-31T14:02:11Z"
+  },
+  "inventory": [
+    {
+      "kind": "server-service",
+      "serviceUrl": "https://gis.example.com/arcgis/rest/services/Electric/ElectricUN/FeatureServer",
+      "serviceType": "FeatureServer",
+      "serviceKind": "featureService",
+      "folder": "Electric",
+      "layerCount": 12,
+      "capabilities": ["Query", "Editing", "UtilityNetwork"],
+      "lockIns": [
+        {
+          "type": "utility-network",
+          "featureClassCount": 9,
+          "domainNetworkCount": 2,
+          "ruleCount": 14
+        }
+      ]
+    },
+    {
+      "kind": "server-service",
+      "serviceUrl": "https://gis.example.com/arcgis/rest/services/Land/Parcels/FeatureServer",
+      "serviceType": "FeatureServer",
+      "serviceKind": "featureService",
+      "folder": "Land",
+      "layerCount": 6,
+      "capabilities": ["Query", "ParcelFabric"],
+      "lockIns": [
+        {
+          "type": "parcel-fabric",
+          "featureClassCount": 6
+        }
+      ]
+    },
+    {
+      "kind": "server-service",
+      "serviceUrl": "https://gis.example.com/arcgis/rest/services/Roads/LRS/MapServer",
+      "serviceType": "MapServer",
+      "serviceKind": "mapService",
+      "folder": "Roads",
+      "layerCount": 4,
+      "capabilities": ["Map", "Query", "LinearReferencing"],
+      "lockIns": [
+        {
+          "type": "lrs",
+          "networkCount": 3
+        }
+      ]
+    }
+  ],
+  "counts": {
+    "items": {
+      "portal-item": 0,
+      "server-service": 3,
+      "filegdb-feature-class": 0
+    },
+    "layers": 22,
+    "featureClasses": 0
+  },
+  "diagnostics": []
+}

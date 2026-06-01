@@ -89,6 +89,25 @@ class LayerDetail:
 
 
 @dataclass(frozen=True)
+class LockInDetail:
+    """An enumerated hard Esri lock-in observed on a service, with extent.
+
+    ``kind`` is a stable lock-in identifier (``utility-network``,
+    ``parcel-fabric``, ``lrs``) matching the verdict registry keys. The count
+    fields capture the *extent* of the lock-in so the verdict can report
+    ``UN: N feature classes`` rather than a bare presence flag. Each count is
+    ``None`` when the source body did not advertise it; only signals sourced
+    from the documented read-only service metadata are recorded.
+    """
+
+    kind: str
+    feature_class_count: int | None = None
+    domain_network_count: int | None = None
+    rule_count: int | None = None
+    network_count: int | None = None
+
+
+@dataclass(frozen=True)
 class LayerRecord:
     """Layer summary captured during a deep scan of a FeatureServer/MapServer."""
 
@@ -119,6 +138,7 @@ class ServiceRecord:
     ogc_capabilities: tuple[str, ...] = ()
     layers: tuple[LayerRecord, ...] = ()
     tables: tuple[LayerRecord, ...] = ()
+    lock_ins: tuple[LockInDetail, ...] = ()
     service_data_type: str | None = None
     single_fused_map_cache: bool | None = None
     deep_scanned: bool = False
@@ -166,6 +186,7 @@ __all__ = [
     "FolderRecord",
     "LayerDetail",
     "LayerRecord",
+    "LockInDetail",
     "RelationshipDetail",
     "ScanDiagnostic",
     "ServerInfo",

@@ -29,6 +29,23 @@ EFFORT_BANDS = ("Low", "Moderate", "High", "Very High")
 
 
 @dataclass(frozen=True)
+class LockInExtent:
+    """Aggregated extent of one hard lock-in across the footprint inventory.
+
+    Counts are summed over every service that carries the lock-in. ``services``
+    is the number of services exhibiting it. Each count is ``None`` when no
+    service advertised that signal, so a missing count is never reported as
+    zero extent.
+    """
+
+    services: int = 0
+    feature_class_count: int | None = None
+    domain_network_count: int | None = None
+    rule_count: int | None = None
+    network_count: int | None = None
+
+
+@dataclass(frozen=True)
 class Boundary:
     """A named migration boundary surfaced on a verdict."""
 
@@ -37,6 +54,7 @@ class Boundary:
     tier: Tier
     hard_lock_in: bool
     detail: str
+    extent: LockInExtent | None = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +101,80 @@ def _detected_entries(
     return tuple(detected)
 
 
+def _lock_in_extents(
+    footprint: Mapping[str, Any],
+) -> dict[str, LockInExtent]:
+    """Aggregate enumerated hard lock-in extent (#46) keyed by registry key.
+
+    Reads the additive ``lockIns`` block emitted on server-service inventory
+    items. Counts are summed across every service that carries the lock-in;
+    a count stays ``None`` until at least one service advertises it.
+    """
+
+    accumulators: dict[str, dict[str, Any]] = {}
+    for item in _inventory_items(footprint):
+        lock_ins = item.get("lockIns")
+        if not isinstance(lock_ins, (list, tuple)):
+            continue
+        for lock_in in lock_ins:
+            if not isinstance(lock_in, Mapping):
+                continue
+            key = lock_in.get("type")
+            if not isinstance(key, str) or not key:
+                continue
+            acc = accumulators.setdefault(key, {"services": 0})
+            acc["services"] += 1
+            for src, dst in (
+                ("featureClassCount", "feature_class_count"),
+                ("domainNetworkCount", "domain_network_count"),
+                ("ruleCount", "rule_count"),
+                ("networkCount", "network_count"),
+            ):
+                value = lock_in.get(src)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    acc[dst] = acc.get(dst, 0) + value
+    return {
+        key: LockInExtent(
+            services=acc["services"],
+            feature_class_count=acc.get("feature_class_count"),
+            domain_network_count=acc.get("domain_network_count"),
+            rule_count=acc.get("rule_count"),
+            network_count=acc.get("network_count"),
+        )
+        for key, acc in accumulators.items()
+    }
+
+
+def _format_extent(key: str, extent: LockInExtent) -> str:
+    """Render an enumerated lock-in extent as a single appended sentence."""
+
+    parts: list[str] = []
+    if key == "lrs":
+        if extent.network_count is not None:
+            parts.append(f"{extent.network_count} network(s)")
+    else:
+        if extent.feature_class_count is not None:
+            parts.append(f"{extent.feature_class_count} feature class(es)")
+        if extent.domain_network_count is not None:
+            parts.append(f"{extent.domain_network_count} domain network(s)")
+        if extent.rule_count is not None:
+            parts.append(f"{extent.rule_count} rule(s)")
+    if not parts:
+        parts.append(f"{extent.services} service(s)")
+    elif extent.services > 1:
+        parts.append(f"across {extent.services} services")
+    return "Enumerated extent: " + ", ".join(parts) + "."
+
+
+def _enriched_detail(entry: CapabilityEntry, extent: LockInExtent | None) -> str:
+    if extent is None:
+        return entry.boundary
+    appended = _format_extent(entry.key, extent)
+    if not entry.boundary:
+        return appended
+    return f"{entry.boundary} {appended}"
+
+
 def _entries_for_profile(
     profile: str,
     detected: tuple[CapabilityEntry, ...],
@@ -123,14 +215,18 @@ def _verdict_for_entries(profile_entries: tuple[CapabilityEntry, ...]) -> Tier:
     return worst.tier
 
 
-def _boundaries(profile_entries: tuple[CapabilityEntry, ...]) -> tuple[Boundary, ...]:
+def _boundaries(
+    profile_entries: tuple[CapabilityEntry, ...],
+    extents: Mapping[str, LockInExtent],
+) -> tuple[Boundary, ...]:
     boundaries = [
         Boundary(
             key=entry.key,
             label=entry.label,
             tier=entry.tier,
             hard_lock_in=entry.hard_lock_in,
-            detail=entry.boundary,
+            detail=_enriched_detail(entry, extents.get(entry.key)),
+            extent=extents.get(entry.key),
         )
         for entry in profile_entries
         if entry.tier != "go" and entry.boundary
@@ -186,13 +282,14 @@ def evaluate(footprint: Mapping[str, Any]) -> FootprintVerdict:
     """Produce the per-profile migratability verdict for a footprint."""
 
     detected = _detected_entries(footprint)
+    extents = _lock_in_extents(footprint)
 
     profile_verdicts: list[ProfileVerdict] = []
     for profile in SHOP_PROFILES:
         profile_entries = _entries_for_profile(profile, detected)
         verdict = _verdict_for_entries(profile_entries)
         effort = _effort_band(profile_entries, verdict)
-        boundaries = _boundaries(profile_entries)
+        boundaries = _boundaries(profile_entries, extents)
         matched = tuple(entry.key for entry in profile_entries)
         rationale = _rationale(profile, verdict, profile_entries)
         profile_verdicts.append(
@@ -212,7 +309,8 @@ def evaluate(footprint: Mapping[str, Any]) -> FootprintVerdict:
             label=entry.label,
             tier=entry.tier,
             hard_lock_in=True,
-            detail=entry.boundary,
+            detail=_enriched_detail(entry, extents.get(entry.key)),
+            extent=extents.get(entry.key),
         )
         for entry in detected
         if entry.hard_lock_in

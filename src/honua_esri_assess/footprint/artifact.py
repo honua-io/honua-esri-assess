@@ -14,7 +14,7 @@ from honua_esri_assess import __version__
 from honua_esri_assess.diagnostics import Diagnostic
 from honua_esri_assess.redaction import sanitize_handoff_url
 
-SCHEMA_VERSION = "v0.1"
+SCHEMA_VERSION = "v0.2"
 TOOL_NAME = "honua-esri-assess"
 ITEM_KINDS = ("portal-item", "server-service", "filegdb-feature-class")
 

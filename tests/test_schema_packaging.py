@@ -23,37 +23,50 @@ from honua_esri_assess.diagnostics import PortalSchemaError
 from honua_esri_assess.footprint import schema as schema_module
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CANONICAL_SCHEMA = REPO_ROOT / "schemas" / "esri-footprint-v0.1.json"
-PACKAGE_SCHEMA = (
-    REPO_ROOT
-    / "src"
-    / "honua_esri_assess"
-    / "schemas"
-    / "esri-footprint-v0.1.json"
+
+#: Every published schema version ships in both the canonical and package copies.
+SCHEMA_FILENAMES = (
+    "esri-footprint-v0.1.json",
+    "esri-footprint-v0.2.json",
 )
 
 
-def test_package_schema_is_bundled() -> None:
-    assert PACKAGE_SCHEMA.exists(), (
-        "The package-data copy of esri-footprint-v0.1.json is missing. "
+def _canonical(filename: str) -> Path:
+    return REPO_ROOT / "schemas" / filename
+
+
+def _packaged(filename: str) -> Path:
+    return REPO_ROOT / "src" / "honua_esri_assess" / "schemas" / filename
+
+
+# Back-compat aliases retained for any external references.
+CANONICAL_SCHEMA = _canonical("esri-footprint-v0.1.json")
+PACKAGE_SCHEMA = _packaged("esri-footprint-v0.1.json")
+
+
+@pytest.mark.parametrize("filename", SCHEMA_FILENAMES)
+def test_package_schema_is_bundled(filename: str) -> None:
+    assert _packaged(filename).exists(), (
+        f"The package-data copy of {filename} is missing. "
         "Installed CLIs would silently skip schema validation."
     )
 
 
-def test_package_schema_matches_canonical() -> None:
-    canonical = json.loads(CANONICAL_SCHEMA.read_text(encoding="utf-8"))
-    bundled = json.loads(PACKAGE_SCHEMA.read_text(encoding="utf-8"))
+@pytest.mark.parametrize("filename", SCHEMA_FILENAMES)
+def test_package_schema_matches_canonical(filename: str) -> None:
+    canonical = json.loads(_canonical(filename).read_text(encoding="utf-8"))
+    bundled = json.loads(_packaged(filename).read_text(encoding="utf-8"))
     assert canonical == bundled, (
-        "schemas/esri-footprint-v0.1.json and "
-        "src/honua_esri_assess/schemas/esri-footprint-v0.1.json have diverged. "
+        f"schemas/{filename} and "
+        f"src/honua_esri_assess/schemas/{filename} have diverged. "
         "Update both copies in lock-step."
     )
 
 
-def test_load_schema_returns_v0_1() -> None:
+def test_load_schema_returns_current_version() -> None:
     schema_module.load_schema.cache_clear()
     schema = schema_module.load_schema()
-    assert schema["properties"]["schemaVersion"]["const"] == "v0.1"
+    assert "v0.2" in schema["properties"]["schemaVersion"]["enum"]
 
 
 def test_load_schema_fails_closed_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:

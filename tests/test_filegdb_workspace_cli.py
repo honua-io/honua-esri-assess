@@ -21,7 +21,7 @@ from honua_esri_assess.commands.scan_handlers import filegdb_workspace
 from honua_esri_assess.filegdb import FileGdbLayer
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_PATH = REPO_ROOT / "schemas" / "esri-footprint-v0.1.json"
+SCHEMA_PATH = REPO_ROOT / "schemas" / "esri-footprint-v0.2.json"
 
 
 def _validator() -> Draft202012Validator:

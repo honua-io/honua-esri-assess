@@ -48,7 +48,7 @@ def test_footprint_shape_validates_and_redacts_urls() -> None:
 
     validate_footprint(footprint)
     rendered = str(footprint)
-    assert footprint["schemaVersion"] == "v0.1"
+    assert footprint["schemaVersion"] == "v0.2"
     assert footprint["tool"]["name"] == "honua-esri-assess"
     assert footprint["source"]["kind"] == "arcgis-online"
     assert "secret-token" not in rendered

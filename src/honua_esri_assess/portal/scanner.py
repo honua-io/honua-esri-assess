@@ -322,6 +322,7 @@ def _item_from_payload(payload: dict[str, Any]) -> ItemRecord:
         type_keywords=_str_list(payload.get("typeKeywords")),
         layer_count=_optional_int(payload.get("layerCount")),
         extent=payload.get("extent") if isinstance(payload.get("extent"), list) else None,
+        dependencies=_str_list(payload.get("dependencies")),
     )
 
 

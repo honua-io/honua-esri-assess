@@ -32,6 +32,7 @@ class ItemRecord:
     type_keywords: list[str] = field(default_factory=list)
     layer_count: int | None = None
     extent: list[Any] | None = None
+    dependencies: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

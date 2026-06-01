@@ -10,7 +10,7 @@ from typing import Any
 
 from honua_esri_assess.diagnostics import PortalSchemaError
 
-SCHEMA_FILENAME = "esri-footprint-v0.1.json"
+SCHEMA_FILENAME = "esri-footprint-v0.2.json"
 SCHEMA_PACKAGE = "honua_esri_assess.schemas"
 _PACKAGE_ROOT = "honua_esri_assess"
 _PACKAGE_SCHEMA_DIR = "schemas"
@@ -89,7 +89,7 @@ def _load_schema(version: str) -> dict[str, Any]:
 
 @lru_cache(maxsize=1)
 def load_schema() -> dict[str, Any]:
-    """Return the v0.1 schema bundled with the installed package."""
+    """Return the current footprint schema bundled with the installed package."""
 
     try:
         traversable = resources.files(SCHEMA_PACKAGE).joinpath(SCHEMA_FILENAME)
@@ -137,7 +137,7 @@ def validate_footprint(footprint: dict[str, Any], *, version: str | None = None)
         validator.validate(footprint)
     except jsonschema.ValidationError as exc:
         field = ".".join(str(part) for part in exc.absolute_path)
-        message = "Generated EsriFootprint.json does not match the v0.1 schema."
+        message = "Generated EsriFootprint.json does not match the declared schema."
         context = {"field": field} if field else {}
         raise PortalSchemaError(message, context=context) from exc
     return True

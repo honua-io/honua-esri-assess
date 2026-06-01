@@ -1,4 +1,11 @@
-"""Emitter for the published EsriFootprint.json v0.1 contract."""
+"""Emitter for the published EsriFootprint.json contract (v0.2).
+
+v0.2 is additive over v0.1: it populates the optional top-level
+``dependencyEdges`` array (webmap -> service -> layer) the v0.1 schema reserved
+but left empty, so batch orchestration can order migrations. The artifact shape
+is otherwise unchanged and validates against both v0.1 readers (edges ignored)
+and the v0.2 schema.
+"""
 
 from __future__ import annotations
 
@@ -21,12 +28,18 @@ from honua_esri_assess.server.models import (
     ServiceRecord,
 )
 
-SCHEMA_VERSION = "v0.1"
+SCHEMA_VERSION = "v0.2"
 PRODUCER_NAME = "honua-esri-assess"
+
+#: Dependency-edge relation tags emitted at v0.2.
+RELATION_WEBMAP_SERVICE = "webmap-references-service"
+RELATION_SERVICE_LAYER = "service-contains-layer"
 
 __all__ = [
     "SCHEMA_VERSION",
     "PRODUCER_NAME",
+    "RELATION_WEBMAP_SERVICE",
+    "RELATION_SERVICE_LAYER",
     "licensing_facet_to_dict",
     "portal_licensing_to_dict",
     "server_licensing_to_dict",
@@ -107,7 +120,7 @@ def _portal_to_footprint(
     item_counts = Counter(item.item_type or "Unknown" for item in result.items)
     sharing_summary = Counter(_sharing_value(item.access) for item in result.items)
 
-    return {
+    footprint: dict[str, Any] = {
         "schemaVersion": SCHEMA_VERSION,
         "generatedAt": _format_rfc3339(emitted_at),
         "tool": {"name": PRODUCER_NAME, "version": tool_version},
@@ -142,6 +155,10 @@ def _portal_to_footprint(
             for diagnostic in result.diagnostics
         ],
     }
+    edges = _portal_dependency_edges(result.items)
+    if edges:
+        footprint["dependencyEdges"] = edges
+    return footprint
 
 
 def _server_to_footprint(
@@ -156,11 +173,12 @@ def _server_to_footprint(
     captured_stamp = _utc(captured_at or generated_stamp)
     service_counts = Counter(service.service_type for service in result.services)
     omitted = _services_omitted_from_inventory(result.diagnostics)
-    inventory = [
-        _server_service_to_dict(service)
+    retained_services = [
+        service
         for service in result.services
         if _service_identity(service) not in omitted
     ]
+    inventory = [_server_service_to_dict(service) for service in retained_services]
     diagnostics = [
         _server_diagnostic_to_dict(diagnostic)
         for diagnostic in result.diagnostics
@@ -177,7 +195,7 @@ def _server_to_footprint(
     if version:
         server["version"] = version
 
-    return {
+    footprint: dict[str, Any] = {
         "schemaVersion": SCHEMA_VERSION,
         "generatedAt": _format_rfc3339(generated_stamp),
         "tool": {"name": PRODUCER_NAME, "version": tool_version},
@@ -199,6 +217,10 @@ def _server_to_footprint(
         },
         "diagnostics": diagnostics,
     }
+    edges = _server_dependency_edges(retained_services)
+    if edges:
+        footprint["dependencyEdges"] = edges
+    return footprint
 
 
 def _portal_item_to_dict(item: ItemRecord) -> dict[str, Any]:
@@ -273,6 +295,70 @@ def _server_service_to_dict(service: ServiceRecord) -> dict[str, Any]:
         "folder": service.folder or "",
         "layerCount": len(service.layers),
     }
+
+
+def _portal_dependency_edges(items: list[ItemRecord]) -> list[dict[str, str]]:
+    """Derive webmap -> service dependency edges from scanned portal items.
+
+    Only edges whose target resolves to another scanned portal item id are
+    emitted, so every node referenced by an edge is present in the artifact and
+    the graph stays prospect-safe and consumable for ordering.
+    """
+
+    known_ids = {item.id for item in items if item.id}
+    edges: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        if (item.item_type or "") != "Web Map" or not item.id:
+            continue
+        for dependency in item.dependencies:
+            target = str(dependency)
+            if not target or target == item.id or target not in known_ids:
+                continue
+            key = (item.id, target)
+            if key in seen:
+                continue
+            seen.add(key)
+            edges.append(
+                {
+                    "from": item.id,
+                    "to": target,
+                    "relation": RELATION_WEBMAP_SERVICE,
+                }
+            )
+    edges.sort(key=lambda edge: (edge["from"], edge["to"]))
+    return edges
+
+
+def _server_dependency_edges(
+    services: list[ServiceRecord],
+) -> list[dict[str, str]]:
+    """Derive service -> layer dependency edges from retained server services."""
+
+    edges: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for service in services:
+        service_url = credential_free_url(service.url)
+        if not service_url:
+            continue
+        for layer in service.layers:
+            layer_id = getattr(layer, "id", None)
+            if layer_id is None:
+                continue
+            target = f"{service_url}#{layer_id}"
+            key = (service_url, target)
+            if key in seen:
+                continue
+            seen.add(key)
+            edges.append(
+                {
+                    "from": service_url,
+                    "to": target,
+                    "relation": RELATION_SERVICE_LAYER,
+                }
+            )
+    edges.sort(key=lambda edge: (edge["from"], edge["to"]))
+    return edges
 
 
 def _server_diagnostic_to_dict(diagnostic: ScanDiagnostic) -> dict[str, Any]:

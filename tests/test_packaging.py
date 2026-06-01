@@ -44,4 +44,5 @@ def test_build_artifacts_include_cli_and_schema(tmp_path: Path) -> None:
 
     assert "honua_esri_assess/cli.py" in names
     assert "honua_esri_assess/schemas/esri-footprint-v0.1.json" in names
+    assert "honua_esri_assess/schemas/esri-footprint-v0.2.json" in names
     assert wheels[0].name.endswith("-py3-none-any.whl")

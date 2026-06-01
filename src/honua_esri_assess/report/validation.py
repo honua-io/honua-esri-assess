@@ -54,7 +54,7 @@ def validate_footprint_v01(footprint: Mapping[str, Any]) -> tuple[SchemaValidati
 def _load_packaged_schema() -> Mapping[str, Any]:
     schema_text = (
         resources.files("honua_esri_assess")
-        .joinpath("schemas", "esri-footprint-v0.1.json")
+        .joinpath("schemas", "esri-footprint-v0.2.json")
         .read_text(encoding="utf-8")
     )
     schema = json.loads(schema_text)

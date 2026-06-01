@@ -6,7 +6,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 __all__ = ["SCHEMA_VERSION", "__version__", "bundled_schema_version"]
 
-SCHEMA_VERSION = "v0.1"
+SCHEMA_VERSION = "v0.2"
 
 try:
     __version__ = version("honua-esri-assess")

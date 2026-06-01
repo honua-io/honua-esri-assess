@@ -47,6 +47,69 @@ def diagnostics(footprint: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
     return tuple(entry for entry in entries if isinstance(entry, Mapping))
 
 
+def dependency_edges(footprint: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    """Return the v0.2 dependency edges, ignored gracefully on v0.1 artifacts."""
+
+    edges = footprint.get("dependencyEdges", ())
+    if not isinstance(edges, Iterable) or isinstance(edges, (str, bytes)):
+        return ()
+    valid: list[Mapping[str, Any]] = []
+    for edge in edges:
+        if not isinstance(edge, Mapping):
+            continue
+        source = edge.get("from")
+        target = edge.get("to")
+        if isinstance(source, str) and isinstance(target, str) and source and target:
+            valid.append(edge)
+    return tuple(valid)
+
+
+def dependency_order(footprint: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return dependency-graph node ids ordered so dependencies migrate first.
+
+    Consumes the v0.2 ``dependencyEdges`` (``from`` depends on ``to``) and runs a
+    deterministic Kahn topological sort: every ``to`` node is ordered before the
+    ``from`` node that references it. Ties are broken by node id for stable
+    output, and any cycle is appended in sorted order rather than dropped so the
+    result always covers every referenced node.
+    """
+
+    edges = dependency_edges(footprint)
+    if not edges:
+        return ()
+
+    dependents: dict[str, set[str]] = defaultdict(set)
+    indegree: dict[str, int] = defaultdict(int)
+    nodes: set[str] = set()
+    seen_edges: set[tuple[str, str]] = set()
+    for edge in edges:
+        source = str(edge["from"])
+        target = str(edge["to"])
+        nodes.add(source)
+        nodes.add(target)
+        if source == target or (source, target) in seen_edges:
+            continue
+        seen_edges.add((source, target))
+        # "source" depends on "target" -> target must come first.
+        dependents[target].add(source)
+        indegree[source] += 1
+
+    ready = sorted(node for node in nodes if indegree.get(node, 0) == 0)
+    ordered: list[str] = []
+    while ready:
+        node = ready.pop(0)
+        ordered.append(node)
+        for dependent in sorted(dependents.get(node, ())):
+            indegree[dependent] -= 1
+            if indegree[dependent] == 0:
+                ready.append(dependent)
+        ready.sort()
+
+    if len(ordered) < len(nodes):
+        ordered.extend(sorted(nodes - set(ordered)))
+    return tuple(ordered)
+
+
 def total_inventory_count(footprint: Mapping[str, Any]) -> int:
     counts_obj = footprint.get("counts", {})
     item_counts = counts_obj.get("items", {}) if isinstance(counts_obj, Mapping) else {}

@@ -13,7 +13,7 @@ from responses import matchers
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 EXPECTED_DIR = Path(__file__).parent / "expected"
-SCHEMA_PATH = Path(__file__).resolve().parents[2] / "schemas" / "esri-footprint-v0.1.json"
+SCHEMA_PATH = Path(__file__).resolve().parents[2] / "schemas" / "esri-footprint-v0.2.json"
 
 
 @pytest.fixture

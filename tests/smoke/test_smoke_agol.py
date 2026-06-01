@@ -51,7 +51,7 @@ def test_agol_happy_scan(
     footprint = json.loads(output.read_text(encoding="utf-8"))
     schema_validator.validate(footprint)
 
-    assert footprint["schemaVersion"] == "v0.1"
+    assert footprint["schemaVersion"] == "v0.2"
     assert footprint["tool"]["name"] == "honua-esri-assess"
     assert footprint["source"]["kind"] == "arcgis-online"
     assert footprint["source"]["locator"] == "fixture.local/0123456789abcdef"

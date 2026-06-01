@@ -69,7 +69,7 @@ def test_footprint_builder_emits_contract_header_for_each_backend() -> None:
             **kwargs,
         )
 
-        assert footprint["schemaVersion"] == SCHEMA_VERSION == "v0.1"
+        assert footprint["schemaVersion"] == SCHEMA_VERSION == "v0.2"
         assert footprint["tool"]["name"] == TOOL_NAME == "honua-esri-assess"
         assert "producer" not in footprint
         assert footprint["source"]["kind"] == source_kind

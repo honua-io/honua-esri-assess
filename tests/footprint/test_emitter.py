@@ -1,4 +1,4 @@
-"""``EsriFootprint.json`` v0.1 emitter shape and safety guarantees."""
+"""``EsriFootprint.json`` emitter shape and safety guarantees (v0.2)."""
 
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ def test_footprint_has_required_header_fields() -> None:
         target_url="https://target-user:target-pass@gis.example.com/arcgis?token=target-token",
     )
 
-    assert fp["schemaVersion"] == SCHEMA_VERSION == "v0.1"
+    assert fp["schemaVersion"] == SCHEMA_VERSION == "v0.2"
     assert fp["tool"] == {"name": "honua-esri-assess", "version": "0.1.0-test"}
     assert fp["generatedAt"] == "2026-01-01T12:30:00Z"
     assert fp["source"] == {

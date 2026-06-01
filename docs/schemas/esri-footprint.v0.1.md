@@ -463,7 +463,9 @@ read-only inventory and typed diagnostics. They are candidates for v0.2 once
 the closed migration product ingests real fixture-backed footprints.
 
 - Per-item readiness or risk flags.
-- Explicit dependency edges across kinds (webmap → service → layer).
+- Explicit dependency edges across kinds (webmap → service → layer) — landed
+  additively in [`v0.2`](./esri-footprint.v0.2.md) as the optional
+  `dependencyEdges` array.
 - Scanner timing or performance metrics.
 - Any field that hints at write or migrate semantics.
 - Telemetry, upload manifests, or scanner-phone-home shapes.

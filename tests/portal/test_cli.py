@@ -31,7 +31,7 @@ def test_scan_agol_writes_footprint_file(
     captured = capsys.readouterr()
     footprint = json.loads(output.read_text(encoding="utf-8"))
     assert exit_code == 0
-    assert footprint["schemaVersion"] == "v0.1"
+    assert footprint["schemaVersion"] == "v0.2"
     assert footprint["source"]["kind"] == "arcgis-online"
     assert len(footprint["inventory"]) == 3
     assert "scanned 3 item(s)" in captured.err

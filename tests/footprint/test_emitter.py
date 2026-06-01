@@ -11,6 +11,7 @@ from honua_esri_assess.footprint.v0_1 import SCHEMA_VERSION, to_footprint_v0_1
 from honua_esri_assess.server.models import (
     FolderRecord,
     LayerRecord,
+    LockInDetail,
     ScanDiagnostic,
     ServerInfo,
     ServerScanResult,
@@ -505,4 +506,66 @@ def test_layer_detail_footprint_validates_against_schema() -> None:
     from honua_esri_assess.footprint.schema import validate_footprint
 
     fp = to_footprint_v0_1(_layer_detail_result(), tool_version="0.0.0")
+    assert validate_footprint(fp) is True
+
+
+def _lock_in_result() -> ServerScanResult:
+    info = ServerInfo(url="https://gis.example.com/arcgis/rest/services")
+    services = (
+        ServiceRecord(
+            name="ElectricUN",
+            folder="Electric",
+            service_type="FeatureServer",
+            kind="featureService",
+            url="https://gis.example.com/arcgis/rest/services/Electric/ElectricUN/FeatureServer",
+            capabilities=("Query", "UtilityNetwork"),
+            layers=(LayerRecord(id=0, name="ElectricDevice"),),
+            lock_ins=(
+                LockInDetail(
+                    kind="utility-network",
+                    feature_class_count=9,
+                    domain_network_count=2,
+                    rule_count=14,
+                ),
+            ),
+            deep_scanned=True,
+        ),
+        ServiceRecord(
+            name="Topo",
+            folder="Basemaps",
+            service_type="MapServer",
+            kind="mapService",
+            url="https://gis.example.com/arcgis/rest/services/Basemaps/Topo/MapServer",
+        ),
+    )
+    return ServerScanResult(
+        info=info,
+        auth_mode="anonymous",
+        deep=True,
+        folders=(),
+        services=services,
+        diagnostics=(),
+    )
+
+
+def test_footprint_emits_additive_lock_in_block_with_extent() -> None:
+    fp = to_footprint_v0_1(_lock_in_result(), tool_version="0.0.0")
+    un = next(item for item in fp["inventory"] if "ElectricUN" in item["serviceUrl"])
+    assert un["lockIns"] == [
+        {
+            "type": "utility-network",
+            "featureClassCount": 9,
+            "domainNetworkCount": 2,
+            "ruleCount": 14,
+        }
+    ]
+    # Plain services carry no lockIns key so v0.1 readers are unchanged.
+    topo = next(item for item in fp["inventory"] if "Topo" in item["serviceUrl"])
+    assert "lockIns" not in topo
+
+
+def test_lock_in_footprint_validates_against_v02_schema() -> None:
+    from honua_esri_assess.footprint.schema import validate_footprint
+
+    fp = to_footprint_v0_1(_lock_in_result(), tool_version="0.0.0")
     assert validate_footprint(fp) is True

@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = REPO_ROOT / "tests" / "fixtures"
 SAMPLE = FIXTURES / "esri-footprint-sample.json"
 UTILITY_NETWORK = FIXTURES / "esri-footprint-utility-network.json"
+LOCK_IN_EXTENT = FIXTURES / "esri-footprint-lock-in-extent.json"
 
 
 def _load(path: Path) -> dict:
@@ -89,3 +90,69 @@ def test_render_surfaces_verdict_and_lock_ins() -> None:
     assert "## Hard Lock-ins (explicit non-goals)" in markdown
     assert "Utility Network" in markdown
     assert "NO-GO" in markdown
+
+
+def test_enumerated_extent_feeds_hard_lock_in_detail() -> None:
+    # #46: the verdict reports lock-in extent (counts), not just presence.
+    result = evaluate(_load(LOCK_IN_EXTENT))
+    by_key = {b.key: b for b in result.hard_lock_ins}
+    assert set(by_key) == {"utility-network", "parcel-fabric", "lrs"}
+
+    un = by_key["utility-network"]
+    assert un.extent is not None
+    assert un.extent.feature_class_count == 9
+    assert un.extent.domain_network_count == 2
+    assert un.extent.rule_count == 14
+    assert "9 feature class(es)" in un.detail
+    assert "2 domain network(s)" in un.detail
+    assert "14 rule(s)" in un.detail
+
+    pf = by_key["parcel-fabric"]
+    assert pf.extent is not None and pf.extent.feature_class_count == 6
+    assert "6 feature class(es)" in pf.detail
+
+    lrs = by_key["lrs"]
+    assert lrs.extent is not None and lrs.extent.network_count == 3
+    assert "3 network(s)" in lrs.detail
+
+
+def test_enumerated_extent_aggregates_across_services() -> None:
+    # Two UN services -> extent counts sum and report a service spread.
+    footprint = {
+        "schemaVersion": "v0.2",
+        "inventory": [
+            {
+                "kind": "server-service",
+                "serviceType": "FeatureServer",
+                "capabilities": ["UtilityNetwork"],
+                "lockIns": [{"type": "utility-network", "featureClassCount": 4}],
+            },
+            {
+                "kind": "server-service",
+                "serviceType": "FeatureServer",
+                "capabilities": ["UtilityNetwork"],
+                "lockIns": [{"type": "utility-network", "featureClassCount": 5}],
+            },
+        ],
+    }
+    result = evaluate(footprint)
+    un = next(b for b in result.hard_lock_ins if b.key == "utility-network")
+    assert un.extent is not None
+    assert un.extent.services == 2
+    assert un.extent.feature_class_count == 9
+    assert "across 2 services" in un.detail
+
+
+def test_extent_in_rendered_markdown() -> None:
+    markdown = verdict.render(_load(LOCK_IN_EXTENT))
+    assert "Enumerated extent:" in markdown
+    assert "9 feature class(es)" in markdown
+
+
+def test_lock_in_detected_without_extent_block_still_flags() -> None:
+    # A lock-in with no enumerated extent (older footprint) still surfaces,
+    # with the registry boundary text unchanged.
+    result = evaluate(_load(UTILITY_NETWORK))
+    un = next(b for b in result.hard_lock_ins if b.key == "utility-network")
+    assert un.extent is None
+    assert "Enumerated extent" not in un.detail

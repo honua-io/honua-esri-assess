@@ -603,3 +603,47 @@ def test_shallow_walk_classifies_service_breadth_and_ogc() -> None:
     assert by_name["NAIP2024"].ogc_capabilities == ("WCS", "WMS")
     # Services without OGC extensions carry an empty tuple.
     assert by_name["Locator"].ogc_capabilities == ()
+
+
+@responses.activate
+def test_deep_walk_enumerates_utility_network_lock_in() -> None:
+    """Deep probe enumerates a hard lock-in (#46) with extent, never just a flag."""
+
+    _register_info()
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services",
+        json={"folders": [], "services": [{"name": "ElectricUN", "type": "FeatureServer"}]},
+        status=200,
+    )
+    _register_service("ElectricUN/FeatureServer", "featureserver-electric-un.json")
+
+    client = ServerClient("https://gis.example.com/arcgis")
+    result = ServerScanner(deep=True).scan(client)
+
+    service = next(s for s in result.services if s.name == "ElectricUN")
+    assert service.deep_scanned is True
+    (lock_in,) = service.lock_ins
+    assert lock_in.kind == "utility-network"
+    # Extent sourced from the controllerDatasetLayers block, not just presence.
+    assert lock_in.feature_class_count == 3
+    assert lock_in.domain_network_count == 2
+    assert lock_in.rule_count == 2
+
+
+@responses.activate
+def test_shallow_walk_records_no_lock_in_extent() -> None:
+    """Lock-in extent needs the deep-probe body; a shallow walk records none."""
+
+    _register_info()
+    responses.add(
+        responses.GET,
+        "https://gis.example.com/arcgis/rest/services",
+        json={"folders": [], "services": [{"name": "ElectricUN", "type": "FeatureServer"}]},
+        status=200,
+    )
+
+    client = ServerClient("https://gis.example.com/arcgis")
+    result = ServerScanner(deep=False).scan(client)
+    service = next(s for s in result.services if s.name == "ElectricUN")
+    assert service.lock_ins == ()

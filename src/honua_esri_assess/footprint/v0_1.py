@@ -288,13 +288,22 @@ def _services_omitted_from_inventory(
 
 
 def _server_service_to_dict(service: ServiceRecord) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "kind": "server-service",
         "serviceUrl": credential_free_url(service.url),
         "serviceType": service.service_type,
         "folder": service.folder or "",
         "layerCount": len(service.layers),
     }
+    # Additive v0.2 fields: the coarse migration bucket for the raw service type
+    # (so non-feature/map services are classified, never silently dropped) plus
+    # any advertised OGC interfaces. Unknown service types surface as
+    # ``serviceKind: "other"``. Empty capability lists are omitted to keep
+    # artifacts for plain feature/map services unchanged.
+    payload["serviceKind"] = service.kind
+    if service.ogc_capabilities:
+        payload["ogcCapabilities"] = list(service.ogc_capabilities)
+    return payload
 
 
 def _portal_dependency_edges(items: list[ItemRecord]) -> list[dict[str, str]]:

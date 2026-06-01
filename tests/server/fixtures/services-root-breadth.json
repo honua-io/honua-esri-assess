@@ -1,0 +1,15 @@
+{
+  "currentVersion": 11.2,
+  "folders": [],
+  "services": [
+    {"name": "Parcels", "type": "MapServer", "supportedExtensions": "WMSServer,WFSServer,KmlServer"},
+    {"name": "NAIP2024", "type": "ImageServer", "supportedExtensions": "WCSServer,WMSServer"},
+    {"name": "Locator", "type": "GeocodeServer"},
+    {"name": "ElevationProfile", "type": "GPServer"},
+    {"name": "CityScene", "type": "SceneServer"},
+    {"name": "Basemap", "type": "VectorTileServer"},
+    {"name": "VehiclePings", "type": "StreamServer"},
+    {"name": "Routing", "type": "NAServer"},
+    {"name": "Knowledge", "type": "KnowledgeGraphServer"}
+  ]
+}

@@ -442,3 +442,39 @@ def test_deep_failure_diagnostic_uses_full_service_identity() -> None:
     # Folder, name, and type are all encoded in the identity field so the emitter
     # can filter only the affected service, not its same-named sibling.
     assert planning_diag.field == "services/Planning/Parcels/MapServer"
+
+
+@responses.activate
+def test_shallow_walk_classifies_service_breadth_and_ogc() -> None:
+    """Shallow catalog walk classifies every service type and reads OGC flags.
+
+    Capability classification keys off the catalog ``type`` and the per-entry
+    ``supportedExtensions`` field, so no deep probe is needed to record the
+    coarse kind or the advertised OGC interfaces.
+    """
+
+    _register_info()
+    _register_root("services-root-breadth.json")
+
+    client = ServerClient("https://gis.example.com/arcgis")
+    result = ServerScanner().scan(client)
+
+    by_name = {s.name: s for s in result.services}
+    # Non-feature/map types are each classified into their migration bucket.
+    assert by_name["NAIP2024"].kind == "imageService"
+    assert by_name["Locator"].kind == "geocodeService"
+    assert by_name["ElevationProfile"].kind == "geoprocessingService"
+    assert by_name["CityScene"].kind == "sceneService"
+    assert by_name["Basemap"].kind == "vectorTileService"
+    assert by_name["VehiclePings"].kind == "streamService"
+    assert by_name["Routing"].kind == "networkAnalysisService"
+
+    # Unknown/unsupported types are recorded explicitly, never dropped.
+    assert by_name["Knowledge"].kind == "other"
+    assert any(d.code == "server.service.unknown-type" for d in result.diagnostics)
+
+    # OGC interfaces advertised on the catalog entry are captured shallow.
+    assert by_name["Parcels"].ogc_capabilities == ("WFS", "WMS")
+    assert by_name["NAIP2024"].ogc_capabilities == ("WCS", "WMS")
+    # Services without OGC extensions carry an empty tuple.
+    assert by_name["Locator"].ogc_capabilities == ()

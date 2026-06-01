@@ -25,6 +25,7 @@ from .catalog import (
     DEEP_PROBE_TYPES,
     UNKNOWN_KIND,
     classify_geometry,
+    classify_ogc_capabilities,
     classify_service,
 )
 from .client import ServerClient
@@ -247,6 +248,10 @@ class ServerScanner:
         kind = classify_service(raw_type)
         url = _build_service_url(client.rest_root, folder, bare_name, raw_type)
         capabilities: tuple[str, ...] = ()
+        # OGC interfaces (WMS/WFS/WCS) are advertised on the catalog entry's
+        # ``supportedExtensions`` field, so they are captured even on a shallow
+        # walk; a deep probe may refine them from the per-service body.
+        ogc_capabilities = classify_ogc_capabilities(raw_service.get("supportedExtensions"))
         layers: tuple[LayerRecord, ...] = ()
         tables: tuple[LayerRecord, ...] = ()
         description: str | None = None
@@ -288,6 +293,9 @@ class ServerScanner:
             else:
                 description = _stringify(body.get("description")) or None
                 capabilities = _split_capabilities(body.get("capabilities"))
+                body_ogc = classify_ogc_capabilities(body.get("supportedExtensions"))
+                if body_ogc:
+                    ogc_capabilities = tuple(sorted(set(ogc_capabilities) | set(body_ogc)))
                 layers = tuple(_parse_layers(body.get("layers")))
                 tables = tuple(_parse_layers(body.get("tables")))
                 service_data_type = _stringify(body.get("serviceDataType"))
@@ -304,6 +312,7 @@ class ServerScanner:
                 url=url,
                 description=description,
                 capabilities=capabilities,
+                ogc_capabilities=ogc_capabilities,
                 layers=layers,
                 tables=tables,
                 service_data_type=service_data_type,

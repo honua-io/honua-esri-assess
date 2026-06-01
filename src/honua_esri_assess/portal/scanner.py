@@ -14,6 +14,7 @@ from honua_esri_assess.diagnostics import (
     PortalForbiddenError,
     PortalRateLimitedError,
 )
+from honua_esri_assess.portal.classification import classify_item
 from honua_esri_assess.portal.client import PortalClient
 from honua_esri_assess.portal.models import (
     GroupRecord,
@@ -308,18 +309,20 @@ class PortalScanner:
 
 def _item_from_payload(payload: dict[str, Any]) -> ItemRecord:
     item_type = _optional_str(payload.get("type"))
+    type_keywords = _str_list(payload.get("typeKeywords"))
     return ItemRecord(
         id=str(payload.get("id") or ""),
         title=_optional_str(payload.get("title")),
         owner=_optional_str(payload.get("owner")),
         item_type=item_type,
         type_bucket=_bucket_item_type(item_type),
+        content_category=classify_item(item_type, type_keywords),
         access=_optional_str(payload.get("access")),
         url=_optional_str(payload.get("url")),
         created=_epoch_millis_to_iso(payload.get("created")),
         modified=_epoch_millis_to_iso(payload.get("modified")),
         tags=_str_list(payload.get("tags")),
-        type_keywords=_str_list(payload.get("typeKeywords")),
+        type_keywords=type_keywords,
         layer_count=_optional_int(payload.get("layerCount")),
         extent=payload.get("extent") if isinstance(payload.get("extent"), list) else None,
         dependencies=_str_list(payload.get("dependencies")),

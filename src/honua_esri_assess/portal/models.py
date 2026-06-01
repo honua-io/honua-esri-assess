@@ -24,6 +24,7 @@ class ItemRecord:
     owner: str | None
     item_type: str | None
     type_bucket: str
+    content_category: str = "unknown"
     access: str | None = None
     url: str | None = None
     created: str | None = None

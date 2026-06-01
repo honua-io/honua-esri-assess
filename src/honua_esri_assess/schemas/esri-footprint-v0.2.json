@@ -487,6 +487,10 @@
           "$ref": "#/$defs/EsriTypeCountMap",
           "description": "Map of Esri item type \u2192 count (e.g. \"Feature Service\": 12). Keys are constrained to prospect-safe type labels."
         },
+        "contentTypeCounts": {
+          "$ref": "#/$defs/EsriTypeCountMap",
+          "description": "Additive at v0.2: map of functional content category \u2192 count (e.g. \"web-map\": 8, \"survey123-form\": 3, \"unknown\": 1). Categories are derived from the item type and typeKeywords (apps, forms, notebooks, hosted vs referenced layers, etc.); unrecognized content is counted as \"unknown\". v0.1 readers ignore this property."
+        },
         "sharingSummary": {
           "type": "object",
           "description": "Roll-up of sharing levels across portal items.",
@@ -792,6 +796,34 @@
         "type": {
           "type": "string",
           "description": "Esri portal item type (e.g. \"Feature Service\", \"Web Map\")."
+        },
+        "contentCategory": {
+          "type": "string",
+          "enum": [
+            "web-map",
+            "web-scene",
+            "dashboard",
+            "storymap",
+            "experience-builder",
+            "instant-app",
+            "web-appbuilder",
+            "web-app",
+            "survey123-form",
+            "field-maps",
+            "workforce",
+            "quickcapture",
+            "notebook",
+            "hosted-feature-layer",
+            "referenced-feature-layer",
+            "hosted-tile-layer",
+            "tile-layer",
+            "vector-tile-layer",
+            "image-layer",
+            "scene-layer",
+            "map-service",
+            "unknown"
+          ],
+          "description": "Additive at v0.2: functional content category derived from the item type and typeKeywords (apps, forms, notebooks, hosted vs referenced layers, etc.). Unrecognized content is recorded as \"unknown\". v0.1 readers ignore this property."
         },
         "owner": {
           "type": "string"

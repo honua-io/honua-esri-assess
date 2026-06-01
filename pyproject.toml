@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "honua-esri-assess"
-version = "0.3.0"
+version = "0.4.0"
 description = "Read-only Esri footprint assessment CLI for Honua migration discovery."
 readme = "README.md"
 requires-python = ">=3.11"

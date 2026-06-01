@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.0](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.4.0...honua-esri-assess-v0.5.0) (2026-06-01)
+
+
+### Features
+
+* **portal:** classify items by functional content type ([#45](https://github.com/honua-io/honua-esri-assess/issues/45)) ([#50](https://github.com/honua-io/honua-esri-assess/issues/50)) ([ae56058](https://github.com/honua-io/honua-esri-assess/commit/ae56058fd9b06444fd551296a064038af875f600))
+* **server:** capture layer schema and behavior detail ([#44](https://github.com/honua-io/honua-esri-assess/issues/44)) ([#51](https://github.com/honua-io/honua-esri-assess/issues/51)) ([62e0507](https://github.com/honua-io/honua-esri-assess/commit/62e0507e819b2c168348d6b9ae46b5f251761f18))
+* **server:** classify non-feature/map service types ([#43](https://github.com/honua-io/honua-esri-assess/issues/43)) ([#49](https://github.com/honua-io/honua-esri-assess/issues/49)) ([82ad72e](https://github.com/honua-io/honua-esri-assess/commit/82ad72eb214418356cc0994f5940fdcd5efeed34))
+* **verdict:** enumerate hard lock-in extent (utility network, parcel fabric, lrs) ([#46](https://github.com/honua-io/honua-esri-assess/issues/46)) ([#52](https://github.com/honua-io/honua-esri-assess/issues/52)) ([a3efdda](https://github.com/honua-io/honua-esri-assess/commit/a3efdda67361368e00f6212c821193af24259ae2))
+
+
+### Documentation
+
+* **operators:** add prerequisites and least-privilege access guide ([#41](https://github.com/honua-io/honua-esri-assess/issues/41)) ([5ced163](https://github.com/honua-io/honua-esri-assess/commit/5ced163a222fa142adb1ee322e9069d71f7c177f))
+
 ## [0.4.0](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.3.0...honua-esri-assess-v0.4.0) (2026-06-01)
 
 

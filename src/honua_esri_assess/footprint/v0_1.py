@@ -26,6 +26,7 @@ from honua_esri_assess.server._safe import credential_free_url
 from honua_esri_assess.server.models import (
     LayerDetail,
     LayerRecord,
+    LockInDetail,
     ScanDiagnostic,
     ServerScanResult,
     ServiceRecord,
@@ -321,6 +322,26 @@ def _server_service_to_dict(service: ServiceRecord) -> dict[str, Any]:
     ]
     if layer_details:
         payload["layers"] = layer_details
+    # Additive v0.2 hard lock-in enumeration. Utility Network / Parcel Fabric /
+    # LRS are surfaced with their observed extent (counts) so the verdict can
+    # report detail, not just presence. Omitted when the service carries none,
+    # so plain feature/map services and v0.1 readers are unchanged.
+    lock_ins = [_lock_in_to_dict(lock_in) for lock_in in service.lock_ins]
+    if lock_ins:
+        payload["lockIns"] = lock_ins
+    return payload
+
+
+def _lock_in_to_dict(lock_in: LockInDetail) -> dict[str, Any]:
+    payload: dict[str, Any] = {"type": lock_in.kind}
+    if lock_in.feature_class_count is not None:
+        payload["featureClassCount"] = lock_in.feature_class_count
+    if lock_in.domain_network_count is not None:
+        payload["domainNetworkCount"] = lock_in.domain_network_count
+    if lock_in.rule_count is not None:
+        payload["ruleCount"] = lock_in.rule_count
+    if lock_in.network_count is not None:
+        payload["networkCount"] = lock_in.network_count
     return payload
 
 

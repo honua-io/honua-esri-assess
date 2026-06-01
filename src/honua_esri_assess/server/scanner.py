@@ -31,9 +31,11 @@ from .catalog import (
 )
 from .client import ServerClient
 from .layer_detail import parse_layer_detail
+from .lock_in import enumerate_lock_ins
 from .models import (
     FolderRecord,
     LayerRecord,
+    LockInDetail,
     ScanDiagnostic,
     ServerInfo,
     ServerScanResult,
@@ -264,6 +266,7 @@ class ServerScanner:
         ogc_capabilities = classify_ogc_capabilities(raw_service.get("supportedExtensions"))
         layers: tuple[LayerRecord, ...] = ()
         tables: tuple[LayerRecord, ...] = ()
+        lock_ins: tuple[LockInDetail, ...] = ()
         description: str | None = None
         service_data_type: str | None = None
         single_fused_map_cache: bool | None = None
@@ -315,6 +318,14 @@ class ServerScanner:
                 service_data_type = _stringify(body.get("serviceDataType"))
                 if "singleFusedMapCache" in body:
                     single_fused_map_cache = bool(body.get("singleFusedMapCache"))
+                # Enumerate hard Esri lock-ins (Utility Network / Parcel Fabric /
+                # LRS) with extent from the deep-probe body so the verdict can
+                # report counts, not just presence. Read-only metadata only.
+                lock_ins = enumerate_lock_ins(
+                    body,
+                    service_type=raw_type,
+                    layer_count=len(layers),
+                )
                 deep_scanned = True
 
                 if self.layer_detail and raw_type in LAYER_DETAIL_TYPES:
@@ -349,6 +360,7 @@ class ServerScanner:
                 ogc_capabilities=ogc_capabilities,
                 layers=layers,
                 tables=tables,
+                lock_ins=lock_ins,
                 service_data_type=service_data_type,
                 single_fused_map_cache=single_fused_map_cache,
                 deep_scanned=deep_scanned,

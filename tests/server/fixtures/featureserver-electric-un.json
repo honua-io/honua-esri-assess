@@ -1,0 +1,27 @@
+{
+  "currentVersion": 11.2,
+  "serviceDescription": "Electric Utility Network",
+  "description": "Electric Utility Network",
+  "capabilities": "Query,Editing,UtilityNetwork,UtilityNetworkVersionManagement",
+  "layers": [
+    {"id": 0, "name": "ElectricDevice", "type": "Feature Layer", "geometryType": "esriGeometryPoint"},
+    {"id": 1, "name": "ElectricLine", "type": "Feature Layer", "geometryType": "esriGeometryPolyline"}
+  ],
+  "tables": [],
+  "controllerDatasetLayers": {
+    "utilityNetworkLayerId": 4,
+    "layers": [
+      {"id": 0, "name": "ElectricDevice"},
+      {"id": 1, "name": "ElectricLine"},
+      {"id": 2, "name": "ElectricAssembly"}
+    ],
+    "domainNetworks": [
+      {"domainNetworkName": "Electric"},
+      {"domainNetworkName": "Structure"}
+    ],
+    "rules": [
+      {"ruleType": "junctionJunctionConnectivity"},
+      {"ruleType": "containment"}
+    ]
+  }
+}

@@ -9,6 +9,14 @@
       "status": 200
     },
     {
+      "url": "https://fixture.local/sharing/rest/portals/self/servers",
+      "method": "GET",
+      "match_querystring": true,
+      "params": { "f": "json" },
+      "body_file": "group_forbidden.json",
+      "status": 403
+    },
+    {
       "url": "https://fixture.local/sharing/rest/community/groups",
       "method": "GET",
       "match_querystring": true,

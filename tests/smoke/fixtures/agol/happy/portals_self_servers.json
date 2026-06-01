@@ -1,0 +1,22 @@
+{
+  "servers": [
+    {
+      "id": "hostingServer",
+      "name": "hosting.fixture.local",
+      "url": "https://hosting.fixture.local/server",
+      "adminUrl": "https://hosting.fixture.local:6443/arcgis/admin",
+      "isHosted": true,
+      "serverRole": "HOSTING_SERVER",
+      "serverFunction": ""
+    },
+    {
+      "id": "gaServer",
+      "name": "analytics.fixture.local",
+      "url": "https://analytics.fixture.local/server?token=should-not-appear",
+      "adminUrl": "https://analytics.fixture.local:6443/arcgis/admin",
+      "isHosted": false,
+      "serverRole": "FEDERATED_SERVER",
+      "serverFunction": "GeoAnalytics,GeoEvent"
+    }
+  ]
+}

@@ -26,6 +26,12 @@ def register_happy_path(responses_module: Any, *, include_users: bool = True, in
     )
     responses_module.add(
         responses_module.GET,
+        f"{base}/portals/self/servers",
+        json=load_fixture("portal_self_servers.json"),
+        status=200,
+    )
+    responses_module.add(
+        responses_module.GET,
         f"{base}/community/groups",
         json=load_fixture("groups_page_1.json"),
         status=200,

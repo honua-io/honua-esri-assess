@@ -61,6 +61,14 @@ def test_agol_happy_scan(
     inventory_kinds = {item["kind"] for item in footprint["inventory"]}
     assert inventory_kinds == {"portal-item"}
 
+    federation = footprint["portal"]["federation"]
+    assert [server["url"] for server in federation["servers"]] == [
+        "https://analytics.fixture.local/server",
+        "https://hosting.fixture.local/server",
+    ]
+    assert federation["advancedRoles"] == ["geoanalytics", "geoevent"]
+    assert "should-not-appear" not in output.read_text(encoding="utf-8")
+
     expected = expected_counts["agol-happy-counts"]
     assert footprint["counts"] == expected, (
         f"counts mismatch: got {footprint['counts']!r}, expected {expected!r}"

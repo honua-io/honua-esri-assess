@@ -17,6 +17,8 @@ from honua_esri_assess.diagnostics import (
 from honua_esri_assess.portal.classification import classify_item
 from honua_esri_assess.portal.client import PortalClient
 from honua_esri_assess.portal.models import (
+    FederatedServer,
+    FederationInfo,
     GroupRecord,
     ItemRecord,
     LayerRecord,
@@ -24,6 +26,7 @@ from honua_esri_assess.portal.models import (
     PortalScanResult,
     ServiceRecord,
 )
+from honua_esri_assess.server._safe import credential_free_url
 from honua_esri_assess.portal.pagination import iter_paginated
 
 SERVICE_TYPE_SUFFIXES = {
@@ -32,6 +35,20 @@ SERVICE_TYPE_SUFFIXES = {
     "ImageServer": "imageService",
     "VectorTileServer": "vectorTileService",
     "SceneServer": "sceneService",
+}
+
+#: Advanced server products/roles worth recording for migration planning,
+#: keyed by the lower-cased ``serverFunction`` token the documented
+#: ``portals/self/servers`` federation surface advertises. Values are the
+#: stable role tags emitted into the footprint. Only presence is recorded —
+#: deep per-server configuration is out of scope (covered by #43/#44).
+ADVANCED_SERVER_FUNCTIONS = {
+    "geoevent": "geoevent",
+    "geoanalytics": "geoanalytics",
+    "notebookserver": "notebook",
+    "notebook": "notebook",
+    "knowledgeserver": "knowledge",
+    "knowledge": "knowledge",
 }
 
 ITEM_TYPE_BUCKETS = {
@@ -69,6 +86,7 @@ class PortalScanner:
         user_count = self._scan_user_count(org.id)
         org = replace(org, user_count=user_count)
         items = self._scan_items(org.id) if org.id else []
+        federation = self._scan_federation()
         services = self._scan_services(items) if self.deep else []
         if services:
             layer_counts = {service.item_id: len(service.layers) for service in services}
@@ -84,6 +102,7 @@ class PortalScanner:
             items=items,
             groups=groups,
             services=services,
+            federation=federation,
             diagnostics=list(self.diagnostics),
         )
 
@@ -100,6 +119,64 @@ class PortalScanner:
             custom_base_url=_optional_str(payload.get("customBaseUrl")),
             licensed_extensions=_extract_extensions(payload),
         )
+
+    def _scan_federation(self) -> FederationInfo | None:
+        """Read the documented Portal federation surface (read-only GET).
+
+        ``portals/self/servers`` lists the server sites federated with the
+        Portal, each carrying an assigned role (hosting/federated) and any
+        advanced server functions (GeoEvent, GeoAnalytics, Notebook,
+        Knowledge, ...). Returns ``None`` when the surface is not reachable
+        (unfederated AGOL orgs, anonymous scans, or permission/transport
+        failures) so the additive footprint block is omitted and plain scans
+        stay unchanged. Failures degrade to a typed diagnostic, never an abort.
+        """
+
+        try:
+            payload = self.client.get_json("portals/self/servers")
+        except PortalForbiddenError as exc:
+            self.diagnostics.append(
+                Diagnostic(
+                    code="portal.federation.forbidden",
+                    severity="warning",
+                    message="The token cannot read the Portal federation surface; federation topology was skipped.",
+                    context=exc.context,
+                )
+            )
+            return None
+        except PortalRateLimitedError as exc:
+            self.diagnostics.append(
+                Diagnostic(
+                    code="portal.federation.rate-limited",
+                    severity="info",
+                    message="ArcGIS Portal rate limited the federation surface; federation topology was skipped.",
+                    context=exc.context,
+                )
+            )
+            return None
+        except PortalError as exc:
+            self.diagnostics.append(
+                Diagnostic(
+                    code="portal.federation.failed",
+                    severity="warn",
+                    message="Federation surface enumeration failed; federation topology was skipped.",
+                    context=exc.context,
+                )
+            )
+            return None
+
+        raw_servers = payload.get("servers")
+        if not isinstance(raw_servers, list):
+            return None
+        servers = [
+            federated
+            for entry in raw_servers
+            if isinstance(entry, dict)
+            and (federated := _federated_server_from_payload(entry)) is not None
+        ]
+        if not servers:
+            return None
+        return FederationInfo(servers=tuple(servers))
 
     def _scan_user_count(self, org_id: str | None) -> int | None:
         if not org_id:
@@ -349,6 +426,34 @@ def _layer_from_payload(payload: dict[str, Any]) -> LayerRecord:
         geometry_type=_optional_str(payload.get("geometryType")),
         max_record_count=_optional_int(payload.get("maxRecordCount")),
     )
+
+
+def _federated_server_from_payload(payload: dict[str, Any]) -> FederatedServer | None:
+    raw_url = _optional_str(payload.get("url")) or _optional_str(payload.get("adminUrl"))
+    if not raw_url:
+        return None
+    safe_url = credential_free_url(raw_url)
+    if not safe_url:
+        return None
+    server_function = _optional_str(payload.get("serverFunction"))
+    functions = _parse_server_functions(server_function)
+    advanced = tuple(
+        sorted({ADVANCED_SERVER_FUNCTIONS[token.lower()] for token in functions if token.lower() in ADVANCED_SERVER_FUNCTIONS})
+    )
+    return FederatedServer(
+        url=safe_url,
+        server_role=_optional_str(payload.get("serverRole")),
+        server_function=server_function,
+        is_hosted=_optional_bool(payload.get("isHosted")),
+        functions=functions,
+        advanced_roles=advanced,
+    )
+
+
+def _parse_server_functions(value: str | None) -> tuple[str, ...]:
+    if not value:
+        return ()
+    return tuple(token.strip() for token in value.split(",") if token.strip())
 
 
 def _extract_extensions(payload: dict[str, Any]) -> list[str]:

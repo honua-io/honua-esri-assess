@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "v0.2",
+  "generatedAt": "2026-05-31T16:00:00Z",
+  "tool": {
+    "name": "honua-esri-assess",
+    "version": "0.1.0"
+  },
+  "source": {
+    "kind": "arcgis-server",
+    "locator": "https://gis.example.com/arcgis",
+    "capturedAt": "2026-05-31T15:55:00Z"
+  },
+  "inventory": [
+    {
+      "kind": "server-service",
+      "serviceUrl": "https://gis.example.com/arcgis/rest/services/Base/Parcels/FeatureServer",
+      "serviceType": "FeatureServer",
+      "serviceKind": "featureService",
+      "folder": "Base",
+      "layerCount": 8
+    },
+    {
+      "kind": "server-service",
+      "serviceUrl": "https://gis.example.com/arcgis/rest/services/Imagery/Ortho2024/ImageServer",
+      "serviceType": "ImageServer",
+      "serviceKind": "imageService",
+      "folder": "Imagery",
+      "layerCount": 1
+    },
+    {
+      "kind": "server-service",
+      "serviceUrl": "https://gis.example.com/arcgis/rest/services/Tools/Geocode/GeocodeServer",
+      "serviceType": "GeocodeServer",
+      "serviceKind": "geocodeService",
+      "folder": "Tools",
+      "layerCount": 0
+    },
+    {
+      "kind": "server-service",
+      "serviceUrl": "https://gis.example.com/arcgis/rest/services/Roads/Network/NAServer",
+      "serviceType": "NAServer",
+      "serviceKind": "networkAnalysisService",
+      "folder": "Roads",
+      "layerCount": 0
+    }
+  ],
+  "server": {
+    "folders": [
+      "Base",
+      "Imagery",
+      "Tools",
+      "Roads"
+    ],
+    "serviceCounts": {
+      "FeatureServer": 1,
+      "ImageServer": 1,
+      "GeocodeServer": 1,
+      "NAServer": 1
+    },
+    "version": "11.2",
+    "bindingPlan": {
+      "usageRankedServices": [
+        {
+          "service": "Base/Parcels.FeatureServer",
+          "requests": 12840,
+          "rank": 1
+        },
+        {
+          "service": "Imagery/Ortho2024.ImageServer",
+          "requests": 5120,
+          "rank": 2
+        },
+        {
+          "service": "Tools/Geocode.GeocodeServer",
+          "requests": 900,
+          "rank": 3
+        },
+        {
+          "service": "Roads/Network.NAServer",
+          "requests": 120,
+          "rank": 4
+        }
+      ],
+      "datasetBindings": [
+        {
+          "datasetId": "ds-1",
+          "storageType": "egdb",
+          "connectionKind": "enterprise-geodatabase",
+          "bindingMode": "federate"
+        }
+      ]
+    }
+  },
+  "counts": {
+    "items": {
+      "server-service": 4
+    },
+    "layers": 9,
+    "featureClasses": 0
+  },
+  "diagnostics": []
+}

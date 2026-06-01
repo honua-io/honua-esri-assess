@@ -12,7 +12,7 @@ from typing import Any
 from honua_esri_assess.diagnostics import ReportRenderError
 from honua_esri_assess.report.formatting import bullet_list, markdown_table, text
 
-from .engine import FootprintVerdict, ProfileVerdict, evaluate
+from .engine import FootprintVerdict, MigrationStep, ProfileVerdict, evaluate
 
 _VERDICT_LABELS = {"go": "GO", "conditional": "CONDITIONAL", "no-go": "NO-GO"}
 
@@ -28,6 +28,7 @@ def render(footprint: Mapping[str, Any]) -> str:
         _render_header(footprint),
         _render_summary(result),
         _render_hard_lock_ins(result),
+        _render_migration_order(result),
         _render_profiles(result),
     ]
     return "\n\n".join(part.rstrip() for part in parts if part.strip()) + "\n"
@@ -77,6 +78,43 @@ def _render_hard_lock_ins(result: FootprintVerdict) -> str:
         )
     )
     return "\n\n".join(lines)
+
+
+def _render_migration_order(result: FootprintVerdict) -> str:
+    lines = ["## Recommended Migration Order"]
+    if not result.migration_order:
+        lines.append(
+            "No usage ranking or dependency graph was available to sequence the "
+            "migration."
+        )
+        return "\n\n".join(lines)
+
+    usage_driven = result.signals.usage_ranked
+    if usage_driven:
+        lines.append(
+            "Sequenced by observed request volume (usage-ranked); the highest-used "
+            "services migrate first."
+        )
+    else:
+        lines.append(
+            "Sequenced from the dependency graph; every dependency migrates before "
+            "the items that reference it."
+        )
+    rows = [_migration_row(step, usage_driven) for step in result.migration_order]
+    headers = (
+        ("Rank", "Service", "Observed requests")
+        if usage_driven
+        else ("Rank", "Item")
+    )
+    lines.append(markdown_table(headers, rows))
+    return "\n\n".join(lines)
+
+
+def _migration_row(step: MigrationStep, usage_driven: bool) -> tuple[str, ...]:
+    if usage_driven:
+        requests = str(step.requests) if step.requests is not None else "-"
+        return (str(step.rank), step.identifier, requests)
+    return (str(step.rank), step.identifier)
 
 
 def _render_profiles(result: FootprintVerdict) -> str:

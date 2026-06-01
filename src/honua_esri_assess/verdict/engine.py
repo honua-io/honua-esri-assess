@@ -15,6 +15,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from honua_esri_assess.report.heuristics import dependency_order
+
 from .registry import (
     CAPABILITY_REGISTRY,
     SHOP_PROFILES,
@@ -26,6 +28,21 @@ from .registry import (
 
 # Effort bands, ordered low to high.
 EFFORT_BANDS = ("Low", "Moderate", "High", "Very High")
+
+# serviceKind buckets (#43) that are first-class feature/map surface. Any other
+# serviceKind is "non-feature/map breadth" that widens the migration story.
+_FEATURE_MAP_SERVICE_KINDS = frozenset(
+    {"featureService", "mapService", "vectorTileService"}
+)
+
+# Advanced server roles (#54) whose mere presence changes the migration story.
+# Mapped to a one-line migration note surfaced in the rationale.
+_ADVANCED_ROLE_NOTES: dict[str, str] = {
+    "geoevent": "GeoEvent real-time ingestion has no drop-in Honua equivalent.",
+    "geoanalytics": "GeoAnalytics distributed processing must be re-platformed.",
+    "notebook": "Notebook Server automation is re-authored, not transferred.",
+    "knowledge": "Knowledge Server graph stores need a bespoke migration path.",
+}
 
 
 @dataclass(frozen=True)
@@ -70,11 +87,42 @@ class ProfileVerdict:
 
 
 @dataclass(frozen=True)
+class MigrationStep:
+    """One step in the recommended migration order.
+
+    ``rank`` is 1-based. ``requests`` is the observed request volume when the
+    step is usage-ranked (#31), and ``None`` when the step came from the
+    dependency graph (#42 ``dependencyEdges``) with no usage signal.
+    """
+
+    rank: int
+    identifier: str
+    source: str  # "usage" or "dependency"
+    requests: int | None = None
+
+
+@dataclass(frozen=True)
+class SignalSummary:
+    """Enriched footprint signals the verdict factors in beyond capability tiers.
+
+    Captures non-feature/map service-type breadth (#43), federated advanced
+    server roles (#54), and whether a usage ranking (#31) was available, so the
+    renderer and tests can assert the verdict consumed them.
+    """
+
+    non_feature_map_service_kinds: tuple[str, ...] = ()
+    advanced_roles: tuple[str, ...] = ()
+    usage_ranked: bool = False
+
+
+@dataclass(frozen=True)
 class FootprintVerdict:
     """The full verdict across all shop profiles."""
 
     profiles: tuple[ProfileVerdict, ...]
     hard_lock_ins: tuple[Boundary, ...]
+    signals: SignalSummary = SignalSummary()
+    migration_order: tuple[MigrationStep, ...] = ()
 
 
 def _inventory_items(footprint: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
@@ -175,6 +223,124 @@ def _enriched_detail(entry: CapabilityEntry, extent: LockInExtent | None) -> str
     return f"{entry.boundary} {appended}"
 
 
+def _non_feature_map_service_kinds(
+    footprint: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Distinct non-feature/map ``serviceKind`` values present (#43).
+
+    Reads the per-service ``serviceKind`` coarse bucket emitted on server
+    inventory items. Feature/map/vector-tile services are excluded; everything
+    else (image, geocode, geoprocessing, scene, stream, network-analysis, ...)
+    widens the migration story and is returned sorted for stable output.
+    """
+
+    kinds: set[str] = set()
+    for item in _inventory_items(footprint):
+        if item.get("kind") != "server-service":
+            continue
+        kind = item.get("serviceKind")
+        if (
+            isinstance(kind, str)
+            and kind
+            and kind not in _FEATURE_MAP_SERVICE_KINDS
+        ):
+            kinds.add(kind)
+    return tuple(sorted(kinds))
+
+
+def _advanced_roles(footprint: Mapping[str, Any]) -> tuple[str, ...]:
+    """Federated advanced server roles present (#54), sorted and de-duplicated.
+
+    Prefers the rolled-up ``portal.federation.advancedRoles`` union; falls back
+    to unioning each federated server's ``advancedRoles`` so an older footprint
+    that omits the roll-up still surfaces the signal.
+    """
+
+    portal = footprint.get("portal")
+    if not isinstance(portal, Mapping):
+        return ()
+    federation = portal.get("federation")
+    if not isinstance(federation, Mapping):
+        return ()
+
+    roles: set[str] = set()
+    rolled_up = federation.get("advancedRoles")
+    if isinstance(rolled_up, (list, tuple)):
+        roles.update(role for role in rolled_up if isinstance(role, str) and role)
+
+    servers = federation.get("servers")
+    if isinstance(servers, (list, tuple)):
+        for server in servers:
+            if not isinstance(server, Mapping):
+                continue
+            server_roles = server.get("advancedRoles")
+            if isinstance(server_roles, (list, tuple)):
+                roles.update(
+                    role for role in server_roles if isinstance(role, str) and role
+                )
+    return tuple(sorted(roles))
+
+
+def _usage_ranked_steps(footprint: Mapping[str, Any]) -> tuple[MigrationStep, ...]:
+    """Usage-ranked migration steps from ``server.bindingPlan`` (#31).
+
+    Honours the producer's 1-based ``rank``; re-sorts defensively by
+    (rank, service) so output is deterministic even if the array arrives
+    unsorted. Returns an empty tuple when no usage ranking is present.
+    """
+
+    server = footprint.get("server")
+    if not isinstance(server, Mapping):
+        return ()
+    binding_plan = server.get("bindingPlan")
+    if not isinstance(binding_plan, Mapping):
+        return ()
+    ranked = binding_plan.get("usageRankedServices")
+    if not isinstance(ranked, (list, tuple)):
+        return ()
+
+    rows: list[tuple[int, str, int | None]] = []
+    for entry in ranked:
+        if not isinstance(entry, Mapping):
+            continue
+        service = entry.get("service")
+        rank = entry.get("rank")
+        if not isinstance(service, str) or not service:
+            continue
+        if not isinstance(rank, int) or isinstance(rank, bool):
+            continue
+        requests = entry.get("requests")
+        if not isinstance(requests, int) or isinstance(requests, bool):
+            requests = None
+        rows.append((rank, service, requests))
+
+    rows.sort(key=lambda row: (row[0], row[1]))
+    return tuple(
+        MigrationStep(rank=rank, identifier=service, source="usage", requests=requests)
+        for rank, service, requests in rows
+    )
+
+
+def _migration_order(footprint: Mapping[str, Any]) -> tuple[MigrationStep, ...]:
+    """Usage-/dependency-driven migration order.
+
+    Prefers usage ranking (#31) when present; otherwise consumes the dependency
+    graph (``heuristics.dependency_order``) so dependencies migrate first. The
+    two are kept distinct via ``MigrationStep.source`` so callers can tell which
+    signal drove the sequence.
+    """
+
+    usage = _usage_ranked_steps(footprint)
+    if usage:
+        return usage
+
+    ordered = dependency_order(footprint)
+    return tuple(
+        MigrationStep(rank=index + 1, identifier=identifier, source="dependency")
+        for index, identifier in enumerate(ordered)
+    )
+
+
 def _entries_for_profile(
     profile: str,
     detected: tuple[CapabilityEntry, ...],
@@ -194,18 +360,37 @@ def _entries_for_profile(
     return tuple(relevant)
 
 
-def _effort_band(profile_entries: tuple[CapabilityEntry, ...], verdict: Tier) -> str:
-    """Derive an effort band from the detected capabilities and the verdict."""
+def _effort_band(
+    profile_entries: tuple[CapabilityEntry, ...],
+    verdict: Tier,
+    signals: SignalSummary,
+) -> str:
+    """Derive an effort band from capabilities, the verdict, and enriched signals.
+
+    Beyond the capability-tier count, non-feature/map service-type breadth (#43)
+    and federated advanced roles (#54) each lift the band by one step (capped at
+    "Very High"), since both widen the migration surface a tier alone misses.
+    """
 
     if verdict == "no-go":
         # A no-go means the lock-in surface dominates the effort story.
         return "Very High"
     conditional_count = sum(1 for entry in profile_entries if entry.tier == "conditional")
     if conditional_count == 0:
-        return "Low"
-    if conditional_count <= 2:
-        return "Moderate"
-    return "High"
+        base = "Low"
+    elif conditional_count <= 2:
+        base = "Moderate"
+    else:
+        base = "High"
+
+    lift = 0
+    if signals.non_feature_map_service_kinds:
+        lift += 1
+    if signals.advanced_roles:
+        lift += 1
+
+    index = min(EFFORT_BANDS.index(base) + lift, len(EFFORT_BANDS) - 1)
+    return EFFORT_BANDS[index]
 
 
 def _verdict_for_entries(profile_entries: tuple[CapabilityEntry, ...]) -> Tier:
@@ -246,6 +431,7 @@ def _rationale(
     profile: str,
     verdict: Tier,
     profile_entries: tuple[CapabilityEntry, ...],
+    signals: SignalSummary,
 ) -> tuple[str, ...]:
     lock_ins = [entry for entry in profile_entries if entry.hard_lock_in]
     go = [entry for entry in profile_entries if entry.tier == "go"]
@@ -275,6 +461,23 @@ def _rationale(
         )
     if not profile_entries:
         lines.append("No capabilities for this profile were detected in the footprint.")
+    if signals.non_feature_map_service_kinds:
+        lines.append(
+            "Non-feature/map service breadth detected: "
+            + ", ".join(signals.non_feature_map_service_kinds)
+            + " (widens migration effort beyond capability tiers)."
+        )
+    if signals.advanced_roles:
+        notes = [
+            _ADVANCED_ROLE_NOTES.get(role, f"{role} role changes the migration story.")
+            for role in signals.advanced_roles
+        ]
+        lines.append(
+            "Federated advanced server roles present: "
+            + ", ".join(signals.advanced_roles)
+            + ". "
+            + " ".join(notes)
+        )
     return tuple(lines)
 
 
@@ -283,15 +486,21 @@ def evaluate(footprint: Mapping[str, Any]) -> FootprintVerdict:
 
     detected = _detected_entries(footprint)
     extents = _lock_in_extents(footprint)
+    migration_order = _migration_order(footprint)
+    signals = SignalSummary(
+        non_feature_map_service_kinds=_non_feature_map_service_kinds(footprint),
+        advanced_roles=_advanced_roles(footprint),
+        usage_ranked=any(step.source == "usage" for step in migration_order),
+    )
 
     profile_verdicts: list[ProfileVerdict] = []
     for profile in SHOP_PROFILES:
         profile_entries = _entries_for_profile(profile, detected)
         verdict = _verdict_for_entries(profile_entries)
-        effort = _effort_band(profile_entries, verdict)
+        effort = _effort_band(profile_entries, verdict, signals)
         boundaries = _boundaries(profile_entries, extents)
         matched = tuple(entry.key for entry in profile_entries)
-        rationale = _rationale(profile, verdict, profile_entries)
+        rationale = _rationale(profile, verdict, profile_entries, signals)
         profile_verdicts.append(
             ProfileVerdict(
                 profile=profile,
@@ -319,4 +528,6 @@ def evaluate(footprint: Mapping[str, Any]) -> FootprintVerdict:
     return FootprintVerdict(
         profiles=tuple(profile_verdicts),
         hard_lock_ins=hard_lock_ins,
+        signals=signals,
+        migration_order=migration_order,
     )

@@ -6,7 +6,9 @@ from .engine import (
     Boundary,
     FootprintVerdict,
     LockInExtent,
+    MigrationStep,
     ProfileVerdict,
+    SignalSummary,
     evaluate,
 )
 from .registry import CAPABILITY_REGISTRY, HARD_LOCK_IN_KEYS, SHOP_PROFILES
@@ -18,7 +20,9 @@ __all__ = [
     "FootprintVerdict",
     "HARD_LOCK_IN_KEYS",
     "LockInExtent",
+    "MigrationStep",
     "ProfileVerdict",
+    "SignalSummary",
     "SHOP_PROFILES",
     "evaluate",
     "render",

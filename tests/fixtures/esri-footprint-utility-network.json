@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "v0.1",
+  "generatedAt": "2026-05-22T14:08:33Z",
+  "tool": {
+    "name": "honua-esri-assess",
+    "version": "0.1.0"
+  },
+  "source": {
+    "kind": "arcgis-server",
+    "locator": "gis.example.com/arcgis",
+    "capturedAt": "2026-05-22T14:02:11Z"
+  },
+  "inventory": [
+    {
+      "kind": "server-service",
+      "serviceUrl": "https://gis.example.com/arcgis/rest/services/ElectricUN/FeatureServer",
+      "serviceType": "FeatureServer",
+      "folder": "Electric",
+      "layerCount": 12,
+      "capabilities": ["Query", "Editing", "UtilityNetwork"]
+    },
+    {
+      "kind": "server-service",
+      "serviceUrl": "https://gis.example.com/arcgis/rest/services/Basemap/MapServer",
+      "serviceType": "MapServer",
+      "folder": "Basemaps",
+      "layerCount": 4,
+      "capabilities": ["Map", "Query"]
+    }
+  ],
+  "counts": {
+    "items": {
+      "portal-item": 0,
+      "server-service": 2,
+      "filegdb-feature-class": 0
+    },
+    "layers": 16,
+    "featureClasses": 0
+  },
+  "diagnostics": []
+}

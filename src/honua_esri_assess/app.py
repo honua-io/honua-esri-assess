@@ -7,6 +7,7 @@ import typer
 from honua_esri_assess.commands.report import report_command
 from honua_esri_assess.commands.scan import scan_app
 from honua_esri_assess.commands.schema import schema_app
+from honua_esri_assess.commands.verdict import verdict_command
 from honua_esri_assess.commands.version import version_command
 
 cli_app = typer.Typer(
@@ -41,6 +42,10 @@ cli_app.add_typer(schema_app, name="schema")
 cli_app.command("report", help="Render EsriFootprint.json to Markdown.")(
     report_command
 )
+cli_app.command(
+    "verdict",
+    help="Render a per-shop-profile migratability verdict from EsriFootprint.json.",
+)(verdict_command)
 cli_app.command("version", help="Print package and bundled schema versions.")(
     version_command
 )

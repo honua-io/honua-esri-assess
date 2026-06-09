@@ -1,5 +1,7 @@
 # honua-esri-assess
 
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/honua-io/honua-esri-assess/badge)](https://scorecard.dev/viewer/?uri=github.com/honua-io/honua-esri-assess)
+
 Open-source Esri footprint assessment tooling for Honua migration discovery.
 
 This repository owns the read-only scanner and report generator that produce a

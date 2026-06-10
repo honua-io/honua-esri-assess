@@ -5,6 +5,7 @@
       2,
       "always",
       ["feat", "fix", "chore", "docs", "perf", "deps", "test", "ci", "refactor"]
-    ]
+    ],
+    "body-max-line-length": [0, "always", 100]
   }
 }

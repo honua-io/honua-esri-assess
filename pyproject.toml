@@ -49,12 +49,12 @@ dev = [
   "hatch>=1.9,<2",
   "mypy>=1.10,<3",
   "packaging>=24,<27",
-  "pytest>=8,<9",
+  "pytest>=8,<10",
   "responses>=0.25",
   "ruff>=0.5,<1",
 ]
 smoke = [
-  "pytest>=8,<9",
+  "pytest>=8,<10",
   "responses>=0.25",
 ]
 

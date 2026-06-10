@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.7.0...honua-esri-assess-v0.7.1) (2026-06-10)
+
+
+### Documentation
+
+* add OpenSSF Scorecard badge ([#65](https://github.com/honua-io/honua-esri-assess/issues/65)) ([406e4df](https://github.com/honua-io/honua-esri-assess/commit/406e4dffaa0c95e3ab93b024b819b2de5f56e848))
+
 ## [0.7.0](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.6.0...honua-esri-assess-v0.7.0) (2026-06-01)
 
 

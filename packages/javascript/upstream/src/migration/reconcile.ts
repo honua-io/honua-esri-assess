@@ -1,3 +1,5 @@
+import { trimTrailingSlashes } from "../core/path-utils.js";
+
 export interface LayerReconciliationOptions {
   sourceBaseUrl: string;
   sourceServiceId: string;
@@ -199,7 +201,7 @@ function buildQueryUrl(baseUrl: string, serviceId: string, layerId: number, para
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, "");
+  return trimTrailingSlashes(baseUrl);
 }
 
 function computeGeometryValidityRatio(features: readonly unknown[]): number {

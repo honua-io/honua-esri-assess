@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { trimTrailingSlashes } from "../core/path-utils.js";
 import { type CodemodTarget, runEsriCompatCodemod } from "./codemod.js";
 import {
   type LayerReconciliationOptions,
@@ -268,7 +269,7 @@ export function parseGeoservicesServiceUrl(serviceUrl: string): ParsedGeoservice
     return undefined;
   }
 
-  const pathname = parsed.pathname.replace(/\/+$/, "");
+  const pathname = trimTrailingSlashes(parsed.pathname);
   const marker = "/rest/services/";
   const lowerPath = pathname.toLowerCase();
   const markerIndex = lowerPath.indexOf(marker);
@@ -384,7 +385,7 @@ function buildJsonHeaders(adminApiKey?: string): Record<string, string> {
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, "");
+  return trimTrailingSlashes(baseUrl);
 }
 
 function redactSensitiveUrl(url: string): string {

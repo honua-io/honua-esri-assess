@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { trimChar, trimTrailingSlashes } from "../core/path-utils.js";
 import { parseWebMap } from "../webmap/parse.js";
 import type { WebMapJson } from "../webmap/types.js";
 import { type GeoservicesImportJobReport, runGeoservicesImportJob } from "./demo.js";
@@ -1171,7 +1172,7 @@ function quotePortalQueryValue(value: string): string {
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, "");
+  return trimTrailingSlashes(baseUrl);
 }
 
 function redactSensitiveUrl(url: string): string {
@@ -1209,11 +1210,7 @@ function buildUrl(base: string, params: Record<string, string>): string {
 }
 
 function makeUniqueTableName(baseName: string, used: Set<string>): string {
-  const normalizedBase =
-    baseName
-      .replace(/_+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .slice(0, 48) || "layer";
+  const normalizedBase = trimChar(baseName.replace(/_+/g, "_"), "_").slice(0, 48) || "layer";
   let candidate = normalizedBase;
   let suffix = 1;
   while (used.has(candidate)) {

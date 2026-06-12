@@ -44,7 +44,7 @@ interface QueryFeaturesResponse {
 const DEFAULT_SAMPLE_SIZE = 100;
 
 export async function runLayerReconciliation(options: LayerReconciliationOptions): Promise<LayerReconciliationReport> {
-  const fetchFn = options.fetchFn ?? fetch;
+  const fetchFn = options.fetchFn ?? fetch.bind(globalThis);
   const sampleSize =
     typeof options.sampleSize === "number" && Number.isFinite(options.sampleSize)
       ? Math.max(1, Math.trunc(options.sampleSize))

@@ -156,7 +156,7 @@ export async function runMigrationDemo(options: MigrationDemoOptions): Promise<M
 export async function runGeoservicesImportJob(
   options: GeoservicesImportStageOptions,
 ): Promise<GeoservicesImportJobReport> {
-  const fetchFn = options.fetchFn ?? fetch;
+  const fetchFn = options.fetchFn ?? fetch.bind(globalThis);
   const pollIntervalMs =
     typeof options.pollIntervalMs === "number" && Number.isFinite(options.pollIntervalMs)
       ? Math.max(100, Math.trunc(options.pollIntervalMs))

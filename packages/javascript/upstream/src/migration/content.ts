@@ -190,7 +190,7 @@ export interface ContentReconcileReport {
 }
 
 export async function runContentScan(options: ContentScanOptions): Promise<ContentScanReport> {
-  const fetchFn = options.fetchFn ?? fetch;
+  const fetchFn = options.fetchFn ?? fetch.bind(globalThis);
   const sharingRestBase = resolvePortalSharingRestBase(options.portalUrl);
   const pageSize = options.pageSize ?? DEFAULT_PORTAL_PAGE_SIZE;
 
@@ -223,7 +223,7 @@ export async function runContentScan(options: ContentScanOptions): Promise<Conte
 }
 
 export async function runContentExport(options: ContentExportOptions): Promise<ContentExportReport> {
-  const fetchFn = options.fetchFn ?? fetch;
+  const fetchFn = options.fetchFn ?? fetch.bind(globalThis);
   const includeWebMaps = options.includeWebMaps !== false;
   const includeHostedLayers = options.includeHostedLayers !== false;
   const includeFeatures = options.includeFeatures !== false;
@@ -352,7 +352,7 @@ export async function runContentExport(options: ContentExportOptions): Promise<C
 }
 
 export async function runContentImport(options: ContentImportOptions): Promise<ContentImportReport> {
-  const fetchFn = options.fetchFn ?? fetch;
+  const fetchFn = options.fetchFn ?? fetch.bind(globalThis);
   const sourceDir = path.resolve(options.sourceDir);
   const outputDir = path.resolve(options.outputDir ?? path.join(sourceDir, "content-import"));
   fs.mkdirSync(outputDir, { recursive: true });

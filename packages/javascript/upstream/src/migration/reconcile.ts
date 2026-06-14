@@ -1,4 +1,4 @@
-import { trimTrailingSlashes } from "../core/path-utils.js";
+import { encodeServiceIdPath, trimTrailingSlashes } from "../core/path-utils.js";
 
 export interface LayerReconciliationOptions {
   sourceBaseUrl: string;
@@ -195,7 +195,7 @@ async function fetchJson(fetchFn: typeof fetch, url: string): Promise<QueryFeatu
 function buildQueryUrl(baseUrl: string, serviceId: string, layerId: number, params: Record<string, string>): string {
   const query = new URLSearchParams(params);
   return (
-    `${normalizeBaseUrl(baseUrl)}/rest/services/${encodeURIComponent(serviceId)}` +
+    `${normalizeBaseUrl(baseUrl)}/rest/services/${encodeServiceIdPath(serviceId)}` +
     `/FeatureServer/${layerId}/query?${query.toString()}`
   );
 }

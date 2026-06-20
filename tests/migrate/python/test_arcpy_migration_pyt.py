@@ -227,8 +227,15 @@ def test_pyt_bound_parameters_are_not_double_counted() -> None:
     ]
 
 
-def test_parse_binary_toolbox_is_stubbed_with_todo(tmp_path) -> None:
+def test_parse_binary_toolbox_redirects_atbx_to_modelbuilder(tmp_path) -> None:
+    # .atbx is now parsed clean-room by the modelbuilder reader; the legacy pyt
+    # entry point redirects there rather than guessing a PytToolbox shape.
     with pytest.raises(UnsupportedToolboxError) as excinfo:
         parse_binary_toolbox(tmp_path / "example.atbx")
-    assert "not implemented" in str(excinfo.value)
-    assert ".atbx" in str(excinfo.value)
+    assert "parse_atbx_toolbox" in str(excinfo.value)
+
+
+def test_parse_binary_toolbox_still_stubs_binary_tbx(tmp_path) -> None:
+    with pytest.raises(UnsupportedToolboxError) as excinfo:
+        parse_binary_toolbox(tmp_path / "legacy.tbx")
+    assert ".tbx" in str(excinfo.value)

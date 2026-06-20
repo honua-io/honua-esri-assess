@@ -7,10 +7,12 @@ Usage (either form works once the SDK is installed)::
     honua-migrate translate path/to/script.py --evidence out.json
     honua-migrate run path/to/script.py --server https://example.test
     honua-migrate pyt path/to/toolbox.pyt
+    honua-migrate atbx path/to/toolbox.atbx --evidence out.json
+    honua-migrate gpservice path/to/GPServer.json --url https://host/GPServer
 
-The ``scan`` and ``translate`` commands work offline (AST-only, no ArcGIS or
-network). The ``run`` command executes the translatable steps through
-``HonuaClient.ogc_processes().execute(...)`` against ``--server``.
+The ``scan``, ``translate``, ``pyt``, ``atbx``, and ``gpservice`` commands work
+offline (no ArcGIS or network). The ``run`` command executes the translatable
+steps through ``HonuaClient.ogc_processes().execute(...)`` against ``--server``.
 """
 
 from __future__ import annotations
@@ -28,6 +30,13 @@ from .arcpy import (
     scan_arcpy_file,
     translate_arcpy_report,
 )
+from .modelbuilder import (
+    UnsupportedModelFormatError,
+    build_atbx_parity_evidence,
+    build_gp_service_parity_evidence,
+    parse_atbx_toolbox,
+    parse_gp_service_definition,
+)
 from .pyt import (
     UnsupportedToolboxError,
     build_pyt_parity_evidence,
@@ -35,7 +44,9 @@ from .pyt import (
     parse_pyt_file,
 )
 
-_BINARY_TOOLBOX_SUFFIXES = {".tbx", ".atbx"}
+# .atbx is now handled clean-room by the modelbuilder reader; only the
+# proprietary binary .tbx remains an explicit stub in the ``pyt`` command.
+_BINARY_TOOLBOX_SUFFIXES = {".tbx"}
 
 
 def _emit(obj: object, *, out: Path | None) -> None:
@@ -141,6 +152,34 @@ def _cmd_pyt(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_atbx(args: argparse.Namespace) -> int:
+    try:
+        toolbox = parse_atbx_toolbox(args.path)
+    except UnsupportedModelFormatError as exc:
+        print(str(exc), file=sys.stderr)
+        return 3
+    if args.evidence is not None:
+        _emit(build_atbx_parity_evidence(toolbox), out=args.evidence)
+    _emit(toolbox.to_dict(), out=args.output)
+    if toolbox.parse_error is not None:
+        print(f"parse error: {toolbox.parse_error}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def _cmd_gpservice(args: argparse.Namespace) -> int:
+    text = Path(args.path).read_text(encoding="utf-8")
+    try:
+        service = parse_gp_service_definition(text, url=args.url)
+    except (UnsupportedModelFormatError, json.JSONDecodeError) as exc:
+        print(f"could not parse GP service definition: {exc}", file=sys.stderr)
+        return 2
+    if args.evidence is not None:
+        _emit(build_gp_service_parity_evidence(service), out=args.evidence)
+    _emit(service.to_dict(), out=args.output)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="honua-migrate", description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -177,10 +216,31 @@ def build_parser() -> argparse.ArgumentParser:
     run.set_defaults(func=_cmd_run)
 
     pyt = sub.add_parser("pyt", help="Parse a .pyt Python toolbox and classify its tools' GP calls.")
-    pyt.add_argument("path", type=Path, help="Path to a .pyt Python toolbox (or .tbx/.atbx to see the stub TODO).")
+    pyt.add_argument("path", type=Path, help="Path to a .pyt Python toolbox (or .tbx to see the binary-format stub).")
     pyt.add_argument("--output", type=Path, default=None, help="Write the toolbox JSON here (default: stdout).")
     pyt.add_argument("--evidence", type=Path, default=None, help="Write the aggregated parity-evidence JSON here.")
     pyt.set_defaults(func=_cmd_pyt)
+
+    atbx = sub.add_parser(
+        "atbx",
+        help="Parse a .atbx ModelBuilder toolbox clean-room and classify its models' GP steps.",
+    )
+    atbx.add_argument("path", type=Path, help="Path to a .atbx ModelBuilder toolbox.")
+    atbx.add_argument("--output", type=Path, default=None, help="Write the toolbox JSON here (default: stdout).")
+    atbx.add_argument("--evidence", type=Path, default=None, help="Write the aggregated parity-evidence JSON here.")
+    atbx.set_defaults(func=_cmd_atbx)
+
+    gpservice = sub.add_parser(
+        "gpservice",
+        help="Parse an ArcGIS REST GPServer service-definition JSON and classify its tasks (offline).",
+    )
+    gpservice.add_argument("path", type=Path, help="Path to a GPServer service-definition JSON (.../GPServer?f=json).")
+    gpservice.add_argument("--url", default=None, help="Original service URL to record in the report.")
+    gpservice.add_argument("--output", type=Path, default=None, help="Write the service JSON here (default: stdout).")
+    gpservice.add_argument(
+        "--evidence", type=Path, default=None, help="Write the aggregated parity-evidence JSON here."
+    )
+    gpservice.set_defaults(func=_cmd_gpservice)
 
     return parser
 

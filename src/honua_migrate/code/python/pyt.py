@@ -175,23 +175,30 @@ def parse_pyt_file(path: str | Path) -> PytToolbox:
 def parse_binary_toolbox(path: str | Path) -> PytToolbox:
     """Parse a binary ``.tbx`` / ``.atbx`` toolbox.
 
-    NOT IMPLEMENTED. ``.tbx`` (XML-in-a-zip / proprietary) and ``.atbx``
-    (zipped JSON + ArcGIS Pro toolbox content) are binary formats that cannot
-    be AST-scanned as Python source.
+    The proprietary binary ``.tbx`` format is NOT parseable here -- it is a
+    closed binary format and parsing it clean-room is out of scope (compliance:
+    do not decompile or run licensed Esri software to learn it).
 
-    TODO(honua-sdk-python#59): implement a ``.atbx``/``.tbx`` reader that
-    unzips the archive, reads each tool's ``tool.content.rc`` / ``*.tool``
-    JSON for parameter metadata, and resolves the referenced script tool
-    (often a ``.py`` validated against arcpy) before reusing the
-    source-based scanner. Until then, callers should export the toolbox to a
-    ``.pyt`` or point the codemod at the underlying script tools.
+    The newer ``.atbx`` format IS a published zip-of-JSON container. It is
+    parsed by :func:`honua_migrate.code.python.modelbuilder.parse_atbx_toolbox`,
+    which returns a :class:`ModelBuilderToolbox` (models + script-tool names),
+    not the Python-source :class:`PytToolbox` returned here -- so this entry
+    point redirects ``.atbx`` callers there rather than guessing a shape.
     """
 
-    suffix = Path(path).suffix
+    suffix = Path(path).suffix.lower()
+    if suffix == ".atbx":
+        raise UnsupportedToolboxError(
+            "ModelBuilder .atbx toolboxes are parsed by "
+            "honua_migrate.code.python.modelbuilder.parse_atbx_toolbox (it returns "
+            "ModelBuilderToolbox, not PytToolbox). Call that instead, or export "
+            "the toolbox to a .pyt Python toolbox to use parse_pyt_file."
+        )
     raise UnsupportedToolboxError(
-        f"Binary toolbox parsing for {suffix!r} is not implemented yet "
-        "(see TODO honua-sdk-python#59). Use a .pyt Python toolbox or the "
-        "underlying script tools."
+        f"Binary toolbox parsing for {suffix!r} is not supported "
+        "(proprietary binary format -- not clean-room parseable). Export to a "
+        ".atbx ModelBuilder toolbox (parse_atbx_toolbox) or a .pyt Python "
+        "toolbox (parse_pyt_file)."
     )
 
 

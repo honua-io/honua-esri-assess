@@ -122,14 +122,77 @@ def test_cli_pyt_parses_toolbox(tmp_path: Path) -> None:
     assert agg["summary"]["coveragePercent"] == 100.0
 
 
-def test_cli_pyt_binary_toolbox_reports_stub(tmp_path: Path, capsys) -> None:
-    binary = tmp_path / "legacy.atbx"
+def test_cli_pyt_binary_tbx_reports_stub(tmp_path: Path, capsys) -> None:
+    binary = tmp_path / "legacy.tbx"
     binary.write_bytes(b"\x00binary\x00")
 
     rc = main(["pyt", str(binary)])
 
     assert rc == 3
-    assert "not implemented" in capsys.readouterr().err
+    assert ".tbx" in capsys.readouterr().err
+
+
+def _write_atbx(path: Path) -> Path:
+    import io
+    import zipfile
+
+    model = {
+        "name": "BufferModel",
+        "processes": [
+            {
+                "toolName": "Buffer",
+                "toolbox": "analysis",
+                "parameters": {
+                    "in_features": "a",
+                    "out_feature_class": "b",
+                    "buffer_distance_or_field": "5 Meters",
+                },
+            }
+        ],
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("BufferModel.tool/tool.content", json.dumps(model))
+    path.write_bytes(buffer.getvalue())
+    return path
+
+
+def test_cli_atbx_parses_models(tmp_path: Path, capsys) -> None:
+    atbx = _write_atbx(tmp_path / "wf.atbx")
+    evidence = tmp_path / "atbx-evidence.json"
+
+    rc = main(["atbx", str(atbx), "--evidence", str(evidence)])
+
+    assert rc == 0
+    agg = json.loads(evidence.read_text())
+    assert agg["schema"] == "honua.migration.arcpy.atbx-parity-evidence/v1"
+    assert agg["summary"]["modelCount"] == 1
+    assert agg["summary"]["translatableCalls"] == 1
+
+
+def test_cli_atbx_rejects_binary_tbx(tmp_path: Path, capsys) -> None:
+    tbx = tmp_path / "legacy.tbx"
+    tbx.write_bytes(b"\x00binary\x00")
+
+    rc = main(["atbx", str(tbx)])
+
+    assert rc == 3
+    assert "not clean-room parseable" in capsys.readouterr().err
+
+
+def test_cli_gpservice_classifies_tasks(tmp_path: Path) -> None:
+    service_def = {"tasks": ["Buffer", "MysteryTask"]}
+    path = _write(tmp_path, "gpservice.json", json.dumps(service_def))
+    evidence = tmp_path / "gp-evidence.json"
+
+    rc = main(["gpservice", str(path), "--url", "https://x/GPServer", "--evidence", str(evidence)])
+
+    assert rc == 0
+    agg = json.loads(evidence.read_text())
+    assert agg["schema"] == "honua.migration.arcpy.gp-service-parity-evidence/v1"
+    assert agg["url"] == "https://x/GPServer"
+    assert agg["summary"]["taskCount"] == 2
+    assert agg["summary"]["translatableCalls"] == 1
 
 
 def test_cli_run_executes_via_mock_transport(tmp_path: Path, monkeypatch) -> None:

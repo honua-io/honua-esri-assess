@@ -940,6 +940,166 @@ _register(
     )
 )
 
+# ---------------------------------------------------------------------------
+# Expanded translation coverage (honua-sdk-python#82).
+#
+# These tools have a known Honua OGC process mapping but their closest target is
+# NOT in the reconciled server's job-executable catalog yet, so they classify as
+# ``"manual-review"`` (supported, never claiming a server-runnable migration).
+# They grow how much of a customer's ArcPy inventory the codemod can *recognize
+# and translate* (OGC payload + reason) without inflating executable coverage --
+# the spec-level guard ``test_new_specs_do_not_inflate_executable_catalog``
+# keeps job_process_id out of these.
+# ---------------------------------------------------------------------------
+_register(
+    _ToolSpec(
+        family="management",
+        tool="MultipartToSinglepart",
+        process_id="multipart-to-singlepart",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("out_feature_class", "result", kind="output"),
+        ),
+        aliases=_aliases(("output", "result"), ("out_features", "result")),
+        notes=(
+            "Explodes multipart features into singlepart features; no "
+            "job-executable Honua process maps to it yet -- migrate manually.",
+        ),
+    )
+)
+_register(
+    _ToolSpec(
+        family="management",
+        tool="FeatureToLine",
+        process_id="feature-to-line",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("out_feature_class", "result", kind="output"),
+            _arg("cluster_tolerance", "cluster_tolerance"),
+            _arg("attributes", "attributes"),
+        ),
+        aliases=_aliases(("output", "result"), ("out_features", "result")),
+        notes=(
+            "Converts polygon/line features to lines at boundaries; no "
+            "job-executable Honua process maps to it yet -- migrate manually.",
+        ),
+    )
+)
+_register(
+    _ToolSpec(
+        family="management",
+        tool="FeatureToPolygon",
+        process_id="feature-to-polygon",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("out_feature_class", "result", kind="output"),
+            _arg("cluster_tolerance", "cluster_tolerance"),
+            _arg("attributes", "attributes"),
+            _arg("label_features", "label_features", kind="input"),
+        ),
+        aliases=_aliases(("output", "result"), ("out_features", "result")),
+        notes=(
+            "Builds polygons from enclosed line/polygon features; no "
+            "job-executable Honua process maps to it yet -- migrate manually.",
+        ),
+    )
+)
+_register(
+    _ToolSpec(
+        family="management",
+        tool="PolygonToLine",
+        process_id="polygon-to-line",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("out_feature_class", "result", kind="output"),
+            _arg("neighbor_option", "neighbor_option"),
+        ),
+        aliases=_aliases(("output", "result"), ("out_features", "result")),
+        notes=(
+            "Converts polygon boundaries to lines; no job-executable Honua "
+            "process maps to it yet -- migrate manually.",
+        ),
+    )
+)
+_register(
+    _ToolSpec(
+        family="cartography",
+        tool="SmoothPolygon",
+        process_id="smooth",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("out_feature_class", "result", kind="output"),
+            _arg("algorithm", "algorithm"),
+            _arg("tolerance", "tolerance"),
+            _arg("error_option", "error_option"),
+        ),
+        aliases=_aliases(("output", "result"), ("out_features", "result")),
+        notes=(
+            "Polygon smoothing (PAEK / bezier); no job-executable Honua process "
+            "maps to it yet -- migrate manually.",
+        ),
+    )
+)
+_register(
+    _ToolSpec(
+        family="cartography",
+        tool="SmoothLine",
+        process_id="smooth",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("out_feature_class", "result", kind="output"),
+            _arg("algorithm", "algorithm"),
+            _arg("tolerance", "tolerance"),
+            _arg("error_option", "error_option"),
+        ),
+        aliases=_aliases(("output", "result"), ("out_features", "result")),
+        notes=(
+            "Line smoothing (PAEK / bezier); no job-executable Honua process "
+            "maps to it yet -- migrate manually.",
+        ),
+    )
+)
+_register(
+    _ToolSpec(
+        family="editing",
+        tool="Densify",
+        process_id="densify",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("densification_method", "method"),
+            _arg("distance", "distance"),
+            _arg("max_deviation", "max_deviation"),
+            _arg("max_angle", "max_angle"),
+        ),
+        aliases=_aliases(("method", "method")),
+        notes=(
+            "ArcGIS Densify mutates in_features in place by adding vertices; no "
+            "job-executable Honua process maps to it yet -- migrate manually.",
+        ),
+    )
+)
+_register(
+    _ToolSpec(
+        family="analysis",
+        tool="Near",
+        process_id="near",
+        args=(
+            _arg("in_features", "input_features", kind="input"),
+            _arg("near_features", "near_features", kind="input"),
+            _arg("search_radius", "search_radius"),
+            _arg("location", "location"),
+            _arg("angle", "angle"),
+            _arg("method", "method"),
+        ),
+        aliases=_aliases(("method", "method")),
+        notes=(
+            "Computes the nearest feature and distance; ArcGIS Near mutates "
+            "in_features with NEAR_* fields. No job-executable Honua process "
+            "maps to it yet -- migrate manually.",
+        ),
+    )
+)
+
 _PAIRWISE_TOOL_ALIASES = {
     ("analysis", "pairwisebuffer"): ("analysis", "buffer"),
     ("analysis", "pairwiseclip"): ("analysis", "clip"),
@@ -953,6 +1113,7 @@ _LEGACY_SUFFIX_FAMILIES: Mapping[str, str] = {
     "management": "management",
     "conversion": "conversion",
     "cartography": "cartography",
+    "edit": "editing",
     "editing": "editing",
     "stats": "statistics",
     "statistics": "statistics",
@@ -966,6 +1127,7 @@ _MODULE_FAMILIES: Mapping[str, str] = {
     "management": "management",
     "conversion": "conversion",
     "cartography": "cartography",
+    "edit": "editing",
     "editing": "editing",
     "stats": "statistics",
     "statistics": "statistics",

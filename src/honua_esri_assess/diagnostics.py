@@ -175,6 +175,20 @@ class OutputWriteError(DiagnosticError):
         )
 
 
+class OutputExistsError(DiagnosticError):
+    """Raised when an output file already exists and ``--force`` was not set."""
+
+    exit_code = 20
+
+    def __init__(self, path: Path) -> None:
+        del path
+        super().__init__(
+            "Output file already exists; re-run with --force to overwrite it.",
+            code="output-exists",
+            scope="output",
+        )
+
+
 class SchemaValidationError(DiagnosticError):
     """Raised when an artifact fails schema validation."""
 

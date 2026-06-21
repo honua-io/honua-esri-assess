@@ -11,6 +11,7 @@ from honua_esri_assess.commands.common import (
     AdminUsageOption,
     AccessOutputOption,
     AccessValidateOption,
+    ForceOption,
     LogFormat,
     LogFormatOption,
     LogLevel,
@@ -47,6 +48,7 @@ def scan_agol(
     max_retries: MaxRetriesOption = 3,
     timeout: TimeoutOption = 30.0,
     validate: ValidateOption = False,
+    force: ForceOption = False,
 ) -> None:
     run_scan_command(
         handler_name="agol",
@@ -60,6 +62,7 @@ def scan_agol(
         max_retries=max_retries,
         timeout=timeout,
         validate=validate,
+        force=force,
     )
 
 
@@ -76,6 +79,7 @@ def scan_server(
     timeout: TimeoutOption = 30.0,
     validate: ValidateOption = False,
     admin_usage: AdminUsageOption = False,
+    force: ForceOption = False,
 ) -> None:
     run_scan_command(
         handler_name="server",
@@ -90,6 +94,7 @@ def scan_server(
         timeout=timeout,
         validate=validate,
         admin_usage=admin_usage,
+        force=force,
     )
 
 
@@ -105,6 +110,7 @@ def scan_filegdb(
     max_retries: MaxRetriesOption = 3,
     timeout: TimeoutOption = 30.0,
     validate: ValidateOption = False,
+    force: ForceOption = False,
 ) -> None:
     run_scan_command(
         handler_name="filegdb",
@@ -118,6 +124,7 @@ def scan_filegdb(
         max_retries=max_retries,
         timeout=timeout,
         validate=validate,
+        force=force,
     )
 
 
@@ -139,6 +146,7 @@ def scan_filegdb_workspace(
     max_retries: MaxRetriesOption = 3,
     timeout: TimeoutOption = 30.0,
     validate: ValidateOption = False,
+    force: ForceOption = False,
 ) -> None:
     run_scan_command(
         handler_name="filegdb-workspace",
@@ -152,6 +160,7 @@ def scan_filegdb_workspace(
         max_retries=max_retries,
         timeout=timeout,
         validate=validate,
+        force=force,
     )
 
 
@@ -174,6 +183,7 @@ def scan_rbac(
     max_retries: MaxRetriesOption = 3,
     timeout: TimeoutOption = 30.0,
     validate: AccessValidateOption = False,
+    force: ForceOption = False,
 ) -> None:
     run_rbac_scan_command(
         target=target,
@@ -187,4 +197,5 @@ def scan_rbac(
         max_retries=max_retries,
         timeout=timeout,
         validate=validate,
+        force=force,
     )

@@ -18,6 +18,11 @@ from honua_esri_assess.diagnostics import (
     handle_unexpected_error,
     render_error,
 )
+from honua_esri_assess.output_io import (
+    OutputExistsError,
+    atomic_write_text,
+    ensure_overwrite_allowed,
+)
 from honua_esri_assess.report.validation import validate_footprint_v01
 
 
@@ -43,6 +48,13 @@ def report_command(
             help="Fail if the input does not validate against EsriFootprint v0.1.",
         ),
     ] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            help="Overwrite the output file if it already exists.",
+        ),
+    ] = False,
 ) -> None:
     try:
         footprint = _read_footprint(input_path)
@@ -51,7 +63,7 @@ def report_command(
             footprint,
             options=report_module.RenderOptions(schema_warnings=schema_warnings),
         )
-        _write_report(markdown, output)
+        _write_report(markdown, output, force=force)
     except (ReportInputError, ReportSchemaValidationError, ReportRenderError) as exc:
         typer.echo(render_error(exc), err=True)
         raise typer.Exit(exc.exit_code) from None
@@ -101,14 +113,21 @@ def _schema_warnings(
     return failures
 
 
-def _write_report(markdown: str, output: str) -> None:
+def _write_report(markdown: str, output: str, *, force: bool) -> None:
     if output == "-":
         typer.echo(markdown, nl=False)
         return
     output_path = Path(output)
     try:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(markdown, encoding="utf-8")
+        ensure_overwrite_allowed(output_path, force=force)
+    except OutputExistsError as exc:
+        raise ReportInputError(
+            "Report output already exists; re-run with --force to overwrite it.",
+            code="report.input.exists",
+            exit_code=2,
+        ) from exc
+    try:
+        atomic_write_text(output_path, markdown)
     except OSError as exc:
         raise ReportInputError(
             "Could not write readiness report.",

@@ -17,10 +17,16 @@ from honua_esri_assess import __version__
 from honua_esri_assess.diagnostics import (
     Diagnostic,
     DiagnosticError,
+    OutputExistsError,
     OutputWriteError,
     handle_unexpected_error,
     print_diagnostic,
     print_diagnostic_error,
+)
+from honua_esri_assess.output_io import (
+    OutputExistsError as _OutputExists,
+    atomic_write_text,
+    ensure_overwrite_allowed,
 )
 from honua_esri_assess.footprint.access import (
     access_footprint_to_json,
@@ -69,6 +75,7 @@ class ScanOptions:
     admin_usage: bool = False
     token: str | None = field(default=None, repr=False)
     rbac_kind: str = "portal"
+    force: bool = False
 
 
 @dataclass(frozen=True)
@@ -153,6 +160,13 @@ ValidateOption = Annotated[
         help="Validate the generated EsriFootprint.json against the bundled schema.",
     ),
 ]
+ForceOption = Annotated[
+    bool,
+    typer.Option(
+        "--force",
+        help="Overwrite the output file if it already exists.",
+    ),
+]
 AdminUsageOption = Annotated[
     bool,
     typer.Option(
@@ -206,6 +220,7 @@ def build_scan_options(
     validate: bool,
     admin_usage: bool = False,
     rbac_kind: str = "portal",
+    force: bool = False,
 ) -> ScanOptions:
     configure_logging(level=log_level.value, log_format=log_format.value)
     token = os.environ.get(token_env) if token_env else None
@@ -225,6 +240,7 @@ def build_scan_options(
         admin_usage=admin_usage,
         token=token,
         rbac_kind=rbac_kind,
+        force=force,
     )
 
 
@@ -232,10 +248,12 @@ def persist_scan_result(options: ScanOptions, result: ScanResult) -> None:
     if options.validate:
         validate_footprint(result.footprint)
     try:
-        options.output.parent.mkdir(parents=True, exist_ok=True)
-        with options.output.open("w", encoding="utf-8") as fh:
-            json.dump(result.footprint, fh, indent=2, sort_keys=True)
-            fh.write("\n")
+        ensure_overwrite_allowed(options.output, force=options.force)
+    except _OutputExists as exc:
+        raise OutputExistsError(options.output) from exc
+    serialized = json.dumps(result.footprint, indent=2, sort_keys=True) + "\n"
+    try:
+        atomic_write_text(options.output, serialized)
     except OSError as exc:
         raise OutputWriteError(options.output) from exc
 
@@ -260,6 +278,7 @@ def run_scan_command(
     timeout: float,
     validate: bool,
     admin_usage: bool = False,
+    force: bool = False,
 ) -> None:
     from honua_esri_assess.commands.scan_handlers import get_handler
 
@@ -275,6 +294,7 @@ def run_scan_command(
         timeout=timeout,
         validate=validate,
         admin_usage=admin_usage,
+        force=force,
     )
     try:
         result = get_handler(handler_name).run(options)
@@ -308,8 +328,11 @@ def persist_access_scan_result(options: ScanOptions, result: ScanResult) -> None
         sys.stdout.write(serialized)
     else:
         try:
-            options.output.parent.mkdir(parents=True, exist_ok=True)
-            options.output.write_text(serialized, encoding="utf-8")
+            ensure_overwrite_allowed(options.output, force=options.force)
+        except _OutputExists as exc:
+            raise OutputExistsError(options.output) from exc
+        try:
+            atomic_write_text(options.output, serialized)
         except OSError as exc:
             raise OutputWriteError(options.output) from exc
         typer.echo(f"wrote {options.output}", err=True)
@@ -336,6 +359,7 @@ def run_rbac_scan_command(
     max_retries: int,
     timeout: float,
     validate: bool,
+    force: bool = False,
 ) -> None:
     from honua_esri_assess.commands.scan_handlers import get_handler
 
@@ -351,6 +375,7 @@ def run_rbac_scan_command(
         timeout=timeout,
         validate=validate,
         rbac_kind=kind.value,
+        force=force,
     )
     try:
         result = get_handler("rbac").run(options)

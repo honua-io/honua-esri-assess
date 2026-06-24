@@ -522,8 +522,15 @@ def _server_users(payload: Any) -> list[AccessUser]:
         username = raw.get("username")
         if not isinstance(username, str):
             continue
-        roles = raw.get("roles") or []
-        role_id = str(roles[0]) if roles else "user"
+        roles = raw.get("roles")
+        if isinstance(roles, list) and roles:
+            role_id = str(roles[0])
+        elif isinstance(roles, str) and roles.strip():
+            # Some Enterprise variants return a comma-delimited string instead
+            # of a list. Take the first entry rather than the first character.
+            role_id = roles.split(",")[0].strip()
+        else:
+            role_id = "user"
         users.append(
             AccessUser(
                 username=username,

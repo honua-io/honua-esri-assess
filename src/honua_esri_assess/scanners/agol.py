@@ -213,7 +213,10 @@ def _sharing_level(value: Any) -> str:
 
 
 def _modified_timestamp(value: Any) -> str:
-    if isinstance(value, int):
+    # Esri epoch-millis can arrive as a JSON int or float; accept both but
+    # exclude bool (a subclass of int) so `modified: true` does not become a
+    # timestamp.
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
         return datetime.fromtimestamp(value / 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if isinstance(value, str) and value.endswith("Z"):
         return value

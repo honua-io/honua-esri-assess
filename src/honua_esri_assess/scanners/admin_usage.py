@@ -158,6 +158,29 @@ class AdminUsageCollector:
         return _interpret(response, scope=scope, diagnostics=diagnostics)
 
 
+def _coerce_error_code(value: Any) -> int:
+    """Best-effort parse of an Esri error ``code`` into an int.
+
+    Esri error bodies usually carry a numeric ``code``, but some Enterprise
+    variants return a non-numeric or absent value. Parsing must never raise: a
+    bad shape degrades to ``0`` (the generic "unknown error" path) rather than
+    aborting the scan with an uncaught ``ValueError``.
+    """
+
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return 0
+    return 0
+
+
 def _interpret(
     response: HttpResponse,
     *,
@@ -169,7 +192,7 @@ def _interpret(
     if status == 200 and isinstance(body, dict):
         error_obj = body.get("error")
         if isinstance(error_obj, dict):
-            code = int(error_obj.get("code") or 0)
+            code = _coerce_error_code(error_obj.get("code"))
             return _handle_error_code(code, scope=scope, diagnostics=diagnostics)
         return body
     if status in {401, 403}:

@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from honua_esri_assess import __version__
 from honua_esri_assess.diagnostics import Diagnostic
+from honua_esri_assess.output_io import atomic_write_text
 from honua_esri_assess.redaction import sanitize_handoff_url
 
 SCHEMA_VERSION = "v0.2"
@@ -87,15 +88,13 @@ def footprint_to_json(footprint: Mapping[str, Any]) -> str:
 
 
 def write_footprint(footprint: Mapping[str, Any], output: Path) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(footprint_to_json(footprint), encoding="utf-8")
+    atomic_write_text(output, footprint_to_json(footprint))
 
 
 def write_footprint_json(footprint: Mapping[str, Any], output_path: Path) -> None:
     """Write an EsriFootprint.json artifact."""
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(footprint_to_json(footprint), encoding="utf-8")
+    atomic_write_text(output_path, footprint_to_json(footprint))
 
 
 def path_hash(value: str | Path) -> str:

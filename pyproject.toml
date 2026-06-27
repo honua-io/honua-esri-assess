@@ -42,7 +42,7 @@ honua-esri-assess = "honua_esri_assess.cli:main"
 
 [project.optional-dependencies]
 filegdb = [
-  "pyogrio>=0.12,<0.13",
+  "pyogrio>=0.12,<0.14",
 ]
 dev = [
   "build>=1.2,<2",

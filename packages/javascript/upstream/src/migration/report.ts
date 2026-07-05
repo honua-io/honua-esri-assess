@@ -192,6 +192,7 @@ function summarizeManualTodosByKind(todos: readonly MigrationTodo[]): Record<Cod
     "wms-layer": 0,
     "wfs-layer": 0,
     "imagery-layer": 0,
+    "geometry-engine": 0,
   };
 
   for (const todo of todos) {

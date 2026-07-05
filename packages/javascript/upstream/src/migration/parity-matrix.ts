@@ -78,6 +78,8 @@ const HONUA_MAPLIBRE_NOTE_OVERRIDES: Readonly<Partial<Record<CodemodConstructorK
     "FeatureTableCompat renders through the Honua widget host; MapLibre apps must wire layout/columns manually.",
   "web-map":
     "Static WebMap JSON literals are auto-rewritten to webmapJsonToMapLibreStyle({...}); dynamic / portal-loaded WebMaps still fall through to manual TODO.",
+  "geometry-engine":
+    "geometryEngine imports rewrite to the geometryEngineCompat shim (@honua/geometry); covered ops (buffer/intersect/union/difference/area/length/simplify/convexHull/contains/intersects) migrate cleanly, uncovered ops (geodesic densify, offset, cut, ?) keep a manual TODO.",
 });
 
 const BASE_MATRIX_ROWS: JsParityMatrixEntry[] = (Object.keys(CANONICAL_MODULE_BY_KIND) as CodemodConstructorKind[])

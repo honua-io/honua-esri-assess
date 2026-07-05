@@ -34,6 +34,28 @@ const ESRI_CONFIG_IMPORT_UNSUPPORTED_REASON = "esriConfig import shape is unsupp
 const IDENTITY_MANAGER_IMPORT_UNSUPPORTED_REASON =
   "IdentityManager import shape is unsupported for automatic migration.";
 const ESRI_REQUEST_IMPORT_UNSUPPORTED_REASON = "esriRequest import shape is unsupported for automatic migration.";
+const GEOMETRY_ENGINE_IMPORT_UNSUPPORTED_REASON =
+  "geometryEngine import shape is unsupported for automatic migration (expected a default or namespace import).";
+// Esri geometryEngine operations backed by the geometryEngineCompat shim
+// (@honua/geometry). Call sites of these ops migrate cleanly; anything else
+// (geodesic densify, offset, cut, generalize, relate, ?) keeps a manual TODO.
+const GEOMETRY_ENGINE_COVERED_OPS: ReadonlySet<string> = new Set([
+  "buffer",
+  "intersect",
+  "union",
+  "difference",
+  "geodesicArea",
+  "planarArea",
+  "geodesicLength",
+  "planarLength",
+  "simplify",
+  "convexHull",
+  "contains",
+  "intersects",
+]);
+function geometryEngineUncoveredOpReason(op: string): string {
+  return `geometryEngine.${op} is not covered by the geometryEngineCompat shim; requires manual migration.`;
+}
 const SHADOWED_IMPORT_CONSTRUCTOR_REASON =
   "Constructor identifier is shadowed by a local declaration; requires manual migration.";
 const FEATURE_LAYER_RENDERER_FIELD_CASE_REASON =
@@ -147,6 +169,7 @@ const ESRI_LEAFLET_COMPAT_FALLBACK_KINDS = new Set<CodemodConstructorKind>([
   "wms-layer",
   "wfs-layer",
   "imagery-layer",
+  "geometry-engine",
 ]);
 
 export type CodemodTarget = "honua-compat" | "esri-leaflet" | "honua-maplibre";
@@ -225,7 +248,8 @@ export type CodemodConstructorKind =
   | "geojson-layer"
   | "wms-layer"
   | "wfs-layer"
-  | "imagery-layer";
+  | "imagery-layer"
+  | "geometry-engine";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -619,6 +643,16 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     compatSymbol: "ImageryLayerCompat",
     arcGisModules: new Set(["@arcgis/core/layers/ImageryLayer", "@arcgis/core/layers/ImageryLayer.js"]),
   },
+  {
+    kind: "geometry-engine",
+    compatSymbol: "geometryEngineCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/geometry/geometryEngine",
+      "@arcgis/core/geometry/geometryEngine.js",
+      "@arcgis/core/geometry/geometryEngineAsync",
+      "@arcgis/core/geometry/geometryEngineAsync.js",
+    ]),
+  },
 ];
 
 const TARGET_SUPPORTED_KINDS: Readonly<Record<CodemodTarget, ReadonlySet<CodemodConstructorKind>>> = Object.freeze({
@@ -995,6 +1029,34 @@ function codemodFile(
   rewrittenKinds.push(...reactiveUtilsImportRewrite.rewrittenKinds);
   manualTodos.push(...reactiveUtilsImportRewrite.manualTodos);
   todoCommentEdits.push(...reactiveUtilsImportRewrite.todoCommentEdits);
+
+  const geometryEngineImportRewrite = rewriteGeometryEngineImports({
+    source,
+    sourceFile,
+    file,
+    compatImportPath,
+    annotateTodos,
+    target,
+  });
+  importEdits.push(...geometryEngineImportRewrite.edits);
+  rewrittenKinds.push(...geometryEngineImportRewrite.rewrittenKinds);
+  manualTodos.push(...geometryEngineImportRewrite.manualTodos);
+  todoCommentEdits.push(...geometryEngineImportRewrite.todoCommentEdits);
+
+  // Flag call sites of uncovered geometryEngine ops (covered ops resolve to the
+  // rewritten geometryEngineCompat import and need no TODO). Only when the
+  // import was actually rewritten to the compat shim (honua targets).
+  if (target !== "honua-maplibre") {
+    flagUncoveredGeometryEngineOps({
+      sourceFile,
+      source,
+      file,
+      annotateTodos,
+      localNames: collectGeometryEngineLocalNames(sourceFile),
+      manualTodos,
+      todoCommentEdits,
+    });
+  }
 
   walk(sourceFile, (node) => {
     if (isArcGisDynamicImportCall(node)) {
@@ -1627,6 +1689,235 @@ function rewriteReactiveUtilsImports(options: {
     manualTodos,
     todoCommentEdits,
   };
+}
+
+/**
+ * `geometryEngine` is a namespace/default module (like reactiveUtils), so it is
+ * rewritten import-first rather than by constructor. The default/namespace local
+ * name is aliased to the `geometryEngineCompat` (or `geometryEngineAsyncCompat`)
+ * export of the compat package; covered ops then resolve to the shim and
+ * uncovered ops are flagged per call site by {@link flagUncoveredGeometryEngineOps}.
+ */
+function rewriteGeometryEngineImports(options: {
+  source: string;
+  sourceFile: ts.SourceFile;
+  file: string;
+  compatImportPath: string;
+  annotateTodos: boolean;
+  target: CodemodTarget;
+}): {
+  edits: TextEdit[];
+  rewrittenKinds: CodemodConstructorKind[];
+  manualTodos: MigrationTodo[];
+  todoCommentEdits: TextEdit[];
+} {
+  const edits: TextEdit[] = [];
+  const rewrittenKinds: CodemodConstructorKind[] = [];
+  const manualTodos: MigrationTodo[] = [];
+  const todoCommentEdits: TextEdit[] = [];
+
+  for (const statement of options.sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "geometry-engine") {
+      continue;
+    }
+
+    if (options.target === "honua-maplibre") {
+      pushImportManualTodo(
+        options,
+        statement,
+        "geometry-engine",
+        HONUA_MAPLIBRE_UNSUPPORTED_IMPORT_REASON,
+        manualTodos,
+        todoCommentEdits,
+      );
+      continue;
+    }
+
+    const isAsync = /geometryEngineAsync(\.js)?$/.test(statement.moduleSpecifier.text);
+    const compatSymbol = isAsync ? "geometryEngineAsyncCompat" : "geometryEngineCompat";
+    const replacement = buildGeometryEngineCompatImport(
+      statement,
+      options.sourceFile,
+      options.compatImportPath,
+      compatSymbol,
+    );
+    if (!replacement) {
+      const nodeStart = statement.getStart(options.sourceFile);
+      const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: "geometry-engine",
+        file: options.file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: GEOMETRY_ENGINE_IMPORT_UNSUPPORTED_REASON,
+        difficulty: "complex",
+      });
+
+      if (options.annotateTodos) {
+        const lineStart = findLineStartOffset(options.source, nodeStart);
+        if (shouldInsertTodoComment(options.source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[geometry-engine]: ${GEOMETRY_ENGINE_IMPORT_UNSUPPORTED_REASON}\n`,
+          });
+        }
+      }
+      continue;
+    }
+
+    edits.push({
+      start: statement.getStart(options.sourceFile),
+      end: statement.getEnd(),
+      text: replacement,
+    });
+    rewrittenKinds.push("geometry-engine");
+  }
+
+  return {
+    edits,
+    rewrittenKinds,
+    manualTodos,
+    todoCommentEdits,
+  };
+}
+
+function buildGeometryEngineCompatImport(
+  statement: ts.ImportDeclaration,
+  sourceFile: ts.SourceFile,
+  compatImportPath: string,
+  compatSymbol: string,
+): string | undefined {
+  const importClause = statement.importClause;
+  if (!importClause) {
+    return undefined;
+  }
+
+  const specifiers: string[] = [];
+  if (importClause.name) {
+    specifiers.push(renderImportSpecifier(compatSymbol, importClause.name.text));
+  }
+
+  const namedBindings = importClause.namedBindings;
+  if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+    specifiers.push(renderImportSpecifier(compatSymbol, namedBindings.name.text));
+  } else if (namedBindings && ts.isNamedImports(namedBindings)) {
+    for (const element of namedBindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      const localName = element.name.text;
+      if (importedName === "default" || importedName === compatSymbol) {
+        specifiers.push(renderImportSpecifier(compatSymbol, localName));
+        continue;
+      }
+      return undefined;
+    }
+  }
+
+  const uniqueSpecifiers = Array.from(new Set(specifiers));
+  if (uniqueSpecifiers.length === 0) {
+    return undefined;
+  }
+
+  return `import { ${uniqueSpecifiers.join(", ")} } from "${compatImportPath}";`;
+}
+
+/**
+ * Collect the local identifier names that resolve to a geometryEngine import
+ * binding (default or namespace import). Used to scope the uncovered-op scan to
+ * genuine `<geometryEngine>.<op>()` call sites.
+ */
+function collectGeometryEngineLocalNames(sourceFile: ts.SourceFile): Set<string> {
+  const names = new Set<string>();
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "geometry-engine") {
+      continue;
+    }
+    const importClause = statement.importClause;
+    if (!importClause) {
+      continue;
+    }
+    if (importClause.name) {
+      names.add(importClause.name.text);
+    }
+    const namedBindings = importClause.namedBindings;
+    if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+      names.add(namedBindings.name.text);
+    } else if (namedBindings && ts.isNamedImports(namedBindings)) {
+      for (const element of namedBindings.elements) {
+        const importedName = element.propertyName?.text ?? element.name.text;
+        if (importedName === "default" || importedName === "geometryEngineCompat") {
+          names.add(element.name.text);
+        }
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * Emit a manual TODO for every `<geometryEngine>.<op>()` call whose op is not
+ * covered by the geometryEngineCompat shim. Covered ops are left untouched (they
+ * resolve to the rewritten import), so only genuinely unsupported operations
+ * keep a manual-intervention warning.
+ */
+function flagUncoveredGeometryEngineOps(options: {
+  sourceFile: ts.SourceFile;
+  source: string;
+  file: string;
+  annotateTodos: boolean;
+  localNames: ReadonlySet<string>;
+  manualTodos: MigrationTodo[];
+  todoCommentEdits: TextEdit[];
+}): void {
+  if (options.localNames.size === 0) {
+    return;
+  }
+  const seen = new Set<string>();
+  walk(options.sourceFile, (node) => {
+    if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) {
+      return;
+    }
+    const access = node.expression;
+    if (!ts.isIdentifier(access.expression) || !options.localNames.has(access.expression.text)) {
+      return;
+    }
+    const op = access.name.text;
+    if (GEOMETRY_ENGINE_COVERED_OPS.has(op)) {
+      return;
+    }
+    const nodeStart = node.getStart(options.sourceFile);
+    const dedupeKey = `${nodeStart}:${op}`;
+    if (seen.has(dedupeKey)) {
+      return;
+    }
+    seen.add(dedupeKey);
+    const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
+    const reason = geometryEngineUncoveredOpReason(op);
+    options.manualTodos.push({
+      kind: "geometry-engine",
+      file: options.file,
+      line: location.line + 1,
+      column: location.character + 1,
+      reason,
+      difficulty: "moderate",
+    });
+    if (options.annotateTodos) {
+      const lineStart = findLineStartOffset(options.source, nodeStart);
+      if (shouldInsertTodoComment(options.source, lineStart, nodeStart)) {
+        options.todoCommentEdits.push({
+          start: lineStart,
+          end: lineStart,
+          text: `// ${TODO_MARKER}[geometry-engine]: ${reason}\n`,
+        });
+      }
+    }
+  });
 }
 
 function rewriteEsriRequestImports(options: {
@@ -2410,6 +2701,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "wms-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "wfs-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "imagery-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "geometry-engine": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -4086,6 +4378,11 @@ function isSafeConstructorCall(
       return {
         ok: false,
         reason: "ReactiveUtils is not a constructor and requires import-based migration.",
+      };
+    case "geometry-engine":
+      return {
+        ok: false,
+        reason: "geometryEngine is not a constructor and requires import-based migration.",
       };
     case "feature-filter":
       return isSafeAllowedPropertiesCall(node, "FeatureFilter", FEATURE_FILTER_ALLOWED_PROPS);

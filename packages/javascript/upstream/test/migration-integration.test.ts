@@ -177,6 +177,7 @@ describe("arcgis migration integration", () => {
       "wms-layer": 0,
       "wfs-layer": 0,
       "imagery-layer": 0,
+      "geometry-engine": 0,
     });
     expect(report.manualTodoReasons).toHaveLength(0);
     expect(report.unhandledArcGisModules).toHaveLength(0);

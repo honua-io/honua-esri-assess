@@ -100,6 +100,7 @@ function createReport(): JsMigrationReport {
           "wms-layer": { total: 0, autoMigrated: 0, manual: 0 },
           "wfs-layer": { total: 0, autoMigrated: 0, manual: 0 },
           "imagery-layer": { total: 0, autoMigrated: 0, manual: 0 },
+          "geometry-engine": { total: 0, autoMigrated: 0, manual: 0 },
         },
       },
       fileResults: [],
@@ -212,6 +213,7 @@ function createReport(): JsMigrationReport {
       "wms-layer": 0,
       "wfs-layer": 0,
       "imagery-layer": 0,
+      "geometry-engine": 0,
     },
     manualTodoReasons: [],
     unhandledArcGisModules: [

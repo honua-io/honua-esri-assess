@@ -30,7 +30,7 @@ mgmt.Project("roads_clip", "roads_wgs84", 4326)
 ap.management.SelectLayerByAttribute("roads_layer", "NEW_SELECTION", "STATUS = 'OPEN'")
 with ap.da.SearchCursor("roads", ["OID@", "STATUS"]) as rows:
     pass
-ap.sa.Slope("elevation")
+ap.sa.Kriging("stations", "PredZ")
 """
 
 
@@ -43,7 +43,7 @@ def test_scan_arcpy_source_classifies_aliases_legacy_tools_and_unsupported_calls
         ("arcpy.management.Project", "management", "Project", True),
         ("arcpy.management.SelectLayerByAttribute", "management", "SelectLayerByAttribute", True),
         ("arcpy.da.SearchCursor", "data-access", "SearchCursor", False),
-        ("arcpy.sa.Slope", "spatial-analyst", "Slope", False),
+        ("arcpy.sa.Kriging", "spatial-analyst", "Kriging", False),
     ]
     assert report.calls[0].args == ("roads", "roads_buffer", "25 Meters")
     assert report.calls[0].kwargs == {"dissolve_option": "ALL"}

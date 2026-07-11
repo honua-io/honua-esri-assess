@@ -42,7 +42,7 @@ from honua_migrate.code.python.pyt import (
 
 def test_unmapped_call_has_no_manual_review_reason() -> None:
     # arcpy.py:106 -- manual_review_reason returns None when there is no spec.
-    call = ArcPyCall(qualified_name="arcpy.sa.Slope", family="spatial-analyst", tool="Slope", line=1, column=0)
+    call = ArcPyCall(qualified_name="arcpy.sa.Kriging", family="spatial-analyst", tool="Kriging", line=1, column=0)
     assert call.status == "unsupported"
     assert call.manual_review_reason is None
     assert call.process_id is None

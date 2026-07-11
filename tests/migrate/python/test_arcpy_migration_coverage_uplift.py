@@ -103,7 +103,7 @@ class TestSerializers:
 
     def test_migration_plan_to_dict(self) -> None:
         plan = translate_arcpy_source(
-            "import arcpy\narcpy.analysis.Buffer('a', 'b', '1 Meter')\narcpy.sa.Slope('dem')\n",
+            "import arcpy\narcpy.analysis.Buffer('a', 'b', '1 Meter')\narcpy.sa.Kriging('pts', 'z')\n",
         )
         as_dict = plan.to_dict()
         assert as_dict["report"]["supportedCount"] == 1
@@ -249,9 +249,9 @@ class TestTranslator:
     def test_translate_unsupported_call_raises(self) -> None:
         # Manually build a call that is NOT supported and not aliased.
         unsupported = ArcPyCall(
-            qualified_name="arcpy.sa.Slope",
+            qualified_name="arcpy.sa.Kriging",
             family="spatial-analyst",
-            tool="Slope",
+            tool="Kriging",
             line=1,
             column=0,
         )
@@ -274,9 +274,9 @@ def test_translate_call_unsupported_raises() -> None:
     from honua_migrate.code.python.arcpy import _translate_call
 
     unsupported = ArcPyCall(
-        qualified_name="arcpy.sa.Slope",
+        qualified_name="arcpy.sa.Kriging",
         family="spatial-analyst",
-        tool="Slope",
+        tool="Kriging",
         line=1,
         column=0,
     )

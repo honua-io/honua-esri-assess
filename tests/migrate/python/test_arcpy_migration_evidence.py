@@ -21,7 +21,7 @@ from honua_migrate.code.python import (
 # an executable managed analytics target (spatial-join, one-to-one form), a
 # known-but-not-job-executable target (Erase -> manual-review due to
 # feature-class-vs-single-geometry semantics), and a wholly unmapped tool
-# (sa.Slope).
+# (sa.Kriging, an honest honua_gp.sa stub with no working mapping).
 MIXED_SOURCE = """
 import arcpy
 
@@ -31,7 +31,7 @@ arcpy.management.Dissolve("rb", "rb_d", "CLASS")
 arcpy.management.RepairGeometry("rb_d")
 arcpy.analysis.SpatialJoin("a", "b", "joined")
 arcpy.analysis.Erase("a", "b", "c")
-arcpy.sa.Slope("dem")
+arcpy.sa.Kriging("stations", "PredZ")
 """
 
 
@@ -106,8 +106,8 @@ def test_status_partitions_into_translatable_manual_unsupported() -> None:
     assert ("analysis", "SpatialJoin") in translatable
     # Erase is mapped (supported) but not job-executable -> manual-review.
     assert ("analysis", "Erase") in manual
-    # sa.Slope has no Honua mapping at all.
-    assert ("spatial-analyst", "Slope") in unsupported
+    # sa.Kriging is an honest honua_gp.sa stub -- no working Honua mapping.
+    assert ("spatial-analyst", "Kriging") in unsupported
     # The three buckets are disjoint.
     assert translatable.isdisjoint(manual)
     assert translatable.isdisjoint(unsupported)
@@ -168,7 +168,7 @@ def test_parity_evidence_report_shape_and_coverage() -> None:
     # Buffer, SimplifyPolygon, Dissolve, RepairGeometry, SpatialJoin (1:1) = 5.
     assert summary["translatableCalls"] == 5
     assert summary["manualReviewCalls"] == 1  # Erase
-    assert summary["unsupportedCalls"] == 1  # Slope
+    assert summary["unsupportedCalls"] == 1  # Kriging
     assert summary["coveragePercent"] == round(100.0 * 5 / 7, 2)
     assert summary["executableProcessIds"] == sorted(EXECUTABLE_PROCESS_IDS)
 
@@ -183,11 +183,11 @@ def test_parity_evidence_report_shape_and_coverage() -> None:
     assert "payload" not in erase
     assert erase["reason"]
     # Unsupported calls carry a reason explaining there is no mapping.
-    slope = by_tool[("spatial-analyst", "Slope")]
-    assert slope["status"] == "unsupported"
-    assert slope["processId"] is None
-    assert slope["jobProcessId"] is None
-    assert "No Honua process mapping" in slope["reason"]
+    kriging = by_tool[("spatial-analyst", "Kriging")]
+    assert kriging["status"] == "unsupported"
+    assert kriging["processId"] is None
+    assert kriging["jobProcessId"] is None
+    assert "No Honua process mapping" in kriging["reason"]
 
     tool_status = {(t["family"], t["tool"]): t for t in evidence["toolStatus"]}
     assert tool_status[("analysis", "Buffer")]["status"] == "translatable"

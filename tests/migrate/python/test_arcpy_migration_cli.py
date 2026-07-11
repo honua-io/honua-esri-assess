@@ -8,13 +8,13 @@ from pathlib import Path
 from honua_migrate.code.python._cli import main
 
 # Buffer -> translatable (geometry.buffer); Erase -> manual-review
-# (feature-class-vs-single-geometry semantics, honua-server#1228); Slope ->
-# unsupported (no mapping).
+# (feature-class-vs-single-geometry semantics, honua-server#1228); Kriging ->
+# unsupported (an honest honua_gp.sa stub with no working mapping).
 SCRIPT = """
 import arcpy
 arcpy.analysis.Buffer("roads", "roads_buffer", "25 Meters")
 arcpy.analysis.Erase("a", "b", "c")
-arcpy.sa.Slope("dem")
+arcpy.sa.Kriging("stations", "PredZ")
 """
 
 PYT = '''
@@ -57,7 +57,7 @@ def test_cli_scan_writes_classified_report(tmp_path: Path) -> None:
     statuses = {(c["tool"], c["status"]) for c in report["calls"]}
     assert ("Buffer", "translatable") in statuses
     assert ("Erase", "manual-review") in statuses
-    assert ("Slope", "unsupported") in statuses
+    assert ("Kriging", "unsupported") in statuses
     assert report["translatableCount"] == 1
     assert report["manualReviewCount"] == 1
     assert report["unsupportedCount"] == 1

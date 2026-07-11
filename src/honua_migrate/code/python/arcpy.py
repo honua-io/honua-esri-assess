@@ -1100,6 +1100,302 @@ _register(
     )
 )
 
+# ---------------------------------------------------------------------------
+# Raster / Spatial Analyst tools (honua-sdk-python raster codemod).
+#
+# PR #175 added ``honua_gp.sa`` -- an ``arcpy.sa``-style surface wrapping
+# honua-server's raster/surface GDAL-worker processes (and re-exporting the four
+# raster Data Management tools under ``honua_gp.management``). This block teaches
+# the codemod to recognize the arcpy raster tools those 16 working wrappers
+# cover and to map each onto its honua-server raster process id + honua_gp.sa
+# migration target.
+#
+# HONEST-CLASSIFICATION CONTRACT: raster/surface process ids 404 on *direct* OGC
+# API Processes execution -- ``honua_gp.sa`` auto-wraps each as a ``geoprocess``
+# step inside the canonical ``honua-geoprocessing`` plan before submitting. They
+# are therefore NOT part of the reconciled server's job-executable catalog
+# (:data:`EXECUTABLE_PROCESS_IDS`), so every raster spec below is registered
+# WITHOUT a ``job_process_id`` and classifies as ``"manual-review"``: the codemod
+# recognizes the tool and names its ``honua_gp.sa`` migration target, but never
+# claims a bare-OGC server-runnable migration. This mirrors ``honua_gp._compat``,
+# where these same 16 tools are ``supported``/``partial``.
+#
+# The three ``honua_gp.sa`` STUBS -- Kriging, Histogram, SpectralIndex -- are
+# DELIBERATELY left unregistered so they classify as ``"unsupported"`` (no
+# mapping). ``honua_gp.sa.Kriging`` / ``Histogram`` / ``SpectralIndex`` raise
+# ``HonuaGpUnsupportedError`` at runtime because honua-server never produces
+# output for them, so mapping them -- even as manual-review -- would emit a
+# translation payload for a guaranteed-failing call: exactly the overclaim #175
+# guarded against when it reclassified Kriging to a stub. Kriging users should
+# migrate to ``honua_gp.sa.Idw`` (a working IDW interpolation) instead; surfacing
+# Kriging as unsupported reports the gap at translation time rather than
+# deferring a guaranteed runtime failure.
+# ---------------------------------------------------------------------------
+
+
+def _raster_notes(honua_target: str, process_id: str) -> tuple[str, ...]:
+    """Standard manual-review note naming the honua_gp.sa migration target."""
+
+    return (
+        f"Raster/Spatial Analyst tool: migrate to {honua_target} (honua-server "
+        f"{process_id!r}), which runs the raster process as a geoprocess step "
+        "inside the honua-geoprocessing plan. Raster process ids 404 on direct "
+        "OGC API Processes execution and are not in the reconciled server's "
+        "job-executable catalog, so this stays manual-review -- recognized and "
+        "mapped to a honua_gp.sa target, never claimed as a bare-OGC "
+        "server-runnable migration.",
+    )
+
+
+def _register_raster(
+    family: str,
+    tool: str,
+    process_id: str,
+    args: tuple[_ArgSpec, ...],
+    aliases: Mapping[str, str] | None = None,
+) -> None:
+    """Register one raster tool spec.
+
+    ``args`` MUST list the tool's real arcpy positional signature in order so a
+    positional argument binds to the correct honua input/output. In particular,
+    only a positional that is genuinely an arcpy output dataset may carry
+    ``kind="output"`` -- most Spatial Analyst raster tools return a ``Raster``
+    and have NO output positional, and honua-server's raster processes take no
+    output-path input at all (their result is an artifact). A positional that is
+    a required input (e.g. Viewshed's observer features) or a non-output flag
+    (e.g. Reclassify's ``missing_values``) must never be slotted as an output.
+    """
+
+    # The honua_gp migration target is derived from the namespace: the four
+    # raster Data Management tools live under honua_gp.management, every other
+    # (Spatial Analyst) tool under honua_gp.sa.
+    surface = "management" if family == "management" else "sa"
+    honua_target = f"honua_gp.{surface}.{tool}"
+    _register(
+        _ToolSpec(
+            family=family,
+            tool=tool,
+            process_id=process_id,
+            # No job_process_id: raster ids are not bare-OGC job-executable.
+            args=args,
+            aliases=dict(aliases) if aliases else {},
+            notes=_raster_notes(honua_target, process_id),
+        )
+    )
+
+
+# -- Surface (DEM-derived) tools -- arcpy.sa.* -----------------------------
+_register_raster(
+    "spatial-analyst",
+    "Slope",
+    "surface.slope",
+    # arcpy: Slope(in_raster, {output_measurement}, {z_factor}, ...) -> Raster.
+    # No output positional (the raster is the return value).
+    args=(
+        _arg("in_raster", "source", kind="input"),
+        _arg("output_measurement", "units"),
+        _arg("z_factor", "zFactor"),
+    ),
+    aliases=_aliases(("output_measurement", "units"), ("z_factor", "zFactor")),
+)
+_register_raster(
+    "spatial-analyst",
+    "Aspect",
+    "surface.aspect",
+    args=(_arg("in_raster", "source", kind="input"),),
+)
+_register_raster(
+    "spatial-analyst",
+    "Hillshade",
+    "surface.hillshade",
+    # arcpy: Hillshade(in_raster, {azimuth}, {altitude}, {model_shadows},
+    # {z_factor}) -> Raster. model_shadows sits between altitude and z_factor;
+    # it must occupy positional 3 so a positional z_factor lands in slot 4.
+    args=(
+        _arg("in_raster", "source", kind="input"),
+        _arg("azimuth", "azimuth"),
+        _arg("altitude", "altitude"),
+        _arg("model_shadows", "modelShadows"),
+        _arg("z_factor", "zFactor"),
+    ),
+    aliases=_aliases(("z_factor", "zFactor")),
+)
+_register_raster(
+    "spatial-analyst",
+    "Contour",
+    "surface.contour",
+    args=(
+        _arg("in_raster", "source", kind="input"),
+        _arg("out_polyline_features", "result", kind="output"),
+        _arg("contour_interval", "interval"),
+        _arg("base_contour", "base"),
+    ),
+    aliases=_aliases(("interval", "interval"), ("output", "result")),
+)
+_register_raster(
+    "spatial-analyst",
+    "Viewshed",
+    "surface.viewshed",
+    # arcpy: Viewshed(in_raster, in_observer_features, {out_agl_raster},
+    # {z_factor}, ...) -> visibility Raster. Positional 1 is the REQUIRED
+    # observer feature INPUT (not an output); honua-server's surface.viewshed
+    # instead wants observerX/observerY coordinates, so the observer dataset is
+    # surfaced as an input the migration must convert -- never as an output.
+    args=(
+        _arg("in_raster", "source", kind="input"),
+        _arg("in_observer_features", "observerFeatures", kind="input"),
+        _arg("out_agl_raster", "result", kind="output"),
+        _arg("z_factor", "zFactor"),
+    ),
+    aliases=_aliases(("out_agl_raster", "result")),
+)
+# Roughness / TPI / TRI have no faithful standalone arcpy GP tool (honua_gp.sa
+# exposes them as surface derivatives) -- their only input is the source raster
+# plus a keyword window_radius, and they return a Raster, so there is NO output
+# positional to model. Mapping a positional to an output here would wrongly
+# claim slot 1 is an output path.
+_register_raster(
+    "spatial-analyst",
+    "Roughness",
+    "surface.roughness",
+    args=(_arg("in_raster", "source", kind="input"),),
+    aliases=_aliases(("window_radius", "windowRadius"), ("neighborhood", "windowRadius")),
+)
+_register_raster(
+    "spatial-analyst",
+    "TPI",
+    "surface.rugosity-tpi",
+    args=(_arg("in_raster", "source", kind="input"),),
+    aliases=_aliases(("window_radius", "windowRadius")),
+)
+_register_raster(
+    "spatial-analyst",
+    "TRI",
+    "surface.rugosity-tri",
+    args=(_arg("in_raster", "source", kind="input"),),
+    aliases=_aliases(("window_radius", "windowRadius")),
+)
+
+# -- Raster tools -- arcpy.sa.* --------------------------------------------
+_register_raster(
+    "spatial-analyst",
+    "Reclassify",
+    "raster.reclassify",
+    # arcpy: Reclassify(in_raster, reclass_field, remap, {missing_values}) ->
+    # Raster. Positional 3 is missing_values (a DATA/NODATA flag), NOT an output
+    # path -- the tool returns its raster, so there is no output positional.
+    args=(
+        _arg("in_raster", "source", kind="input"),
+        _arg("reclass_field", "reclassField"),
+        _arg("remap", "remap"),
+        _arg("missing_values", "missingValues"),
+    ),
+    aliases=_aliases(("remap", "remap")),
+)
+_register_raster(
+    "spatial-analyst",
+    "RasterCalculator",
+    "raster.map-algebra",
+    # arcpy: RasterCalculator(rasters, input_names, expression, {output_raster},
+    # ...). Positional 0 is the raster LIST (-> honua-server 'sources'),
+    # positional 1 the band-variable names, positional 2 the expression, and
+    # only positional 3 (output_raster) is the output. The earlier template
+    # mis-slotted the raster list as the expression and input_names as output.
+    args=(
+        _arg("rasters", "sources", kind="input"),
+        _arg("input_names", "inputNames"),
+        _arg("expression", "expression"),
+        _arg("output_raster", "result", kind="output"),
+    ),
+    aliases=_aliases(("expression", "expression"), ("output_raster", "result")),
+)
+_register_raster(
+    "spatial-analyst",
+    "Idw",
+    "raster.interpolate-idw",
+    # arcpy: Idw(in_point_features, z_field, {cell_size}, {power},
+    # {search_radius}, ...) -> Raster. Positional 2 is cell_size (honua-server
+    # sizes output via width/height, so it is a passthrough parameter), NOT an
+    # output path -- the tool returns its raster, so there is no output slot.
+    args=(
+        _arg("in_point_features", "points", kind="input"),
+        _arg("z_field", "zField"),
+        _arg("cell_size", "cellSize"),
+        _arg("power", "power"),
+        _arg("search_radius", "radius"),
+    ),
+    aliases=_aliases(("radius", "radius"), ("search_radius", "radius")),
+)
+_register_raster(
+    "spatial-analyst",
+    "ZonalStatisticsAsTable",
+    "raster.zonal-statistics",
+    # arcpy: ZonalStatisticsAsTable(in_zone_data, zone_field, in_value_raster,
+    # out_table, {ignore_nodata}, {statistics_type}, ...). Positional 3
+    # (out_table) is the only output; ignore_nodata sits at slot 4 and
+    # statistics_type at slot 5, so a positional statistics_type must not land
+    # in the ignore_nodata slot.
+    args=(
+        _arg("in_zone_data", "zones", kind="input"),
+        _arg("zone_field", "zoneField"),
+        _arg("in_value_raster", "source", kind="input"),
+        _arg("out_table", "result", kind="output"),
+        _arg("ignore_nodata", "ignoreNoData"),
+        _arg("statistics_type", "statistics"),
+    ),
+    aliases=_aliases(("statistics_type", "statistics"), ("out_table", "result")),
+)
+
+# -- Raster Data Management tools -- arcpy.management.* ---------------------
+_register_raster(
+    "management",
+    "ProjectRaster",
+    "raster.reproject",
+    args=(
+        _arg("in_raster", "source", kind="input"),
+        _arg("out_raster", "result", kind="output"),
+        _arg("out_coor_system", "targetSrid"),
+        _arg("resampling_type", "resampling"),
+    ),
+    aliases=_aliases(("resampling", "resampling"), ("output", "result")),
+)
+_register_raster(
+    "management",
+    "Resample",
+    "raster.resample",
+    args=(
+        _arg("in_raster", "source", kind="input"),
+        _arg("out_raster", "result", kind="output"),
+        _arg("cell_size", "cellSize"),
+        _arg("resampling_type", "resampling"),
+    ),
+    aliases=_aliases(("resampling", "resampling"), ("output", "result")),
+)
+_register_raster(
+    "management",
+    "Clip",
+    "raster.clip",
+    # arcpy: Clip(in_raster, rectangle, out_raster, {in_template_dataset}, ...).
+    # rectangle (extent) is a parameter, out_raster (slot 2) is the output, and
+    # in_template_dataset (slot 3) is the optional cutline INPUT.
+    args=(
+        _arg("in_raster", "source", kind="input"),
+        _arg("rectangle", "rectangle"),
+        _arg("out_raster", "result", kind="output"),
+        _arg("in_template_dataset", "boundary", kind="input"),
+    ),
+)
+_register_raster(
+    "management",
+    "Mosaic",
+    "raster.mosaic",
+    args=(
+        _arg("inputs", "sources", kind="input"),
+        _arg("target", "target", kind="input"),
+    ),
+    aliases=_aliases(("in_rasters", "sources"), ("mosaic_operator", "operator")),
+)
+
 _PAIRWISE_TOOL_ALIASES = {
     ("analysis", "pairwisebuffer"): ("analysis", "buffer"),
     ("analysis", "pairwiseclip"): ("analysis", "clip"),
@@ -1157,6 +1453,11 @@ _CORE_FUNCTION_FAMILIES: Mapping[str, str] = {
     "ListFeatureClasses": "catalog",
     "ListFields": "catalog",
     "ListRasters": "catalog",
+    # Raster Data Management tools also appear as un-suffixed bare calls
+    # (arcpy.ProjectRaster / arcpy.Resample). Map those to the management
+    # family so they resolve to the raster.reproject / raster.resample specs.
+    "ProjectRaster": "management",
+    "Resample": "management",
     "SetParameter": "parameters",
     "SetParameterAsText": "parameters",
 }

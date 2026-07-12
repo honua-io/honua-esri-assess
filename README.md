@@ -1,66 +1,69 @@
 # honua-esri-assess
 
+[![CI](https://github.com/honua-io/honua-esri-assess/actions/workflows/ci.yml/badge.svg?branch=trunk)](https://github.com/honua-io/honua-esri-assess/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/honua-io/honua-esri-assess/badge)](https://scorecard.dev/viewer/?uri=github.com/honua-io/honua-esri-assess)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Open-source Esri footprint assessment tooling for Honua migration discovery.
+A **read-only** command-line tool that inventories an organization's Esri
+footprint — ArcGIS Online, ArcGIS Server / Enterprise, and FileGDB workspaces —
+and produces a versioned `EsriFootprint.json` artifact plus human-readable
+Markdown reports: a readiness report and a per-shop-profile migratability
+verdict. It exists so GIS teams can size a migration to
+[Honua](https://honua.io) (or simply audit their own estate) before committing
+to anything. The tool is Apache-2.0 by design so your security team can audit
+every line before pointing it at production.
 
-This repository owns the read-only scanner and report generator that produce a
-versioned `EsriFootprint.json` artifact for the closed Honua migration product.
-The tool is Apache-2.0 by design so prospects can audit the code before running
-it against ArcGIS Online, ArcGIS Server, or FileGDB inventories.
+## Read-only and no phone-home, verifiably
 
-## Current status
+This tool is built for skeptical review. The guarantees below are enforced in
+code and by tests in this repository — not just promised:
 
-Shipped in the current contract line:
+- **Strictly read-only.** Every request against an Esri system is an HTTP
+  `GET`. The HTTP wrappers expose no write helpers; no `POST`/`PUT`/`DELETE`/
+  `PATCH` is ever issued.
+- **No network telemetry.** No usage pings, crash uploads, or update checks —
+  there is not even an opt-in sink. The only host contacted is the `--target`
+  you supply. Enforced by [`tests/test_no_telemetry.py`](tests/test_no_telemetry.py)
+  and [`tests/smoke/test_no_network.py`](tests/smoke/test_no_network.py), which
+  fail CI if outbound traffic appears.
+- **It mints no credentials.** You run it anonymously or hand it a
+  pre-existing token via `--token-env VAR` (an environment variable name).
+  There is deliberately no `--token` flag, no username/password input, and no
+  `generateToken` call.
+- **Secrets never leak into outputs.** Tokens, query strings, and URL userinfo
+  are redacted from logs and are never written into artifacts or diagnostics.
+- **It never opens your databases.** Storage information comes from documented
+  ArcGIS REST metadata only — no ArcSDE/DBMS connections, no GDB internals.
+- **Everything stays on your machine.** Artifacts are written to local files
+  (or stdout). Nothing is uploaded anywhere.
 
-- `EsriFootprint.json` v0.1 JSON Schema and reference documentation.
-- Canonical sample footprint and fixture-backed schema validation tests.
-- Typer-based `honua-esri-assess` CLI with `scan`, `schema`, `report`, and
-  `version` commands.
-- Fixture-backed read-only ArcGIS Online Portal Sharing API smoke scanner.
-- Fixture-backed read-only ArcGIS Server REST smoke scanner.
-- Fixture-backed FileGDB inventory descriptor scanner used by `scan filegdb`.
-- `pyogrio`/GDAL FileGDB workspace scanner exposed both as the
-  `honua_esri_assess.filegdb` Python library (`scan_filegdb_workspace`) and as
-  the `scan filegdb-workspace` CLI command (requires the `filegdb` extra).
-- Markdown readiness report renderer smoke coverage.
-- Separate CI smoke job that runs the fixture-backed pipeline without a live
-  Esri system.
-- Read-only entitlement enumeration available as a Python library
-  (`honua_esri_assess.entitlements`) for prospective `scan` integration.
-- PyPI release path through release-please and Trusted Publishing.
-Still out of scope for this line:
+Before running against production, see
+[Prerequisites & least-privilege access](docs/operators/prerequisites-and-least-privilege.md)
+for the exact endpoints read at each access tier and the minimum privileges to
+grant. An anonymous "Tier 1" scan needs no credentials at all.
 
-- CI fixture refreshes against a live demo org or live ArcGIS Server.
-- Any handoff artifact other than `EsriFootprint.json`.
-- Network telemetry unless a future release adds an explicit opt-in control.
-- Automatic attachment of entitlement observations to `scan agol` or
-  `scan server` outputs. The v0.1 schema supports optional licensing blocks
-  and the entitlements library is available for integration; the standalone
-  `entitlements` CLI was retired alongside the E9 CLI consolidation.
-- Vendoring of any closed Esri FileGDB driver. The `scan filegdb-workspace`
-  command relies on the optional `pyogrio`/GDAL backend for read-only metadata;
-  when the `filegdb` extra is absent the command still exits 0 and records a
-  `partial-coverage` diagnostic explaining the missing dependency.
+## Status
+
+Alpha, pre-1.0 (current release 0.7.x — see the [CHANGELOG](CHANGELOG.md)).
+The `EsriFootprint.json` schema is at **v0.2** and unstable until v1.0:
+breaking changes are permitted between v0.x minors, per the
+[versioning policy](docs/schemas/versioning.md). The package is not yet
+published to PyPI; install from source.
 
 ## Quick start
 
-> **Before you run:** see
-> [Prerequisites & least-privilege access](docs/operators/prerequisites-and-least-privilege.md)
-> for the required URLs, the anonymous vs. token tiers, and the minimum access
-> to grant. The scanner is strictly read-only (`GET`-only), mints no
-> credentials, and never touches your databases.
-
-Install the console script in an isolated Python 3.11+ environment:
+Requires Python 3.11+.
 
 ```bash
-pipx install honua-esri-assess
+git clone https://github.com/honua-io/honua-esri-assess
+cd honua-esri-assess
+python3 -m pip install .
 ```
 
-Run a read-only ArcGIS Online assessment and save the sole handoff artifact:
+Scan an ArcGIS Online org (anonymous scans work too — just omit the token):
 
 ```bash
-export AGOL_TOKEN="..."
+export AGOL_TOKEN="..."   # optional, pre-existing token
 honua-esri-assess scan agol \
   --target https://yourorg.maps.arcgis.com/sharing/rest \
   --token-env AGOL_TOKEN \
@@ -68,429 +71,151 @@ honua-esri-assess scan agol \
   --validate
 ```
 
-Inspect or validate the bundled schema:
+Then render the human-readable companions:
+
+```bash
+honua-esri-assess report  --input EsriFootprint.json --output readiness-report.md
+honua-esri-assess verdict --input EsriFootprint.json
+```
+
+Inspect or validate against the bundled schema at any time:
 
 ```bash
 honua-esri-assess schema show
 honua-esri-assess schema validate EsriFootprint.json
 ```
+
+## Commands
+
+Run `honua-esri-assess --help` (or `python -m honua_esri_assess --help`) for
+full option listings. Every `scan` subcommand is read-only against the target.
+
+| Command | What it does |
+|---------|--------------|
+| `scan agol` | Inventory an ArcGIS Online / Portal org via the Portal Sharing REST API. |
+| `scan server` | Walk an ArcGIS Server REST catalog (folders, services, layer detail). |
+| `scan filegdb` | Read a local FileGDB inventory descriptor (`_inventory.json`); no network. |
+| `scan filegdb-workspace` | Read-only `pyogrio`/GDAL metadata scan of a local `.gdb` directory (requires the `filegdb` extra). |
+| `scan rbac` | Export identity/RBAC posture (users, roles, groups, per-service permissions) to the sibling `EsriAccessFootprint.json`. |
+| `report` | Render a Markdown readiness report from a footprint. |
+| `verdict` | Render a per-shop-profile migratability verdict (go / conditional / no-go, with explicit hard lock-in boundaries such as Utility Network, Parcel Fabric, and LRS). |
+| `schema show` / `schema validate <file>` | Print the bundled JSON Schema / validate an artifact against it. |
+| `version` | Print package and bundled schema versions (also `--version`). |
+
+Common `scan` options: `--output` (default `./EsriFootprint.json`; existing
+files are not overwritten unless you pass `--force`), `--token-env VAR`,
+`--validate`, `--timeout`, `--max-retries`, `--user-agent`, `--log-format
+text|json`, `--log-level`. `report` and `verdict` accept `--input -` /
+`--output -` for stdin/stdout and `--strict` to fail on schema-invalid input
+instead of rendering warnings.
+
 ## Supported sources
 
-| Source | CLI surface | Extra dependencies | Notes |
-|--------|-------------|--------------------|-------|
-| ArcGIS Online | `scan agol --target <portal-url-or-sharing-rest-url> --output EsriFootprint.json` | none | Uses the Portal Sharing REST API read-only. |
-| ArcGIS Server | `scan server --target <rest-url> --output EsriFootprint.json` | none | Uses ArcGIS Server REST service metadata read-only. |
-| FileGDB (descriptor) | `scan filegdb --target <path> --output EsriFootprint.json` | none | Reads `<path>/_inventory.json` when `<path>` is a directory, or the descriptor file directly. |
-| FileGDB (workspace) | `scan filegdb-workspace --target <path.gdb> --output EsriFootprint.json` | `filegdb` extra (`pyogrio`) | Read-only `pyogrio`/GDAL metadata calls against a local `.gdb` directory. Also available as the `honua_esri_assess.filegdb.scan_filegdb_workspace` library function. |
-| RBAC / access | `scan rbac --target <portal-or-server-admin-url> [--kind portal\|server]` | none | Reads documented Portal `admin`/`community` or ArcGIS Server `admin/security` endpoints read-only and writes the sibling `EsriAccessFootprint.json` (defaults to stdout). |
+| Source | Target (`--target`) | Notes |
+|--------|---------------------|-------|
+| ArcGIS Online / Portal | Sharing REST base, e.g. `https://yourorg.maps.arcgis.com/sharing/rest` | The scanner appends `portals/self`, `search`, `community/groups`, `content/items/<id>` to this base; a higher-level portal URL yields `partial-coverage` diagnostics instead of an inventory. |
+| ArcGIS Server | `https://host`, `https://host/arcgis`, `…/arcgis/rest`, or `…/arcgis/rest/services` — canonicalized internally | Deep layer probes run for `MapServer`/`FeatureServer`/`ImageServer`/`SceneServer`/`StreamServer`; other service types are recorded from the catalog walk. Add `--admin-usage` (admin token required) to also read `/admin/usagereports` and `/admin/data/items` for usage-ranked ordering and datastore binding modes — it degrades to a diagnostic if denied. |
+| FileGDB (descriptor) | Directory containing `_inventory.json`, or the descriptor file itself | Local filesystem only. |
+| FileGDB (workspace) | A local `.gdb` directory | Uses optional `pyogrio`/GDAL read-only metadata calls (`pip install ".[filegdb]"`). Without the extra, the command still exits 0 and records a `partial-coverage` diagnostic. Also available as the `honua_esri_assess.filegdb.scan_filegdb_workspace` library function. |
+| RBAC / access | Portal Sharing REST base (`--kind portal`, default) or ArcGIS Server admin URL (`--kind server`) | Writes `EsriAccessFootprint.json` (defaults to stdout). |
 
-## Command-line usage
+Transient upstream failures (`429`, `502`, `503`, `504`) are retried with
+capped exponential backoff honoring `Retry-After`; per-endpoint failures
+(403, unreachable host, unsupported item type) are downgraded to typed
+diagnostics inside the artifact rather than aborting the scan.
 
-The `honua-esri-assess` console script (and `python -m honua_esri_assess`)
-exposes a `scan` subcommand per backend plus `schema`, `report`, and `version`
-subcommands. Every subcommand is **read-only** against the target Esri system.
-The CLI never mutates Esri systems, posts telemetry, or contacts a
-Honua-operated service.
+## Artifacts and schemas
 
-```bash
-# ArcGIS Online (Portal Sharing REST base — the scanner appends portals/self,
-# search, content/items/<id> directly to this URL).
-honua-esri-assess scan agol \
-  --target https://yourorg.maps.arcgis.com/sharing/rest \
-  --token-env AGOL_TOKEN \
-  --output EsriFootprint.json
+`EsriFootprint.json` is the sole machine-readable handoff into the closed
+Honua migration product; `EsriAccessFootprint.json` is its documented sibling
+for identity/RBAC posture. Both are published JSON Schemas (draft 2020-12) in
+this repository, and every emitted artifact is validated against the packaged
+schema copy.
 
-# ArcGIS Server REST endpoint.
-honua-esri-assess scan server \
-  --target https://gis.example.com/arcgis \
-  --output EsriFootprint.json
+| Artifact | Schema | Reference |
+|----------|--------|-----------|
+| `EsriFootprint.json` v0.2 | [`schemas/esri-footprint-v0.2.json`](schemas/esri-footprint-v0.2.json) | [v0.1 reference](docs/schemas/esri-footprint.v0.1.md) + [v0.2 delta](docs/schemas/esri-footprint.v0.2.md) (additive: dependency edges, content-type classification, per-layer detail) |
+| `EsriAccessFootprint.json` | [`schemas/esri-access-footprint-v0.2.json`](schemas/esri-access-footprint-v0.2.json) | [v0.1 reference](docs/schemas/esri-access-footprint.v0.1.md) |
 
-# Fixture/descriptor FileGDB path used by the smoke harness.
-honua-esri-assess scan filegdb \
-  --target ./sample.gdb \
-  --output EsriFootprint.json
-
-# pyogrio/GDAL FileGDB workspace scan against a local .gdb directory
-# (requires the optional `filegdb` extra).
-honua-esri-assess scan filegdb-workspace \
-  --target ./sample.gdb \
-  --output EsriFootprint.json
-
-# Export the identity / RBAC posture to the sibling EsriAccessFootprint.json
-# artifact. --kind portal (default) reads the Portal Sharing REST base;
-# --kind server reads an ArcGIS Server admin endpoint. Defaults to stdout.
-honua-esri-assess scan rbac \
-  --target https://yourorg.maps.arcgis.com/sharing/rest \
-  --token-env AGOL_TOKEN \
-  --output EsriAccessFootprint.json
-
-# Render the Markdown readiness report from a footprint to a file.
-honua-esri-assess report \
-  --input EsriFootprint.json \
-  --output readiness-report.md
-
-# Render from stdin to stdout (default --output is `-`).
-cat EsriFootprint.json | honua-esri-assess report --input -
-
-# Fail instead of rendering schema findings as report warnings.
-honua-esri-assess report \
-  --input EsriFootprint.json \
-  --strict
-```
-
-`scan` writes to `./EsriFootprint.json` by default. Pass `--validate` when the
-CLI should validate the generated footprint against the bundled schema before
-writing it; `schema validate EsriFootprint.json` performs the same validation
-after the fact. `schema show` prints the bundled JSON Schema to stdout, and
-`version` (or the root `--version` flag) prints both the package version and
-bundled schema line (e.g., `honua-esri-assess 0.1.0` /
-`EsriFootprint schema v0.1`).
-
-Credential material is accepted only through `--token-env VAR`; the CLI reads
-the named environment variable into memory for the selected backend and logs
-the variable name, never the token value. There is intentionally no plaintext
-`--token` option on the `scan` commands.
-
-The AGOL `--target` must be the Portal Sharing REST base (typically the URL
-ending in `/sharing/rest`). The scanner appends endpoint paths (`portals/self`,
-`community/groups`, `search`, `content/items/<id>`) directly to that base, so
-passing a higher-level portal URL will produce `partial-coverage` diagnostics
-instead of an inventory.
-
-The ArcGIS Server `--target` must be the REST base whose `services` child lists
-the service catalog, typically `https://host/arcgis/rest`. The scanner appends
-`services`, folder names, and service probes below that base.
-
-The FileGDB `scan filegdb` handler reads a local descriptor only: either a
-directory containing `_inventory.json` or a descriptor file supplied directly.
-It never touches the network. The `scan filegdb-workspace` command runs the
-`pyogrio`/GDAL workspace scanner against a local `.gdb` directory using
-read-only metadata calls (`list_layers` / `read_info`); it never opens the
-network and never mutates the workspace. The same scanner is also exposed as
-the `honua_esri_assess.filegdb.scan_filegdb_workspace` library function. Install
-the optional backend with `pip install "honua-esri-assess[filegdb]"`; without
-it the command still exits 0 and records a `partial-coverage` diagnostic.
-
-### Exit codes and failure surface
-
-- Exit `0` — the scanner completed and the CLI wrote `EsriFootprint.json`,
-  the report renderer wrote Markdown, or `schema validate` confirmed a
-  footprint. Any per-endpoint failure (HTTP 403/429, unreachable host,
-  unsupported item type) is downgraded to a typed entry in `diagnostics[]`
-  inside the artifact and mirrored to stderr as a typed, prospect-safe
-  diagnostic. Empty or partial inventories are still successful runs.
-- Exit `2` — missing or invalid arguments, or report input/output/JSON handling
-  failed with a typed `report.input.*` error.
-- Exit `3` — `report --strict` rejected an invalid footprint
-  (`report.schema.invalid`).
-- Exit `4` — report rendering failed after input parsing succeeded
-  (`report.render.internal`).
-- Exit `10` or a backend-specific scanner exit — an expected scanner failure
-  occurred before a requested output could be produced (`scanner-error`,
-  `portal.*`, `server.*`).
-- Exit `20` — the CLI could not save the requested output artifact
-  (`output-write-failed`).
-- Exit `30` — schema validation failed for `scan --validate` or
-  `schema validate` (`schema-validation-failed`).
-- Exit `1` — an unexpected internal error occurred (`internal-error`). Raw
-  exception details are not printed.
-
-Diagnostics are always typed and prospect-safe; the CLI does not emit Python
-tracebacks at any exit code. CLI stderr diagnostics are process diagnostics
-such as `scanner-error`, `output-write-failed`, `schema-validation-failed`,
-`report.input.*`, `report.schema.invalid`, `report.render.internal`, and
-`internal-error`; they are separate from the locked `EsriFootprint.json`
-`diagnostics[].code` enum documented below.
-
-## Telemetry
-
-`honua-esri-assess` does not send network telemetry by default. The E9 CLI has
-no usage ping, crash upload, or update-check sink. Local stderr logs can be
-formatted as text or JSON with `--log-format`; typed diagnostics remain stderr
-diagnostic lines. Both stay on the machine running the command.
-
-`--no-network-telemetry-confirm` is an audit-friendly acknowledgement that the
-invocation does not enable network telemetry. It is not a telemetry opt-in and
-does not change scanner behavior.
-
-Crash dumps are also off by default. Setting
-`HONUA_ESRI_ASSESS_CRASH_DUMPS=1` allows the CLI to record a local redacted
-diagnostic file under `~/.cache/honua-esri-assess/crashes/` after an unexpected
-internal error.
-## Schema and handoff
-
-`EsriFootprint.json` is the sole supported handoff into the closed Honua
-migration product. The v0.1 contract is published in this repository:
-
-- Schema: [`schemas/esri-footprint-v0.1.json`](schemas/esri-footprint-v0.1.json)
-- Reference: [`docs/schemas/esri-footprint.v0.1.md`](docs/schemas/esri-footprint.v0.1.md)
-- Canonical sample: [`docs/samples/esri-footprint.sample.json`](docs/samples/esri-footprint.sample.json)
+- Canonical sample footprint: [`docs/samples/esri-footprint.sample.json`](docs/samples/esri-footprint.sample.json)
 - Sample readiness report: [`docs/samples/readiness-report.sample.md`](docs/samples/readiness-report.sample.md)
-- Readiness report guide: [`docs/readiness-report.md`](docs/readiness-report.md)
+- Readiness report guide (exit codes, sections, heuristics): [`docs/readiness-report.md`](docs/readiness-report.md)
+- Versioning & deprecation policy: [`docs/schemas/versioning.md`](docs/schemas/versioning.md)
+- Prospect-facing handoff contract: [`docs/schemas/handoff-contract.md`](docs/schemas/handoff-contract.md)
 
-`$id`: `https://schemas.honua.io/esri-footprint/v0.1.0/esri-footprint.json`
+Artifact `diagnostics[].code` is a locked enum (`rate-limited`,
+`partial-coverage`, `missing-permission`, `unresolved-reference`,
+`unsupported-item-type`, `redacted-field`) so reviewers can audit exactly what
+a diagnostic may say; see the
+[diagnostic code catalog](docs/schemas/esri-footprint.v0.1.md#diagnostic-code-catalog).
 
-The smoke suite validates every emitted footprint against that checked-in
-schema using `jsonschema.Draft202012Validator`.
+## Exit codes and failure surface
 
-v0.x is unstable. Breaking changes are permitted between minor bumps; v1.0
-is the first stable promise. See the reference doc for the stability policy
-and the locked diagnostic code catalog.
+The CLI never prints Python tracebacks; failures surface as typed,
+prospect-safe diagnostics on stderr with deterministic exit codes:
 
-Two policy docs govern the broader contract:
+| Exit | Meaning |
+|------|---------|
+| `0` | Success — including partial inventories; per-endpoint failures become `diagnostics[]` entries in the artifact. |
+| `1` | Unexpected internal error (`internal-error`); raw exception details are not printed. |
+| `2` | Missing/invalid arguments, or report/verdict input handling failed (`report.input.*`). |
+| `3` | `report --strict` / `verdict --strict` rejected an invalid footprint (`report.schema.invalid`). |
+| `4` | Report rendering failed after input parsing succeeded (`report.render.internal`). |
+| `10`+ | Expected scanner failure before output could be produced (`scanner-error`, `portal.*`, `server.*`). |
+| `20`+ | Could not save the requested output artifact (`output-write-failed`, or output exists without `--force`). |
+| `30` | Schema validation failed for `scan --validate` or `schema validate`. |
 
-- [`docs/schemas/versioning.md`](docs/schemas/versioning.md) — semver
-  interpretation, deprecation policy, producer guarantees, and consumer
-  expectations for the artifact.
-- [`docs/schemas/handoff-contract.md`](docs/schemas/handoff-contract.md) —
-  prospect-facing summary of what flows between this tool and the closed
-  product, and how to verify a footprint locally.
+Local stderr logs can be formatted as text or JSON with `--log-format`; both
+stay on the machine running the command. Crash dumps are off by default —
+setting `HONUA_ESRI_ASSESS_CRASH_DUMPS=1` allows a local, redacted diagnostic
+file under `~/.cache/honua-esri-assess/crashes/` after an internal error.
+`--no-network-telemetry-confirm` is an audit-friendly acknowledgement flag; it
+is not an opt-in and changes no behavior.
 
-## ArcGIS Online scan
-
-The AGOL scanner uses the documented Portal Sharing REST API in read-only mode.
-It only issues `GET` requests against Esri systems and writes the local
-`EsriFootprint.json` artifact.
-
-Anonymous scans enumerate publicly visible content in the target org:
-
-```shell
-honua-esri-assess scan agol \
-  --target https://example.maps.arcgis.com/sharing/rest \
-  --output EsriFootprint.json
-```
-
-Token scans use a pre-existing ArcGIS Online token as a query-string
-credential. The token is not written to the footprint, diagnostics, cache keys,
-or logs. Supply the token through an environment variable:
-
-```shell
-export AGOL_TOKEN="..."
-honua-esri-assess scan agol \
-  --target https://example.maps.arcgis.com/sharing/rest \
-  --token-env AGOL_TOKEN \
-  --output EsriFootprint.json
-```
-
-The AGOL footprint emits `source.kind: "arcgis-online"`, a `portal` facet, and
-`portal-item` inventory records. The current v0.1 emitter records item id, type,
-owner, title, sharing, modified timestamp, optional extent, and an empty
-`dependencies` list for scanned items. It does not expose AGOL service or layer
-records in the artifact.
-
-Anonymous scans skip organization-user enumeration and can emit an informational
-`partial-coverage` diagnostic. Both anonymous and token scans attempt readable
-group enumeration for coverage checks, but group records are not exposed as a
-v0.1 artifact field. Token scans additionally attempt user counts under the
-token's readable scope.
-
-### Diagnostic code enum (v0.1)
-
-Artifact `diagnostics[].code` is locked to the enum below in v0.1 — adding a
-new code requires a schema bump and a parallel update to
-`src/honua_esri_assess/diagnostics.py` and
-`src/honua_esri_assess/entitlements/diagnostics.py`, plus any scanner emitter
-mapping that normalizes subsystem-specific diagnostics into this vocabulary:
-
-- `rate-limited` — upstream returned HTTP 429; partial inventory returned.
-- `partial-coverage` — endpoint unreachable, non-JSON, or otherwise refused.
-- `missing-permission` — upstream returned HTTP 403 or an equivalent error
-  envelope.
-- `unresolved-reference` — referenced item could not be resolved.
-- `unsupported-item-type` — item or service kind not modeled by v0.1.
-- `redacted-field` — a field was withheld because it was sensitive.
-
-## Scanning an ArcGIS Server
-
-The CLI exposes a `scan server` subcommand that walks the documented
-ArcGIS Server REST API in read-only mode and writes `EsriFootprint.json`:
-
-```
-honua-esri-assess scan server \
-    --target https://gis.example.com/arcgis \
-    [--token-env SERVER_TOKEN] \
-    [--output EsriFootprint.json] \
-    [--timeout 30] \
-    [--max-retries 3] \
-    [--user-agent honua-esri-assess/0.1.0] \
-    [--validate]
-```
-
-`--target` accepts any of `https://host`, `https://host/arcgis`,
-`https://host/arcgis/rest`, or `https://host/arcgis/rest/services`; the
-client canonicalizes to `<host>/arcgis/rest/services` internally. For custom
-mounts, the supplied path is preserved and the `/rest/services` suffix is
-appended when needed.
-
-Behavior the scanner guarantees:
-
-- **Read-only.** No `POST`/`PUT`/`DELETE` is issued against the target
-  server. The HTTP wrapper exposes no write helpers; every call is a
-  `GET` of the documented REST surface.
-- **Two auth modes.** Anonymous (default), or a caller-supplied
-  pre-existing ArcGIS Server token via `--token-env`. Tokens are appended as
-  the outbound `token=` query param, redacted from log records, and never
-  written into the footprint or stderr summary. URL userinfo, query
-  strings, and fragments are stripped before writing `source.locator` or
-  `ServerService.serviceUrl`.
-- **Bounded retries.** Transient HTTP status (`429`, `502`, `503`, `504`)
-  triggers exponential backoff for up to `--max-retries` retries after the
-  first attempt. Retry sleep time is capped at 30 seconds; the per-request
-  timeout is controlled separately by `--timeout`. A `Retry-After` header is
-  honored within the retry sleep budget.
-- **Two diagnostic surfaces.**
-  - The CLI renders top-level failures as a single `error[code]` message
-    line on stderr with a deterministic exit code (`server.auth`,
-    `server.forbidden`, `server.not-found`, `server.rate-limited`,
-    `server.connection`, `server.api`, `server.schema`). Python tracebacks
-    are not printed in default mode.
-  - Partial failures during the walk (forbidden folder, malformed
-    service entry, failed service probe) emit prospect-safe records into the
-    footprint's `diagnostics[]` block using the locked v0.1 diagnostic
-    vocabulary (`missing-permission`, `partial-coverage`,
-    `unsupported-item-type`, `rate-limited`); the scan continues where it
-    can.
-- **Service probe scope.** Service probes run by default to populate
-  `inventory[].layerCount`. Supported probe types are `MapServer`,
-  `FeatureServer`, `ImageServer`, `SceneServer`, and `StreamServer`; other
-  types are recorded from the catalog walk only and emit `layerCount: 0`.
-  The v0.1 footprint does not emit service capabilities, table counts, or
-  the internal service-kind bucket.
-- **No network telemetry.** Local logs (stderr) are structured;
-  `--log-format` and `--log-level` control local process logs. No host other
-  than the user-supplied `--target` is ever called.
-
-`--output` defaults to `./EsriFootprint.json`; after writing the artifact, the
-CLI prints a one-line scanned-item summary to stderr.
-
-### ArcGIS Server footprint contract
-
-A successful server scan emits `EsriFootprint.json` v0.1 with:
-
-- `source.kind == "arcgis-server"`.
-- `source.locator` set to the credential-free services-root URL
-  (`https://host/arcgis/rest/services` for standard mounts) and
-  `source.capturedAt` set to the scan timestamp.
-- `server.folders[]` as the visited top-level folder names.
-- `server.serviceCounts` keyed by raw ArcGIS Server service type and
-  `server.version` when `/arcgis/rest/info` exposes it.
-- `inventory[]` entries with `kind == "server-service"`, credential-free
-  canonical `serviceUrl`, raw `serviceType`, `folder` (empty string for
-  root services), and `layerCount`.
-- `counts.items["server-service"]`, `counts.layers`, and
-  `counts.featureClasses` roll-ups. `counts.featureClasses` remains `0`
-  for ArcGIS Server footprints; it is reserved for FileGDB feature-class
-  records.
-- `diagnostics[]` typed entries for partial scan issues.
-
-The v0.1 server scanner internally classifies raw ArcGIS Server service
-types as follows for diagnostics and future emitters. The footprint does
-not include a `serviceKind` field; consumers should read the raw
-`serviceType`.
-
-| Raw service type | Internal bucket | Deep probe |
-| --- | --- | --- |
-| `MapServer` | `mapService` | yes |
-| `FeatureServer` | `featureService` | yes |
-| `ImageServer` | `imageService` | yes |
-| `SceneServer` | `sceneService` | yes |
-| `StreamServer` | `streamService` | yes |
-| `VectorTileServer` | `vectorTileService` | no |
-| `GPServer` | `geoprocessingService` | no |
-| `GeocodeServer` | `geocodeService` | no |
-| `NAServer` | `networkAnalysisService` | no |
-| `GeometryServer` | `geometryService` | no |
-| `GlobeServer` | `globeService` | no |
-| `MobileServer` | `mobileService` | no |
-| anything else | `other` | no |
-
-The emitter validates against the packaged copy of the published JSON Schema
-at [`schemas/esri-footprint-v0.1.json`](schemas/esri-footprint-v0.1.json).
-If validation rejects the output, or the declared schema cannot be loaded,
-`scan server` exits non-zero before writing an artifact.
-
-## Running the smoke suite
-
-The fixture-backed smoke suite under `tests/smoke/` exercises the full
-`scan → EsriFootprint.json → Markdown report` pipeline without touching a live
-Esri system. It is the contract guard that keeps the assessment tool aligned
-with the `EsriFootprint.json` v0.1 schema between scanner edits.
-
-```bash
-python -m pip install -e ".[smoke]"
-pytest tests/smoke -v
-```
-
-There are 9 tests covering the three scanner backends (AGOL happy +
-diagnostics, ArcGIS Server happy + diagnostics, FileGDB happy), the Markdown
-report renderer, the no-network guard, and a console-script smoke check. The
-current corpus runs in well under a second on a developer laptop — the
-sub-30-second wall-clock budget is the CI ceiling, not the target.
-The HTTP smoke tests use `responses` to intercept the `requests` session and
-assert the registered fixture routes were exercised. The dedicated no-network
-tests in `tests/smoke/test_no_network.py` also monkeypatch
-`socket.socket.__init__` to fail outbound `AF_INET`/`AF_INET6` connections
-while running a representative AGOL scan and the FileGDB path. Together those
-checks enforce the "network telemetry must be explicit and off by default"
-project constraint for the fixture-backed suite.
-
-The CI workflow runs the smoke suite as a separate job so a smoke failure is
-distinguishable from a unit-test failure in the PR status. See
-[`tests/smoke/fixtures/README.md`](tests/smoke/fixtures/README.md) for the
-fixture layout and refresh protocol.
-
-## Decisions
-
-- Language: Python.
-- License: Apache-2.0.
-- Runtime writes to customer Esri systems are out of scope.
-- FileGDB metadata reads use the optional `pyogrio` backend (`MIT` license)
-  through GDAL/OGR read-only metadata calls; no ELv2 closed-product code is
-  vendored. The workspace scanner stays library-only in this release; the
-  fixture-backed descriptor scanner remains the only FileGDB CLI surface.
-- Network telemetry, usage pings, crash uploads, and update checks are off by
-  default.
-- `EsriFootprint.json` follows semver, with a pre-1.0 stance that lets minor
-  bumps break and guarantees no breaks within a minor line. See
-  [`docs/schemas/versioning.md`](docs/schemas/versioning.md).
-- Esri IP & licensing posture (clean-room formats, no rehosting of licensed
-  data/content, no embedding of proprietary assets, EULA respect, and
-  counsel-gated benchmark/comparison publishing) is documented in
-  [`docs/compliance/esri-ip-and-licensing-guardrails.md`](docs/compliance/esri-ip-and-licensing-guardrails.md).
-  API reimplementation is treated as fair use under *Google v. Oracle* (2021)
-  and is not constrained.
-
-## Validating the schema locally
+## Development
 
 ```bash
 python3 -m pip install -e ".[dev]"
-pytest
+pytest                    # full suite
+pytest tests/smoke -v     # fixture-backed end-to-end pipeline, no live Esri system
+ruff check && mypy
 ```
 
-The test suite validates the published schema, the canonical sample, the
-source-kind discriminator rules, prospect-safe URL/path constraints, strict
-RFC3339 UTC timestamps, the fixture-backed entitlement collectors, and the
-readiness report renderer (heuristics, CLI failure surface, and the
-byte-for-byte sample report golden file).
+The smoke suite exercises the full `scan → EsriFootprint.json → report`
+pipeline against checked-in HTTP fixtures and runs as a separate CI job; the
+dedicated no-network tests block outbound sockets while scans run. See
+[`tests/smoke/fixtures/README.md`](tests/smoke/fixtures/README.md) for the
+fixture layout and refresh protocol. Additional developer docs:
+[scan handler interface](docs/handler-interface.md) and the read-only
+[entitlement enumeration library](docs/entitlements.md)
+(`honua_esri_assess.entitlements`).
 
-## Rendering a readiness report
+Esri IP & licensing posture (clean-room formats via GDAL/community readers, no
+rehosting of licensed data, no embedded proprietary assets) is documented in
+[`docs/compliance/esri-ip-and-licensing-guardrails.md`](docs/compliance/esri-ip-and-licensing-guardrails.md).
 
-```bash
-honua-esri-assess report --input docs/samples/esri-footprint.sample.json
-```
+## Related Honua projects
 
-The report is a human-readable companion to `EsriFootprint.json`, not a second
-handoff contract for the closed migration product. The renderer is pure: it
-turns a parsed footprint dictionary into deterministic Markdown and performs no
-file, network, logging, or Esri-system I/O. The CLI owns JSON parsing, packaged
-schema validation, stdin/stdout support, and typed prospect-safe errors.
+- [honua-server](https://github.com/honua-io/honua-server) — the flagship multi-protocol geospatial server (GeoServices REST, OGC API, WMS/WFS/WMTS/WCS, STAC, vector tiles, and more) that Esri clients such as ArcGIS Pro connect to unmodified; the migration target this tool sizes.
+- [honua-console](https://github.com/honua-io/honua-console) — unified web console (Studio, Catalog, Operate, Share).
+- [honua-helm](https://github.com/honua-io/honua-helm) — Helm chart, the Kubernetes deploy path.
+- [geobench](https://github.com/honua-io/geobench) — open, vendor-neutral benchmark suite for geospatial servers.
 
-Use `--strict` to fail when the input does not validate against the published
-v0.1 schema packaged with the CLI. Without `--strict`, schema validation
-findings or validation-unavailable notices are rendered as a `Schema Warnings`
-section so the report can still be reviewed.
+Hosted platform docs: <https://honua.gitbook.io/honuaio/>
 
-The report includes a header, optional schema warnings, service inventory,
-layer count, complexity estimate, manual-review items, migration ordering, and
-diagnostics summary. See [`docs/readiness-report.md`](docs/readiness-report.md)
-for CLI exit codes, report-section details, and v0.1 heuristics.
+## Contributing
+
+Issues and PRs are welcome. Commits follow
+[Conventional Commits](https://www.conventionalcommits.org/) (enforced by
+commitlint in CI); CI also runs the unit and smoke suites on Python 3.11–3.13
+plus `ruff`, `mypy`, and a dependency license guard. Releases go through
+release-please and PyPI Trusted Publishing — see [RELEASE.md](RELEASE.md).
+
+## Security
+
+Report vulnerabilities to <security@honua.io>. See the org
+[security policy](https://github.com/honua-io/.github/blob/main/SECURITY.md).
+
+## License
+
+[Apache-2.0](LICENSE).

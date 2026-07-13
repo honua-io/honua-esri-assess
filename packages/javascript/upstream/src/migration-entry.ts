@@ -1,6 +1,43 @@
 export { scanArcGisUsage, summarizeArcGisScan } from "./migration/scanner.js";
 export type { ArcGisImportHit, ArcGisScanReport } from "./migration/scanner.js";
 export {
+  ARCGIS_WIDGET_DEPRECATION_RELEASE,
+  ARCGIS_WIDGET_INVENTORY_SOURCE,
+  ARCGIS_WIDGET_REMOVAL_RELEASE,
+  ARCGIS_WIDGET_REMOVAL_TIMEFRAME,
+  getWidgetDisposition,
+  WIDGET_DISPOSITION_DATA_VERSION,
+  WIDGET_DISPOSITION_KINDS,
+  WIDGET_DISPOSITIONS,
+  WIDGET_SURVIVAL_GUIDE_PATH,
+  widgetMigrationBucket,
+  widgetModulePathInfo,
+  widgetNameFromModulePath,
+  widgetSurvivalGuideAnchor,
+} from "./migration/widget-dispositions.js";
+export type {
+  WidgetDisposition,
+  WidgetDispositionKind,
+  WidgetMigrationBucket,
+  WidgetModulePathInfo,
+} from "./migration/widget-dispositions.js";
+export {
+  buildWidgetReadinessReport,
+  evaluateWidgetGate,
+  formatWidgetReadinessMarkdown,
+  formatWidgetReadinessTable,
+  scanWidgetUsage,
+} from "./migration/widget-scanner.js";
+export type {
+  WidgetGateEvaluation,
+  WidgetImportStyle,
+  WidgetReadinessReport,
+  WidgetReadinessRow,
+  WidgetReadinessSummary,
+  WidgetScanResult,
+  WidgetUsageHit,
+} from "./migration/widget-scanner.js";
+export {
   MIGRATION_EVIDENCE_STATES,
   MIGRATION_MANIFEST_ARTIFACT_KIND,
   MIGRATION_MANIFEST_ARTIFACT_VERSION,

@@ -21,10 +21,18 @@ import { buildJsMigrationReport } from "./report.js";
 import { getJsRuntimeParityMatrix, summarizeJsRuntimeParity } from "./runtime-matrix.js";
 import { emitEsriSampleCorpusEvidence } from "./sample-corpus-evidence.js";
 import { scanArcGisUsage, summarizeArcGisScan } from "./scanner.js";
+import {
+  buildWidgetReadinessReport,
+  evaluateWidgetGate,
+  formatWidgetReadinessMarkdown,
+  formatWidgetReadinessTable,
+  scanWidgetUsage,
+} from "./widget-scanner.js";
 
 interface ParsedArgs {
   command:
     | "scan"
+    | "widgets"
     | "codemod"
     | "reconcile"
     | "matrix"
@@ -80,6 +88,8 @@ interface ParsedArgs {
   contentIncludeHostedLayers: boolean;
   corpusPath?: string;
   corpusOutputDir?: string;
+  widgetOutput: "table" | "json" | "markdown";
+  gatePct?: number;
 }
 
 interface FixtureMetricSnapshot {
@@ -160,6 +170,8 @@ if (!parsed) {
 } else {
   if (parsed.command === "scan") {
     runScan(parsed.target, parsed.reportPath);
+  } else if (parsed.command === "widgets") {
+    runWidgets(parsed);
   } else if (parsed.command === "content") {
     void runContent(parsed).catch((error) => {
       process.stderr.write(`contentError=${error instanceof Error ? error.message : String(error)}\n`);
@@ -304,6 +316,38 @@ function runScan(target: string, reportPath?: string): void {
   if (reportPath) {
     fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
     process.stdout.write(`reportWritten=${reportPath}\n`);
+  }
+}
+
+function runWidgets(args: ParsedArgs): void {
+  const scan = scanWidgetUsage(args.target);
+  const report = buildWidgetReadinessReport(scan);
+
+  if (args.widgetOutput === "json") {
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  } else if (args.widgetOutput === "markdown") {
+    process.stdout.write(formatWidgetReadinessMarkdown(report));
+  } else {
+    process.stdout.write(`${formatWidgetReadinessTable(report)}\n`);
+  }
+
+  if (args.reportPath) {
+    const reportPath = path.resolve(args.reportPath);
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    process.stdout.write(`reportWritten=${reportPath}\n`);
+  }
+
+  if (args.gatePct !== undefined) {
+    const gate = evaluateWidgetGate(report, args.gatePct);
+    process.stdout.write(`widgetGate=${gate.passed ? "pass" : "fail"} automatedPct=${gate.automatedPct.toFixed(1)}\n`);
+    if (!gate.passed) {
+      process.stdout.write("gatingFailures:\n");
+      for (const failure of gate.failures) {
+        process.stdout.write(`- ${failure}\n`);
+      }
+      process.exitCode = 2;
+    }
   }
 }
 
@@ -1106,12 +1150,14 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       contentIncludeFeatures: true,
       contentIncludeWebMaps: true,
       contentIncludeHostedLayers: true,
+      widgetOutput: "table",
     };
   }
 
   const maybeCommand = argv[0];
   const command:
     | "scan"
+    | "widgets"
     | "codemod"
     | "reconcile"
     | "matrix"
@@ -1122,6 +1168,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     | "content"
     | "corpus-evidence" =
     maybeCommand === "scan" ||
+    maybeCommand === "widgets" ||
     maybeCommand === "codemod" ||
     maybeCommand === "reconcile" ||
     maybeCommand === "matrix" ||
@@ -1182,6 +1229,8 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   let contentIncludeHostedLayers = true;
   let corpusPath: string | undefined;
   let corpusOutputDir: string | undefined;
+  let widgetOutput: "table" | "json" | "markdown" = "table";
+  let gatePct: number | undefined;
 
   for (let i = 0; i < positional.length; i += 1) {
     const token = positional[i];
@@ -1190,6 +1239,27 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     }
     if (token === "--write") {
       write = true;
+      continue;
+    }
+    if (token === "--json" && command === "widgets") {
+      widgetOutput = "json";
+      continue;
+    }
+    if (token === "--markdown" && command === "widgets") {
+      widgetOutput = "markdown";
+      continue;
+    }
+    if (token === "--gate" && command === "widgets") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      const parsedGate = Number.parseFloat(next);
+      if (!Number.isFinite(parsedGate) || parsedGate < 0 || parsedGate > 100) {
+        return undefined;
+      }
+      gatePct = parsedGate;
+      i += 1;
       continue;
     }
     if (token === "--annotate-todos") {
@@ -1702,6 +1772,8 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     contentIncludeHostedLayers,
     corpusPath,
     corpusOutputDir,
+    widgetOutput,
+    gatePct,
   };
 }
 
@@ -1739,6 +1811,7 @@ function printUsage(): void {
     [
       "Usage:",
       "  honua-migrate [scan] <path> [--report <file>]",
+      "  honua-migrate widgets <path> [--json | --markdown] [--gate <pct>] [--report <file>]",
       "  honua-migrate codemod <path> [--target <honua|honua-compat|honua-maplibre|esri-leaflet>] [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-migrate matrix [--report <file>]",
       "  honua-migrate runtime-matrix [--report <file>]",
@@ -1754,6 +1827,9 @@ function printUsage(): void {
       "",
       "Examples:",
       "  node dist/src/migration/cli.js scan ./src",
+      "  node dist/src/migration/cli.js widgets ./src --report widget-readiness.json",
+      "  node dist/src/migration/cli.js widgets ./src --markdown",
+      "  node dist/src/migration/cli.js widgets ./src --gate 80",
       "  node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json",
       "  node dist/src/migration/cli.js codemod ./src --target honua-maplibre --write --report migration-report.json",
       "  node dist/src/migration/cli.js codemod ./src --target esri-leaflet --write --report migration-report.json",

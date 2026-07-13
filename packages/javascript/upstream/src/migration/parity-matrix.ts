@@ -80,6 +80,10 @@ const HONUA_MAPLIBRE_NOTE_OVERRIDES: Readonly<Partial<Record<CodemodConstructorK
     "Static WebMap JSON literals are auto-rewritten to webmapJsonToMapLibreStyle({...}); dynamic / portal-loaded WebMaps still fall through to manual TODO.",
   "geometry-engine":
     "geometryEngine imports rewrite to the geometryEngineCompat shim (@honua/geometry); covered ops (buffer/intersect/union/difference/area/length/simplify/convexHull/contains/intersects) migrate cleanly, uncovered ops (geodesic densify, offset, cut, ?) keep a manual TODO.",
+  "sketch-widget":
+    "SketchCompat maps snappingOptions (enabled/distance/featureSources) onto the contract SnappingConfig; wire bindEditSketchSnapping from @honua/sdk-js/runtime for vertex/edge/feature snapping with MapLibre indicators.",
+  "editor-widget":
+    "EditorCompat maps snappingOptions onto the contract SnappingConfig shared with the edit-sketch snapping engine (vertex/edge/feature candidates, pixel tolerance, per-source enablement).",
 });
 
 const BASE_MATRIX_ROWS: JsParityMatrixEntry[] = (Object.keys(CANONICAL_MODULE_BY_KIND) as CodemodConstructorKind[])

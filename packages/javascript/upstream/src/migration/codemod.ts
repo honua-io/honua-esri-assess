@@ -7052,6 +7052,7 @@ function isSafeSketchWidgetCompatCall(node: ts.NewExpression): { ok: true } | { 
     "updateOnGraphicClick",
     "defaultCreateOptions",
     "defaultUpdateOptions",
+    "snappingOptions",
   ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
@@ -7093,7 +7094,14 @@ function isSafeEditorWidgetCompatCall(node: ts.NewExpression): { ok: true } | { 
     };
   }
 
-  const allowed = new Set(["view", "container", "layerInfos", "allowedWorkflows", "supportingWidgetDefaults"]);
+  const allowed = new Set([
+    "view",
+    "container",
+    "layerInfos",
+    "allowedWorkflows",
+    "supportingWidgetDefaults",
+    "snappingOptions",
+  ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {

@@ -129,8 +129,9 @@ diagnostics inside the artifact rather than aborting the scan.
 `EsriFootprint.json` is the sole machine-readable handoff into the closed
 Honua migration product; `EsriAccessFootprint.json` is its documented sibling
 for identity/RBAC posture. Both are published JSON Schemas (draft 2020-12) in
-this repository, and every emitted artifact is validated against the packaged
-schema copy.
+this repository. Pass `--validate` on scan to check the artifact against the
+packaged schema copy before it is written, or run `schema validate <file>` on
+any artifact after the fact.
 
 | Artifact | Schema | Reference |
 |----------|--------|-----------|

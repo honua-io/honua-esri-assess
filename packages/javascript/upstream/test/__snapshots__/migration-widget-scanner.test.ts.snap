@@ -1,0 +1,356 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`widget readiness report on the esri-widget-cliff-app fixture > matches the JSON report snapshot 1`] = `
+{
+  "deprecationRelease": "5.0",
+  "dispositionDataVersion": "1.0.0",
+  "filesScanned": 4,
+  "filesWithWidgetUsage": 4,
+  "removalRelease": "6.0",
+  "removalTimeframe": "as early as Q1 2027",
+  "rootDir": "<fixture>",
+  "summary": {
+    "assistedSites": 6,
+    "assistedWidgets": 6,
+    "automatedPct": 30.76923076923077,
+    "automatedSites": 4,
+    "automatedWidgets": 4,
+    "manualSites": 3,
+    "manualWidgets": 3,
+    "totalSites": 13,
+  },
+  "summaryLine": "4 automated / 6 assisted / 3 manual of 13 widget usage sites (30.8% automated). Every classic ArcGIS JS widget is deprecated at 5.0 and is removed at 6.0 ? as early as Q1 2027.",
+  "widgets": [
+    {
+      "bucket": "automated",
+      "count": 1,
+      "disposition": "automated",
+      "guideLink": "docs/widget-survival-guide.md#basemapgallery",
+      "sites": [
+        {
+          "file": "src/legacy-amd.js",
+          "importStyle": "amd-require",
+          "line": 6,
+          "modulePath": "esri/widgets/BasemapGallery",
+          "supportModule": false,
+          "widget": "BasemapGallery",
+        },
+      ],
+      "supportModule": false,
+      "target": "BasemapGalleryCompat from @honua/sdk-esri-compat",
+      "widget": "BasemapGallery",
+    },
+    {
+      "bucket": "manual",
+      "count": 1,
+      "disposition": "no-equivalent",
+      "guideLink": "docs/widget-survival-guide.md#daylight",
+      "sites": [
+        {
+          "file": "src/cdn-map-components.js",
+          "importStyle": "arcgis-import",
+          "line": 3,
+          "modulePath": "@arcgis/core/widgets/Daylight.js",
+          "supportModule": false,
+          "widget": "Daylight",
+        },
+      ],
+      "supportModule": false,
+      "target": "None. Requires a 3D scene with sun/shadow simulation.",
+      "widget": "Daylight",
+    },
+    {
+      "bucket": "assisted",
+      "count": 1,
+      "disposition": "compat-shim",
+      "guideLink": "docs/widget-survival-guide.md#directions",
+      "sites": [
+        {
+          "file": "src/legacy-amd.js",
+          "importStyle": "amd-require",
+          "line": 5,
+          "modulePath": "esri/widgets/Directions",
+          "supportModule": false,
+          "widget": "Directions",
+        },
+      ],
+      "supportModule": false,
+      "target": "DirectionsCompat from @honua/sdk-esri-compat backed by HonuaRouteService (RouteTask parity)",
+      "widget": "Directions",
+    },
+    {
+      "bucket": "assisted",
+      "count": 1,
+      "disposition": "compat-shim",
+      "guideLink": "docs/widget-survival-guide.md#editor",
+      "sites": [
+        {
+          "file": "src/editing.ts",
+          "importStyle": "esm-import",
+          "line": 1,
+          "modulePath": "@arcgis/core/widgets/Editor",
+          "supportModule": false,
+          "widget": "Editor",
+        },
+      ],
+      "supportModule": false,
+      "target": "EditorCompat from @honua/sdk-esri-compat",
+      "widget": "Editor",
+    },
+    {
+      "bucket": "manual",
+      "count": 1,
+      "disposition": "manual-workaround",
+      "guideLink": "docs/widget-survival-guide.md#elevationprofile",
+      "sites": [
+        {
+          "file": "src/cdn-map-components.js",
+          "importStyle": "arcgis-import",
+          "line": 4,
+          "modulePath": "esri/widgets/ElevationProfile",
+          "supportModule": false,
+          "widget": "ElevationProfile",
+        },
+      ],
+      "supportModule": false,
+      "target": "No drop-in widget. Sample the profile geometry yourself (e.g. @honua/sdk-js/geometry densify + an elevation/terrain source such as maplibre-gl queryTerrainElevation) and chart with your own charting library.",
+      "widget": "ElevationProfile",
+    },
+    {
+      "bucket": "automated",
+      "count": 1,
+      "disposition": "automated",
+      "guideLink": "docs/widget-survival-guide.md#expand",
+      "sites": [
+        {
+          "file": "src/main.ts",
+          "importStyle": "esm-import",
+          "line": 5,
+          "modulePath": "@arcgis/core/widgets/Expand",
+          "supportModule": false,
+          "widget": "Expand",
+        },
+      ],
+      "supportModule": false,
+      "target": "ExpandCompat from @honua/sdk-esri-compat",
+      "widget": "Expand",
+    },
+    {
+      "bucket": "assisted",
+      "count": 1,
+      "disposition": "compat-shim",
+      "guideLink": "docs/widget-survival-guide.md#featuretable",
+      "sites": [
+        {
+          "file": "src/editing.ts",
+          "importStyle": "esm-import",
+          "line": 2,
+          "modulePath": "@arcgis/core/widgets/FeatureTable",
+          "supportModule": false,
+          "widget": "FeatureTable",
+        },
+      ],
+      "supportModule": false,
+      "target": "FeatureTableCompat from @honua/sdk-esri-compat",
+      "widget": "FeatureTable",
+    },
+    {
+      "bucket": "automated",
+      "count": 1,
+      "disposition": "automated",
+      "guideLink": "docs/widget-survival-guide.md#layerlist",
+      "sites": [
+        {
+          "file": "src/main.ts",
+          "importStyle": "esm-import",
+          "line": 4,
+          "modulePath": "@arcgis/core/widgets/LayerList.js",
+          "supportModule": false,
+          "widget": "LayerList",
+        },
+      ],
+      "supportModule": false,
+      "target": "LayerListCompat from @honua/sdk-esri-compat",
+      "widget": "LayerList",
+    },
+    {
+      "bucket": "automated",
+      "count": 1,
+      "disposition": "automated",
+      "guideLink": "docs/widget-survival-guide.md#legend",
+      "sites": [
+        {
+          "file": "src/main.ts",
+          "importStyle": "esm-import",
+          "line": 3,
+          "modulePath": "@arcgis/core/widgets/Legend",
+          "supportModule": false,
+          "widget": "Legend",
+        },
+      ],
+      "supportModule": false,
+      "target": "LegendCompat from @honua/sdk-esri-compat",
+      "widget": "Legend",
+    },
+    {
+      "bucket": "assisted",
+      "count": 1,
+      "disposition": "compat-shim",
+      "guideLink": "docs/widget-survival-guide.md#print",
+      "sites": [
+        {
+          "file": "src/editing.ts",
+          "importStyle": "esm-dynamic-import",
+          "line": 11,
+          "modulePath": "@arcgis/core/widgets/Print",
+          "supportModule": false,
+          "widget": "Print",
+        },
+      ],
+      "supportModule": false,
+      "target": "PrintCompat from @honua/sdk-esri-compat",
+      "widget": "Print",
+    },
+    {
+      "bucket": "manual",
+      "count": 1,
+      "disposition": "support-module",
+      "guideLink": "docs/widget-survival-guide.md#search",
+      "sites": [
+        {
+          "file": "src/main.ts",
+          "importStyle": "esm-import",
+          "line": 6,
+          "modulePath": "@arcgis/core/widgets/Search/SearchViewModel",
+          "supportModule": true,
+          "widget": "Search",
+        },
+      ],
+      "supportModule": true,
+      "target": "Support-module import ? honua-migrate only rewrites the root Search widget module; migrate these by hand (root Search disposition: automated).",
+      "widget": "Search",
+    },
+    {
+      "bucket": "assisted",
+      "count": 1,
+      "disposition": "compat-shim",
+      "guideLink": "docs/widget-survival-guide.md#sketch",
+      "sites": [
+        {
+          "file": "src/cdn-map-components.js",
+          "importStyle": "arcgis-import",
+          "line": 10,
+          "modulePath": "esri/widgets/Sketch",
+          "supportModule": false,
+          "widget": "Sketch",
+        },
+      ],
+      "supportModule": false,
+      "target": "SketchCompat from @honua/sdk-esri-compat",
+      "widget": "Sketch",
+    },
+    {
+      "bucket": "assisted",
+      "count": 1,
+      "disposition": "compat-shim",
+      "guideLink": "docs/widget-survival-guide.md#timeslider",
+      "sites": [
+        {
+          "file": "src/legacy-amd.js",
+          "importStyle": "amd-require",
+          "line": 14,
+          "modulePath": "esri/widgets/TimeSlider",
+          "supportModule": false,
+          "widget": "TimeSlider",
+        },
+      ],
+      "supportModule": false,
+      "target": "TimeSliderCompat from @honua/sdk-esri-compat",
+      "widget": "TimeSlider",
+    },
+  ],
+}
+`;
+
+exports[`widget readiness report on the esri-widget-cliff-app fixture > matches the markdown report snapshot 1`] = `
+"# ArcGIS widget readiness report
+
+Classic ArcGIS JS widgets are deprecated at 5.0 and are removed at 6.0 (as early as Q1 2027). Disposition data v1.0.0.
+
+- Files scanned: 4
+- Files with widget usage: 4
+- Widget usage sites: 13
+
+4 automated / 6 assisted / 3 manual of 13 widget usage sites (30.8% automated). Every classic ArcGIS JS widget is deprecated at 5.0 and is removed at 6.0 ? as early as Q1 2027.
+
+| Widget | Sites | Disposition | Target |
+| --- | --- | --- | --- |
+| [BasemapGallery](docs/widget-survival-guide.md#basemapgallery) | 1 | \`automated\` | BasemapGalleryCompat from @honua/sdk-esri-compat |
+| [Daylight](docs/widget-survival-guide.md#daylight) | 1 | \`no-equivalent\` | None. Requires a 3D scene with sun/shadow simulation. |
+| [Directions](docs/widget-survival-guide.md#directions) | 1 | \`compat-shim\` | DirectionsCompat from @honua/sdk-esri-compat backed by HonuaRouteService (RouteTask parity) |
+| [Editor](docs/widget-survival-guide.md#editor) | 1 | \`compat-shim\` | EditorCompat from @honua/sdk-esri-compat |
+| [ElevationProfile](docs/widget-survival-guide.md#elevationprofile) | 1 | \`manual-workaround\` | No drop-in widget. Sample the profile geometry yourself (e.g. @honua/sdk-js/geometry densify + an elevation/terrain source such as maplibre-gl queryTerrainElevation) and chart with your own charting library. |
+| [Expand](docs/widget-survival-guide.md#expand) | 1 | \`automated\` | ExpandCompat from @honua/sdk-esri-compat |
+| [FeatureTable](docs/widget-survival-guide.md#featuretable) | 1 | \`compat-shim\` | FeatureTableCompat from @honua/sdk-esri-compat |
+| [LayerList](docs/widget-survival-guide.md#layerlist) | 1 | \`automated\` | LayerListCompat from @honua/sdk-esri-compat |
+| [Legend](docs/widget-survival-guide.md#legend) | 1 | \`automated\` | LegendCompat from @honua/sdk-esri-compat |
+| [Print](docs/widget-survival-guide.md#print) | 1 | \`compat-shim\` | PrintCompat from @honua/sdk-esri-compat |
+| [Search (support modules)](docs/widget-survival-guide.md#search) | 1 | \`support-module\` | Support-module import ? honua-migrate only rewrites the root Search widget module; migrate these by hand (root Search disposition: automated). |
+| [Sketch](docs/widget-survival-guide.md#sketch) | 1 | \`compat-shim\` | SketchCompat from @honua/sdk-esri-compat |
+| [TimeSlider](docs/widget-survival-guide.md#timeslider) | 1 | \`compat-shim\` | TimeSliderCompat from @honua/sdk-esri-compat |
+
+## File inventory
+
+### BasemapGallery
+
+- \`src/legacy-amd.js:6\` ? \`esri/widgets/BasemapGallery\` (amd-require)
+
+### Daylight
+
+- \`src/cdn-map-components.js:3\` ? \`@arcgis/core/widgets/Daylight.js\` (arcgis-import)
+
+### Directions
+
+- \`src/legacy-amd.js:5\` ? \`esri/widgets/Directions\` (amd-require)
+
+### Editor
+
+- \`src/editing.ts:1\` ? \`@arcgis/core/widgets/Editor\` (esm-import)
+
+### ElevationProfile
+
+- \`src/cdn-map-components.js:4\` ? \`esri/widgets/ElevationProfile\` (arcgis-import)
+
+### Expand
+
+- \`src/main.ts:5\` ? \`@arcgis/core/widgets/Expand\` (esm-import)
+
+### FeatureTable
+
+- \`src/editing.ts:2\` ? \`@arcgis/core/widgets/FeatureTable\` (esm-import)
+
+### LayerList
+
+- \`src/main.ts:4\` ? \`@arcgis/core/widgets/LayerList.js\` (esm-import)
+
+### Legend
+
+- \`src/main.ts:3\` ? \`@arcgis/core/widgets/Legend\` (esm-import)
+
+### Print
+
+- \`src/editing.ts:11\` ? \`@arcgis/core/widgets/Print\` (esm-dynamic-import)
+
+### Search (support modules)
+
+- \`src/main.ts:6\` ? \`@arcgis/core/widgets/Search/SearchViewModel\` (esm-import)
+
+### Sketch
+
+- \`src/cdn-map-components.js:10\` ? \`esri/widgets/Sketch\` (arcgis-import)
+
+### TimeSlider
+
+- \`src/legacy-amd.js:14\` ? \`esri/widgets/TimeSlider\` (amd-require)
+"
+`;

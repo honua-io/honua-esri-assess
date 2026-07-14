@@ -58,20 +58,27 @@ describe("e2e ArcGIS sample app conversion", () => {
     expect(report.unhandledArcGisModules).toEqual([]);
 
     expect(codemodResult.metrics.byKind["feature-layer"]).toEqual({
-      total: 1,
-      autoMigrated: 1,
+      total: 2,
+      autoMigrated: 2,
       manual: 0,
     });
     expect(codemodResult.metrics.byKind.map).toEqual({
-      total: 1,
-      autoMigrated: 1,
+      total: 2,
+      autoMigrated: 2,
       manual: 0,
     });
     expect(codemodResult.metrics.byKind["map-view"]).toEqual({
+      total: 2,
+      autoMigrated: 2,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["feature-table-widget"]).toEqual({
       total: 1,
       autoMigrated: 1,
       manual: 0,
     });
+    expect(codemodResult.metrics.byKind["popup-widget"]).toEqual({ total: 1, autoMigrated: 1, manual: 0 });
+    expect(codemodResult.metrics.byKind["layer-list"]).toEqual({ total: 1, autoMigrated: 1, manual: 0 });
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
 

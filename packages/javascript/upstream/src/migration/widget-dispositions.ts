@@ -138,7 +138,14 @@ const SCENE_3D_NOTE =
   "surface reproduces this widget today (see docs/migration-punch-list.md, parity gap 1). Apps that " +
   "depend on it need a product decision, not a code rewrite.";
 
-const WIDGET_DISPOSITION_DATA: readonly WidgetDispositionData[] = [
+/**
+ * Documentation source rows consumed by the repository guide generator.
+ * This symbol is intentionally not re-exported from the public migration
+ * entrypoint; scanner consumers receive the projected rows below.
+ *
+ * @internal
+ */
+export const WIDGET_DISPOSITION_DOCUMENTATION: readonly WidgetDispositionData[] = [
   // --- automated: deterministic codemod rewrite onto a compat shim ---
   widgetEntry(
     "Attribution",
@@ -427,8 +434,21 @@ const WIDGET_DISPOSITION_DATA: readonly WidgetDispositionData[] = [
   widgetEntry("Weather", "no-equivalent", "None. Requires a 3D scene atmosphere/weather renderer.", SCENE_3D_NOTE),
 ];
 
-/** Public scanner data; documentation-only component metadata is intentionally not part of this API type. */
-export const WIDGET_DISPOSITIONS: readonly WidgetDisposition[] = WIDGET_DISPOSITION_DATA;
+function publicWidgetDisposition(entry: WidgetDispositionData): WidgetDisposition {
+  return {
+    widget: entry.widget,
+    esmModules: entry.esmModules,
+    amdModules: entry.amdModules,
+    disposition: entry.disposition,
+    target: entry.target,
+    notes: entry.notes,
+    ...(entry.shimSource ? { shimSource: entry.shimSource } : {}),
+  };
+}
+
+/** Public scanner data with documentation-only component metadata projected out at runtime. */
+export const WIDGET_DISPOSITIONS: readonly WidgetDisposition[] =
+  WIDGET_DISPOSITION_DOCUMENTATION.map(publicWidgetDisposition);
 
 const DISPOSITION_BUCKET: Readonly<Record<WidgetDispositionKind, WidgetMigrationBucket>> = {
   automated: "automated",

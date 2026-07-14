@@ -56,6 +56,18 @@ export const WIDGET_DISPOSITION_KINDS: readonly WidgetDispositionKind[] = [
 /** Migration-effort bucket used by the scanner readiness report. */
 export type WidgetMigrationBucket = "automated" | "assisted" | "manual";
 
+/** Internal documentation metadata rendered by the survival-guide generator. */
+interface WidgetAppPlatformComponent {
+  /** Published module that registers the custom element. */
+  moduleSpecifier: "@honua/app-platform/web-components";
+  /** Custom-element tag name, e.g. `honua-legend`. */
+  tagName: `honua-${string}`;
+  /** Repo-relative source file implementing the custom element. */
+  source: string;
+  /** Copyable markup for the generated survival guide. */
+  usageHtml: string;
+}
+
 export interface WidgetDisposition {
   /** Widget class name, e.g. `Legend`. */
   widget: string;
@@ -73,13 +85,19 @@ export interface WidgetDisposition {
   shimSource?: string;
 }
 
+interface WidgetDispositionData extends WidgetDisposition {
+  /** Direct app-platform component for teams replacing the widget instead of retaining the compat shim. */
+  appPlatformComponent?: WidgetAppPlatformComponent;
+}
+
 function widgetEntry(
   widget: string,
   disposition: WidgetDispositionKind,
   target: string,
   notes: string,
   shimSource?: string,
-): WidgetDisposition {
+  appPlatformComponent?: WidgetAppPlatformComponent,
+): WidgetDispositionData {
   return {
     widget,
     esmModules: [`@arcgis/core/widgets/${widget}`],
@@ -88,6 +106,20 @@ function widgetEntry(
     target,
     notes,
     ...(shimSource ? { shimSource } : {}),
+    ...(appPlatformComponent ? { appPlatformComponent } : {}),
+  };
+}
+
+function appPlatformComponent(
+  tagName: `honua-${string}`,
+  source: string,
+  usageHtml: string,
+): WidgetAppPlatformComponent {
+  return {
+    moduleSpecifier: "@honua/app-platform/web-components",
+    tagName,
+    source,
+    usageHtml,
   };
 }
 
@@ -106,7 +138,7 @@ const SCENE_3D_NOTE =
   "surface reproduces this widget today (see docs/migration-punch-list.md, parity gap 1). Apps that " +
   "depend on it need a product decision, not a code rewrite.";
 
-export const WIDGET_DISPOSITIONS: readonly WidgetDisposition[] = [
+const WIDGET_DISPOSITION_DATA: readonly WidgetDispositionData[] = [
   // --- automated: deterministic codemod rewrite onto a compat shim ---
   widgetEntry(
     "Attribution",
@@ -191,6 +223,11 @@ export const WIDGET_DISPOSITIONS: readonly WidgetDisposition[] = [
     "LayerListCompat from @honua/sdk-esri-compat",
     AUTOMATED_NOTE,
     "src/esri-compat/layer-list.ts",
+    appPlatformComponent(
+      "honua-layer-list",
+      "src/web-components/elements.ts",
+      '<honua-map id="map"></honua-map>\n<honua-layer-list for="map"></honua-layer-list>',
+    ),
   ),
   widgetEntry(
     "Legend",
@@ -198,6 +235,11 @@ export const WIDGET_DISPOSITIONS: readonly WidgetDisposition[] = [
     "LegendCompat from @honua/sdk-esri-compat",
     AUTOMATED_NOTE,
     "src/esri-compat/legend.ts",
+    appPlatformComponent(
+      "honua-legend",
+      "src/web-components/elements.ts",
+      '<honua-map id="map"></honua-map>\n<honua-legend for="map"></honua-legend>',
+    ),
   ),
   widgetEntry(
     "Locate",
@@ -230,6 +272,11 @@ export const WIDGET_DISPOSITIONS: readonly WidgetDisposition[] = [
     "SearchCompat from @honua/sdk-esri-compat backed by the Honua geocoding surface",
     `${AUTOMATED_NOTE} Custom Locator sources are out of scope (Locator/Geoprocessor parity gap).`,
     "src/esri-compat/search.ts",
+    appPlatformComponent(
+      "honua-search",
+      "src/web-components/elements.ts",
+      '<honua-map id="map"></honua-map>\n<honua-search for="map" source="incidents"></honua-search>',
+    ),
   ),
   widgetEntry(
     "Swipe",
@@ -328,6 +375,11 @@ export const WIDGET_DISPOSITIONS: readonly WidgetDisposition[] = [
     "MeasurementCompat from @honua/sdk-esri-compat (2D distance/area only)",
     `${COMPAT_SHIM_NOTE} 3D measurement modes are not supported.`,
     "src/esri-compat/measurement.ts",
+    appPlatformComponent(
+      "honua-measurement",
+      "src/web-components/measurement.ts",
+      '<honua-map id="map"></honua-map>\n<honua-measurement for="map"></honua-measurement>',
+    ),
   ),
   widgetEntry(
     "Print",
@@ -374,6 +426,9 @@ export const WIDGET_DISPOSITIONS: readonly WidgetDisposition[] = [
   widgetEntry("Slice", "no-equivalent", "None. Requires 3D scene slicing.", SCENE_3D_NOTE),
   widgetEntry("Weather", "no-equivalent", "None. Requires a 3D scene atmosphere/weather renderer.", SCENE_3D_NOTE),
 ];
+
+/** Public scanner data; documentation-only component metadata is intentionally not part of this API type. */
+export const WIDGET_DISPOSITIONS: readonly WidgetDisposition[] = WIDGET_DISPOSITION_DATA;
 
 const DISPOSITION_BUCKET: Readonly<Record<WidgetDispositionKind, WidgetMigrationBucket>> = {
   automated: "automated",

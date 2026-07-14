@@ -1,0 +1,104 @@
+{
+  "schemaVersion": "honua.migration-workbench.manifest.v1",
+  "artifactSet": "arcgis-source-app/honua-compat",
+  "fixture": "arcgis-source-app",
+  "provenance": {
+    "fixture": "examples/arcgis-source-app",
+    "scenario": "examples/arcgis-source-app/src/workbench-scenario.js",
+    "authorship": "Original Honua-authored repository fixture",
+    "licenseScope": "Apache-2.0 repository license; no third-party sample source is reproduced in these artifacts",
+    "excludedFixture": {
+      "path": "test/fixtures/esri-demo-feature-table-relates-app",
+      "reason": "Not used because publishable license evidence for that adapted fixture was not established for this public artifact supply chain."
+    },
+    "transformationEngine": "dist/src/migration/cli.js",
+    "sourceUpload": false,
+    "externalNetworkRequests": false,
+    "credentialsRequired": false
+  },
+  "commands": [
+    {
+      "id": "honua-compat-demo",
+      "executable": "node",
+      "argv": [
+        "dist/src/migration/cli.js",
+        "demo",
+        "--fixtures-root",
+        "<repo>/examples",
+        "--fixture",
+        "arcgis-source-app",
+        "--output-dir",
+        "<workspace>/demo-output",
+        "--target",
+        "honua-compat",
+        "--compat-import-path",
+        "@honua/sdk-js/esri-compat",
+        "--skip-import",
+        "--skip-reconcile",
+        "--report",
+        "<workspace>/demo-report.raw.json"
+      ],
+      "exitCode": 0
+    },
+    {
+      "id": "widget-readiness",
+      "executable": "node",
+      "argv": [
+        "dist/src/migration/cli.js",
+        "widgets",
+        "<repo>/examples/arcgis-source-app",
+        "--json",
+        "--report",
+        "<workspace>/widget-readiness.raw.json"
+      ],
+      "exitCode": 0
+    },
+    {
+      "id": "honua-maplibre-dry-run",
+      "executable": "node",
+      "argv": [
+        "dist/src/migration/cli.js",
+        "codemod",
+        "<repo>/examples/arcgis-source-app",
+        "--target",
+        "honua-maplibre",
+        "--annotate-todos",
+        "--report",
+        "<workspace>/maplibre-assessment.raw.json"
+      ],
+      "exitCode": 0
+    }
+  ],
+  "files": [
+    {
+      "repositoryPath": "examples/migration-workbench/public/artifacts/v1/maplibre-assessment.v1.json",
+      "mediaType": "application/json",
+      "bytes": 50274,
+      "sha256": "84e1f8a56c621cb0fbdd2d11857ebd2e8eeb613bcbdc9b8a81a3fc8b18b7a179"
+    },
+    {
+      "repositoryPath": "examples/migration-workbench/public/artifacts/v1/migration-report.v1.json",
+      "mediaType": "application/json",
+      "bytes": 56645,
+      "sha256": "8f1753be4a3486a4ef2c7d1893693e143e70d7c8fb3872e9cbac16f330dde831"
+    },
+    {
+      "repositoryPath": "examples/migration-workbench/public/artifacts/v1/migration.v1.patch",
+      "mediaType": "text/x-diff",
+      "bytes": 3864,
+      "sha256": "5af0f80709512a3bd9f600716a14ab4b9194dc103369294c3db0c944c04e3a9b"
+    },
+    {
+      "repositoryPath": "examples/migration-workbench/public/artifacts/v1/widget-readiness.v1.json",
+      "mediaType": "application/json",
+      "bytes": 5610,
+      "sha256": "93398a8e73ef72e6bfb95e3990e5aeea0ea842b44ba3e0c82424b0e9783ca506"
+    },
+    {
+      "repositoryPath": "examples/migration-workbench/src/generated/migrated-main.js",
+      "mediaType": "text/javascript",
+      "bytes": 5159,
+      "sha256": "ea75ce5a0c267391b846f8825ad54e941a5b6ec31c9fa8cf05f3469712a636a4"
+    }
+  ]
+}

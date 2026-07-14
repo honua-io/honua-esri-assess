@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "honua.migration-workbench.widget-readiness.v1",
+  "fixture": "arcgis-source-app",
+  "command": {
+    "id": "widget-readiness",
+    "executable": "node",
+    "argv": [
+      "dist/src/migration/cli.js",
+      "widgets",
+      "<repo>/examples/arcgis-source-app",
+      "--json",
+      "--report",
+      "<workspace>/widget-readiness.raw.json"
+    ],
+    "exitCode": 0,
+    "stdout": "{\n  \"rootDir\": \"<repo>/examples/arcgis-source-app\",\n  \"dispositionDataVersion\": \"1.0.0\",\n  \"deprecationRelease\": \"5.0\",\n  \"removalRelease\": \"6.0\",\n  \"removalTimeframe\": \"as early as Q1 2027\",\n  \"filesScanned\": 3,\n  \"filesWithWidgetUsage\": 1,\n  \"widgets\": [\n    {\n      \"widget\": \"FeatureTable\",\n      \"supportModule\": false,\n      \"disposition\": \"compat-shim\",\n      \"bucket\": \"assisted\",\n      \"target\": \"FeatureTableCompat from @honua/sdk-esri-compat\",\n      \"guideLink\": \"docs/widget-survival-guide.md#featuretable\",\n      \"count\": 1,\n      \"sites\": [\n        {\n          \"file\": \"src/workbench-scenario.js\",\n          \"line\": 8,\n          \"widget\": \"FeatureTable\",\n          \"modulePath\": \"@arcgis/core/widgets/FeatureTable\",\n          \"importStyle\": \"esm-import\",\n          \"supportModule\": false\n        }\n      ]\n    },\n    {\n      \"widget\": \"LayerList\",\n      \"supportModule\": false,\n      \"disposition\": \"automated\",\n      \"bucket\": \"automated\",\n      \"target\": \"LayerListCompat from @honua/sdk-esri-compat\",\n      \"guideLink\": \"docs/widget-survival-guide.md#layerlist\",\n      \"count\": 1,\n      \"sites\": [\n        {\n          \"file\": \"src/workbench-scenario.js\",\n          \"line\": 9,\n          \"widget\": \"LayerList\",\n          \"modulePath\": \"@arcgis/core/widgets/LayerList\",\n          \"importStyle\": \"esm-import\",\n          \"supportModule\": false\n        }\n      ]\n    },\n    {\n      \"widget\": \"Popup\",\n      \"supportModule\": false,\n      \"disposition\": \"automated\",\n      \"bucket\": \"automated\",\n      \"target\": \"PopupCompat from @honua/sdk-esri-compat\",\n      \"guideLink\": \"docs/widget-survival-guide.md#popup\",\n      \"count\": 1,\n      \"sites\": [\n        {\n          \"file\": \"src/workbench-scenario.js\",\n          \"line\": 10,\n          \"widget\": \"Popup\",\n          \"modulePath\": \"@arcgis/core/widgets/Popup\",\n          \"importStyle\": \"esm-import\",\n          \"supportModule\": false\n        }\n      ]\n    }\n  ],\n  \"summary\": {\n    \"totalSites\": 3,\n    \"automatedSites\": 2,\n    \"assistedSites\": 1,\n    \"manualSites\": 0,\n    \"automatedWidgets\": 2,\n    \"assistedWidgets\": 1,\n    \"manualWidgets\": 0,\n    \"automatedPct\": 66.66666666666666\n  },\n  \"summaryLine\": \"2 automated / 1 assisted / 0 manual of 3 widget usage sites (66.7% automated). Every classic ArcGIS JS widget is deprecated at 5.0 and is removed at 6.0 ? as early as Q1 2027.\"\n}\nreportWritten=<workspace>/widget-readiness.raw.json\n",
+    "stderr": ""
+  },
+  "report": {
+    "deprecationRelease": "5.0",
+    "dispositionDataVersion": "1.0.0",
+    "filesScanned": 3,
+    "filesWithWidgetUsage": 1,
+    "removalRelease": "6.0",
+    "removalTimeframe": "as early as Q1 2027",
+    "rootDir": "<repo>/examples/arcgis-source-app",
+    "summary": {
+      "assistedSites": 1,
+      "assistedWidgets": 1,
+      "automatedPct": 66.66666666666666,
+      "automatedSites": 2,
+      "automatedWidgets": 2,
+      "manualSites": 0,
+      "manualWidgets": 0,
+      "totalSites": 3
+    },
+    "summaryLine": "2 automated / 1 assisted / 0 manual of 3 widget usage sites (66.7% automated). Every classic ArcGIS JS widget is deprecated at 5.0 and is removed at 6.0 ? as early as Q1 2027.",
+    "widgets": [
+      {
+        "bucket": "assisted",
+        "count": 1,
+        "disposition": "compat-shim",
+        "guideLink": "docs/widget-survival-guide.md#featuretable",
+        "sites": [
+          {
+            "file": "src/workbench-scenario.js",
+            "importStyle": "esm-import",
+            "line": 8,
+            "modulePath": "@arcgis/core/widgets/FeatureTable",
+            "supportModule": false,
+            "widget": "FeatureTable"
+          }
+        ],
+        "supportModule": false,
+        "target": "FeatureTableCompat from @honua/sdk-esri-compat",
+        "widget": "FeatureTable"
+      },
+      {
+        "bucket": "automated",
+        "count": 1,
+        "disposition": "automated",
+        "guideLink": "docs/widget-survival-guide.md#layerlist",
+        "sites": [
+          {
+            "file": "src/workbench-scenario.js",
+            "importStyle": "esm-import",
+            "line": 9,
+            "modulePath": "@arcgis/core/widgets/LayerList",
+            "supportModule": false,
+            "widget": "LayerList"
+          }
+        ],
+        "supportModule": false,
+        "target": "LayerListCompat from @honua/sdk-esri-compat",
+        "widget": "LayerList"
+      },
+      {
+        "bucket": "automated",
+        "count": 1,
+        "disposition": "automated",
+        "guideLink": "docs/widget-survival-guide.md#popup",
+        "sites": [
+          {
+            "file": "src/workbench-scenario.js",
+            "importStyle": "esm-import",
+            "line": 10,
+            "modulePath": "@arcgis/core/widgets/Popup",
+            "supportModule": false,
+            "widget": "Popup"
+          }
+        ],
+        "supportModule": false,
+        "target": "PopupCompat from @honua/sdk-esri-compat",
+        "widget": "Popup"
+      }
+    ]
+  }
+}

@@ -12,3 +12,8 @@ points TypeScript at the workspace `src/esri-compat/` via `paths`, and
 typechecks the migrated output.
 
 This is not vendored from `arcgis-js-api`. All code under `src/` is original.
+The `workbench-scenario.js` entry is an explicitly Honua-authored, deterministic
+map/layer/table/selection/related-record/action scenario used to generate the
+migration workbench's public evidence. It uses only in-memory fixture rows and
+the reserved `example.test` hostname; it does not upload source or contact an
+ArcGIS or Honua service.

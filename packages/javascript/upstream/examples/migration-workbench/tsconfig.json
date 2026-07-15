@@ -1,21 +1,8 @@
 {
+  "extends": "../_kit/tsconfig.source.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "verbatimModuleSyntax": true,
-    "allowSyntheticDefaultImports": true,
     "allowJs": true,
-    "checkJs": false,
-    "baseUrl": ".",
-    "types": ["vite/client"],
-    "paths": {
-      "@honua/sdk-js": ["../../src/index.ts"],
-      "@honua/sdk-js/esri-compat": ["../../src/esri-compat-entry.ts"]
-    }
+    "checkJs": false
   },
   "include": ["src/**/*", "vite.config.ts"]
 }

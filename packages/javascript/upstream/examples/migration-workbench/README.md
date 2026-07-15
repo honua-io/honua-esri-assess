@@ -38,6 +38,30 @@ Focused validation:
 npm test -- test/migration-workbench-model.test.ts
 npm run demo:migration-workbench:typecheck
 npm run demo:migration-workbench:build
+npm run test:playwright:migration-workbench
+```
+
+The Vite configuration uses the shared sample SDK resolver and declares only
+the public `@honua/sdk-js/esri-compat` entry point. The focused Playwright proof
+runs unchanged in source or packed mode:
+
+```bash
+HONUA_SAMPLE_SDK_MODE=source npm run test:playwright:migration-workbench
+HONUA_SAMPLE_SDK_MODE=packed \
+  HONUA_SAMPLE_SDK_DIR=/absolute/path/to/extracted/package \
+  npm run test:playwright:migration-workbench
+```
+
+The loopback-only browser proof checks every rendered metric against the
+committed model, re-hashes all five manifest files from their served bytes,
+confirms all generated-target assertions, retains every residual and guide,
+runs Axe and keyboard/responsive workflows, captures desktop/mobile evidence,
+enforces deterministic ready-time and decoded-byte budgets, and proves
+idempotent runtime and fixture teardown. The mock server can emit its bounded
+fixture receipt independently:
+
+```bash
+npm run demo:migration-workbench:mock -- --evidence-once
 ```
 
 The adapted `test/fixtures/esri-demo-feature-table-relates-app` fixture is not

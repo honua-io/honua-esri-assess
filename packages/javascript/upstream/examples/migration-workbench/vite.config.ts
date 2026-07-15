@@ -1,39 +1,41 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { defineConfig } from "vite";
+import type { Plugin, UserConfig } from "vite";
+
+import { createSampleViteConfig } from "../_kit/vite.config.js";
 
 const exampleRoot = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(exampleRoot, "../..");
+const generatedTarget = path.join(exampleRoot, "src/generated/migrated-main.js");
 
-export default defineConfig({
-  root: exampleRoot,
-  resolve: {
-    alias: [
-      {
-        find: "@honua/sdk-js/esri-compat",
-        replacement: path.resolve(repoRoot, "src/esri-compat-entry.ts"),
-      },
-      {
-        find: "@honua/sdk-js",
-        replacement: path.resolve(repoRoot, "src/index.ts"),
-      },
-    ],
+const rawGeneratedTargetPlugin: Plugin = {
+  name: "honua-migration-workbench-raw-generated-target",
+  buildStart() {
+    const metadata = fs.lstatSync(generatedTarget);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 1024 * 1024) {
+      throw new Error("migration workbench generated target must be a bounded regular file");
+    }
+    this.emitFile({
+      type: "asset",
+      fileName: "artifacts/v1/migrated-main.js",
+      source: fs.readFileSync(generatedTarget),
+    });
   },
-  server: {
-    host: "127.0.0.1",
-    fs: {
-      allow: [repoRoot],
-    },
-  },
-  preview: {
-    host: "127.0.0.1",
-  },
+};
+
+const sampleConfig = createSampleViteConfig(import.meta.url, {
+  sdkEntrypoints: ["@honua/sdk-js/esri-compat"],
+});
+
+export default {
+  ...sampleConfig,
+  plugins: [...(sampleConfig.plugins ?? []), rawGeneratedTargetPlugin],
   build: {
-    outDir: "dist",
-    emptyOutDir: true,
-    // Slice 1 intentionally records public compatibility constructor names as
-    // behavior evidence. Preserve those names in the bundled runtime evidence.
+    ...sampleConfig.build,
+    // The committed browser assertions intentionally include public
+    // compatibility constructor names. Preserve those names in both source and
+    // packed qualification builds.
     minify: false,
   },
-});
+} satisfies UserConfig;

@@ -1,3 +1,5 @@
+import { SampleCleanupRegistry } from "../../_kit/cleanup.js";
+import { mountSamplePresentation } from "../../_kit/presentation.js";
 import { loadMigrationWorkbenchArtifacts } from "./artifacts.js";
 import { createMigrationWorkbenchViewModel, formatArtifactCommand } from "./model.js";
 import type {
@@ -10,41 +12,97 @@ import type {
   UnsupportedModule,
 } from "./types.js";
 
+import "../../_kit/presentation.css";
 import "./styles.css";
+
+declare const __HONUA_SAMPLE_SDK_MODE__: "source" | "packed";
+declare const __HONUA_SDK_VERSION__: string;
 
 interface WorkbenchRuntime {
   ready: boolean;
+  disposed: boolean;
+  sdkMode: "source" | "packed";
+  sdkVersion: string;
   model?: MigrationWorkbenchViewModel;
   error?: string;
+  dispose(): Promise<void>;
 }
 
 declare global {
   interface Window {
     __HONUA_MIGRATION_WORKBENCH__?: WorkbenchRuntime;
+    __HONUA_MIGRATION_WORKBENCH_DISPOSE__?: () => Promise<void>;
   }
 }
 
-window.__HONUA_MIGRATION_WORKBENCH__ = { ready: false };
+const cleanup = new SampleCleanupRegistry();
+const bootstrapController = new AbortController();
+cleanup.add(() => bootstrapController.abort());
+
+const runtime: WorkbenchRuntime = {
+  ready: false,
+  disposed: false,
+  sdkMode: __HONUA_SAMPLE_SDK_MODE__,
+  sdkVersion: __HONUA_SDK_VERSION__,
+  dispose,
+};
+
+const presentation = mountSamplePresentation({
+  sampleId: "migration-workbench",
+  evidence: {
+    mode: "committed artifact replay",
+    fixture: "arcgis-source-app",
+    artifacts: "manifest-bound SHA-256 evidence",
+    network: "loopback fixture only",
+  },
+  onDispose: dispose,
+});
+cleanup.add(() => presentation.root.remove());
+cleanup.listen(window, "beforeunload", () => void dispose(), { once: true });
+
+window.__HONUA_MIGRATION_WORKBENCH__ = runtime;
+window.__HONUA_MIGRATION_WORKBENCH_DISPOSE__ = dispose;
+cleanup.add(() => {
+  delete window.__HONUA_MIGRATION_WORKBENCH_DISPOSE__;
+});
 
 void bootstrap();
+
+async function dispose(): Promise<void> {
+  bootstrapController.abort();
+  await cleanup.dispose();
+  runtime.ready = false;
+  runtime.disposed = true;
+  runtime.model = undefined;
+}
 
 async function bootstrap(): Promise<void> {
   try {
     const [artifacts, generatedTarget] = await Promise.all([
-      loadMigrationWorkbenchArtifacts(),
+      loadMigrationWorkbenchArtifacts({ signal: bootstrapController.signal }),
       import("./generated/migrated-main.js"),
     ]);
+    bootstrapController.signal.throwIfAborted();
     const model = createMigrationWorkbenchViewModel(artifacts, generatedTarget.default);
     render(model);
-    window.__HONUA_MIGRATION_WORKBENCH__ = { ready: true, model };
+    runtime.model = model;
+    runtime.ready = true;
+    presentation.updateEvidence({
+      mode: `${runtime.sdkMode} SDK ${runtime.sdkVersion}`,
+      fixture: model.fixture,
+      artifacts: `${model.artifactSet} ? ${model.files.length} manifest-bound files ? ${model.assertions.length} browser assertions`,
+      network: model.source.credentialsRequired ? "credentials declared" : "credential-free loopback replay",
+    });
   } catch (error) {
+    if (bootstrapController.signal.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     const errorPanel = getElement<HTMLElement>("#load-error");
     errorPanel.hidden = false;
     errorPanel.textContent = `Migration evidence could not be loaded: ${message}`;
     setText("#runtime-status", "Failed");
     getElement<HTMLElement>("#runtime-status").dataset.status = "failed";
-    window.__HONUA_MIGRATION_WORKBENCH__ = { ready: false, error: message };
+    runtime.error = message;
+    presentation.showError(error);
   }
 }
 
@@ -203,7 +261,7 @@ function renderArtifacts(model: MigrationWorkbenchViewModel): void {
 function renderMetrics(selector: string, metrics: readonly EvidenceMetric[]): void {
   getElement<HTMLElement>(selector).innerHTML = metrics
     .map(
-      (item) => `<article class="metric-card" data-tone="${item.tone}">
+      (item) => `<article class="metric-card" data-metric-id="${escapeHtml(item.id)}" data-tone="${item.tone}">
         <span>${escapeHtml(item.label)}</span>
         <strong>${escapeHtml(item.value)}</strong>
         <small>${escapeHtml(item.scope)}</small>

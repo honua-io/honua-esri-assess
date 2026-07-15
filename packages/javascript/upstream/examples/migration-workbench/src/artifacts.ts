@@ -17,6 +17,7 @@ const ARTIFACT_FILENAMES = {
 export interface LoadMigrationWorkbenchArtifactsOptions {
   readonly fetchFn?: typeof fetch;
   readonly artifactBaseUrl?: string;
+  readonly signal?: AbortSignal;
 }
 
 export async function loadMigrationWorkbenchArtifacts(
@@ -25,11 +26,11 @@ export async function loadMigrationWorkbenchArtifacts(
   const fetchFn = options.fetchFn ?? globalThis.fetch.bind(globalThis);
   const artifactBaseUrl = (options.artifactBaseUrl ?? "/artifacts/v1").replace(/\/$/u, "");
   const [manifest, migrationReport, widgetReadiness, maplibreAssessment, diff] = await Promise.all([
-    fetchJson(fetchFn, `${artifactBaseUrl}/${ARTIFACT_FILENAMES.manifest}`),
-    fetchJson(fetchFn, `${artifactBaseUrl}/${ARTIFACT_FILENAMES.migrationReport}`),
-    fetchJson(fetchFn, `${artifactBaseUrl}/${ARTIFACT_FILENAMES.widgetReadiness}`),
-    fetchJson(fetchFn, `${artifactBaseUrl}/${ARTIFACT_FILENAMES.maplibreAssessment}`),
-    fetchText(fetchFn, `${artifactBaseUrl}/${ARTIFACT_FILENAMES.diff}`),
+    fetchJson(fetchFn, `${artifactBaseUrl}/${ARTIFACT_FILENAMES.manifest}`, options.signal),
+    fetchJson(fetchFn, `${artifactBaseUrl}/${ARTIFACT_FILENAMES.migrationReport}`, options.signal),
+    fetchJson(fetchFn, `${artifactBaseUrl}/${ARTIFACT_FILENAMES.widgetReadiness}`, options.signal),
+    fetchJson(fetchFn, `${artifactBaseUrl}/${ARTIFACT_FILENAMES.maplibreAssessment}`, options.signal),
+    fetchText(fetchFn, `${artifactBaseUrl}/${ARTIFACT_FILENAMES.diff}`, options.signal),
   ]);
 
   return {
@@ -87,14 +88,14 @@ export function parseMapLibreAssessment(value: unknown): MapLibreAssessmentArtif
   return record as unknown as MapLibreAssessmentArtifact;
 }
 
-async function fetchJson(fetchFn: typeof fetch, url: string): Promise<unknown> {
-  const response = await fetchFn(url, { method: "GET", credentials: "omit" });
+async function fetchJson(fetchFn: typeof fetch, url: string, signal?: AbortSignal): Promise<unknown> {
+  const response = await fetchFn(url, { method: "GET", credentials: "omit", signal });
   if (!response.ok) throw new Error(`Unable to load ${url}: HTTP ${response.status}`);
   return response.json();
 }
 
-async function fetchText(fetchFn: typeof fetch, url: string): Promise<string> {
-  const response = await fetchFn(url, { method: "GET", credentials: "omit" });
+async function fetchText(fetchFn: typeof fetch, url: string, signal?: AbortSignal): Promise<string> {
+  const response = await fetchFn(url, { method: "GET", credentials: "omit", signal });
   if (!response.ok) throw new Error(`Unable to load ${url}: HTTP ${response.status}`);
   return response.text();
 }

@@ -94,6 +94,15 @@ function readCommittedArtifactSet(): Map<string, Buffer> {
   );
 }
 
+function activeMaterializationTransactionRoot(repositoryRoot: string): string {
+  const transactionParent = path.join(repositoryRoot, ".tmp");
+  const transactionName = fs
+    .readdirSync(transactionParent)
+    .find((name) => name.startsWith("migration-workbench-materialize-"));
+  if (!transactionName) throw new Error("transaction root was not created");
+  return path.join(transactionParent, transactionName);
+}
+
 function runGenerator(fakeRoot: string, mode: "--write" | "--check", environment = process.env) {
   const result = spawnSync(process.execPath, ["scripts/generate-migration-workbench-artifacts.mjs", mode], {
     cwd: fakeRoot,
@@ -599,12 +608,8 @@ describe("migration workbench artifact hardening", () => {
         testHooks: {
           afterReplacement(replacementCount) {
             if (replacementCount !== 2) return;
-            const transactionParent = path.join(transactionRepository, ".tmp");
-            const transactionName = fs
-              .readdirSync(transactionParent)
-              .find((name) => name.startsWith("migration-workbench-materialize-"));
-            if (!transactionName) throw new Error("transaction root was not created");
-            fs.rmSync(path.join(transactionParent, transactionName, "backups", "artifact-000"), { force: true });
+            const transactionRoot = activeMaterializationTransactionRoot(transactionRepository);
+            fs.rmSync(path.join(transactionRoot, "backups", "artifact-000"), { force: true });
             throw new Error("injected rollback with missing backup");
           },
         },
@@ -620,10 +625,152 @@ describe("migration workbench artifact hardening", () => {
     ).toBe(true);
   });
 
-  it("uses one immutable source snapshot and rejects live-source or prepared-dist TOCTOU mutation", async () => {
+  it("preserves installed output and recovery state when a file backup is tampered before rollback", () => {
+    const artifacts = readCommittedArtifactSet();
+    const transactionRepository = makeTempDir("migration-transaction-tampered-file-repository");
+    const originals = new Map<string, Buffer>();
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(transactionRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      const original = Buffer.from(`original:${repositoryPath}\n`, "utf8");
+      fs.writeFileSync(outputPath, original);
+      originals.set(repositoryPath, original);
+    }
+    let recoveryRoot = "";
+
+    expect(() =>
+      materializeArtifactSet({
+        mode: "write",
+        repositoryRoot: transactionRepository,
+        artifacts,
+        testHooks: {
+          afterReplacement(replacementCount) {
+            if (replacementCount !== 2) return;
+            recoveryRoot = activeMaterializationTransactionRoot(transactionRepository);
+            fs.writeFileSync(path.join(recoveryRoot, "backups", "artifact-000"), "tampered-backup\n");
+            throw new Error("injected rollback with tampered file backup");
+          },
+        },
+      }),
+    ).toThrow(
+      /rollback was incomplete.*rollback backup does not match its immutable original identity.*tampered file backup/i,
+    );
+
+    const firstArtifactPath = artifactPaths[0];
+    expect(
+      fs.readFileSync(path.join(transactionRepository, firstArtifactPath)).equals(artifacts.get(firstArtifactPath)!),
+    ).toBe(true);
+    expect(
+      fs.readFileSync(path.join(transactionRepository, artifactPaths[1])).equals(originals.get(artifactPaths[1])!),
+    ).toBe(true);
+    expect(fs.readFileSync(path.join(recoveryRoot, "backups", "artifact-000"), "utf8")).toBe("tampered-backup\n");
+  });
+
+  it("preserves directory recovery state when a retired directory backup tree is tampered", () => {
+    const artifacts = readCommittedArtifactSet();
+    const transactionRepository = makeTempDir("migration-transaction-tampered-directory-repository");
+    const originals = new Map<string, Buffer>();
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(transactionRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      const original = Buffer.from(`original:${repositoryPath}\n`, "utf8");
+      fs.writeFileSync(outputPath, original);
+      originals.set(repositoryPath, original);
+    }
+    const retiredDirectory = path.join(
+      transactionRepository,
+      "examples/migration-workbench/public/artifacts/v1/retired-directory",
+    );
+    fs.mkdirSync(path.join(retiredDirectory, "nested"), { recursive: true });
+    fs.writeFileSync(path.join(retiredDirectory, "nested", "original.json"), '{"original":true}\n');
+    let recoveryRoot = "";
+
+    expect(() =>
+      materializeArtifactSet({
+        mode: "write",
+        repositoryRoot: transactionRepository,
+        artifacts,
+        testHooks: {
+          afterReplacement(replacementCount) {
+            if (replacementCount !== artifactPaths.length + 1) return;
+            recoveryRoot = activeMaterializationTransactionRoot(transactionRepository);
+            fs.writeFileSync(path.join(recoveryRoot, "backups", "retired-000", "nested", "tampered.json"), "{}");
+            throw new Error("injected rollback with tampered retired directory backup");
+          },
+        },
+      }),
+    ).toThrow(
+      /rollback was incomplete.*rollback backup does not match its immutable original identity.*tampered retired directory backup/i,
+    );
+
+    expect(fs.existsSync(retiredDirectory)).toBe(false);
+    expect(fs.existsSync(path.join(recoveryRoot, "backups", "retired-000", "nested", "tampered.json"))).toBe(true);
+    for (const [repositoryPath, original] of originals) {
+      expect(fs.readFileSync(path.join(transactionRepository, repositoryPath)).equals(original), repositoryPath).toBe(
+        true,
+      );
+    }
+  });
+
+  it("keeps artifacts stable across adopted non-source outputs while rejecting owned dist/src mutation", async () => {
+    const fakeRoot = makeFakeRepository();
+    const baseline = await buildMigrationWorkbenchArtifacts({
+      repositoryRoot: fakeRoot,
+      temporaryRoot: makeTempDir("migration-adopted-dist-baseline"),
+    });
+    for (const [repositoryPath, contents] of [
+      ["dist/bench/browser/adopted-browser-output.js", "export const adopted = true;\n"],
+      ["dist/examples/adopted-dist-output.json", '{"adopted":true}\n'],
+      ["dist/packages/adopted-split-package/package.json", '{"name":"adopted-output"}\n'],
+    ] as const) {
+      const outputPath = path.join(fakeRoot, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, contents);
+    }
+    const adoptedManifest = prepareSdkArtifact({ projectRoot: fakeRoot, mode: "adopt-additions" });
+    expect(adoptedManifest.runId).not.toBe(baseline.guards.preparedSdk.runId);
+    expect(adoptedManifest.dist.sha256).not.toBe(baseline.guards.preparedSdk.dist.sha256);
+    expect(adoptedManifest.dist.fileCount).toBe(baseline.guards.preparedSdk.dist.fileCount + 3);
+
+    const adopted = await buildMigrationWorkbenchArtifacts({
+      repositoryRoot: fakeRoot,
+      temporaryRoot: makeTempDir("migration-adopted-dist-result"),
+    });
+    expect(adopted.guards.preparedSdk.distSrc).toEqual(baseline.guards.preparedSdk.distSrc);
+    for (const [repositoryPath, baselineBytes] of baseline.artifacts) {
+      expect(adopted.artifacts.get(repositoryPath)?.equals(baselineBytes), repositoryPath).toBe(true);
+    }
+
+    fs.appendFileSync(path.join(fakeRoot, "dist/src/migration/cli.js"), "\n// owned dist/src mutation\n");
+    await expect(
+      buildMigrationWorkbenchArtifacts({
+        repositoryRoot: fakeRoot,
+        temporaryRoot: makeTempDir("migration-owned-dist-src-mutation"),
+      }),
+    ).rejects.toThrow(/prepared SDK artifact is stale or incomplete/i);
+  }, 120_000);
+
+  it("uses one immutable source snapshot and rejects snapshot, live-source, or prepared-dist TOCTOU mutation", async () => {
     const fakeRoot = makeFakeRepository();
     const fixtureScenarioPath = path.join(fakeRoot, "examples/arcgis-source-app/src/workbench-scenario.js");
     const fixtureScenarioBytes = fs.readFileSync(fixtureScenarioPath);
+
+    await expect(
+      buildMigrationWorkbenchArtifacts({
+        repositoryRoot: fakeRoot,
+        temporaryRoot: makeTempDir("migration-snapshot-toctou"),
+        testHooks: {
+          afterCommand(commandId, _repositoryRoot, sourceSnapshot) {
+            if (commandId === "honua-compat-demo") {
+              fs.appendFileSync(
+                path.join(sourceSnapshot.fixturePath, "src", "workbench-scenario.js"),
+                "\n// temporary snapshot edit\n",
+              );
+            }
+          },
+        },
+      }),
+    ).rejects.toThrow(/immutable migration workbench source snapshot did not match/i);
 
     await expect(
       buildMigrationWorkbenchArtifacts({

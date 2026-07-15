@@ -47,6 +47,31 @@ function sourceSnapshotDigest(fixtureTreeSha256: string, expectedBehaviorSha256:
   return digest.digest("hex");
 }
 
+function preparedDistSrcDigest(entries: Array<{ path: string; bytes: number; sha256: string }>): {
+  sha256: string;
+  fileCount: number;
+} {
+  const distSrcEntries = entries
+    .filter((entry) => entry.path.startsWith("dist/src/"))
+    .sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
+  const digest = createHash("sha256");
+  for (const value of [
+    Buffer.from("honua.migration-workbench.prepared-dist-src.v1", "utf8"),
+    Buffer.from(String(distSrcEntries.length), "ascii"),
+    ...distSrcEntries.flatMap((entry) => [
+      Buffer.from(entry.path, "utf8"),
+      Buffer.from(String(entry.bytes), "ascii"),
+      Buffer.from(entry.sha256, "ascii"),
+    ]),
+  ]) {
+    const length = Buffer.alloc(8);
+    length.writeBigUInt64BE(BigInt(value.length));
+    digest.update(length);
+    digest.update(value);
+  }
+  return { sha256: digest.digest("hex"), fileCount: distSrcEntries.length };
+}
+
 afterAll(() => {
   for (const temporaryRoot of tempDirs) {
     fs.rmSync(temporaryRoot, { recursive: true, force: true });
@@ -132,16 +157,21 @@ describe("migration workbench artifact supply chain", () => {
     );
     expect(JSON.stringify(migration.commands)).not.toMatch(/admin-api-key|credential|token/i);
     const preparedSdk = verifyPreparedSdkArtifact({ projectRoot: repositoryRoot });
+    const distSrcIdentity = preparedDistSrcDigest(preparedSdk.dist.entries);
     expect(migration.provenance.transformationEngine).toEqual({
       path: "dist/src/migration/cli.js",
       preparedArtifactFormat: preparedSdk.format,
       buildInputsSha256: preparedSdk.inputs.sha256,
       buildInputFileCount: preparedSdk.inputs.fileCount,
-      distSha256: preparedSdk.dist.sha256,
-      distFileCount: preparedSdk.dist.fileCount,
-      digestScope: "Complete prepared SDK build-input and dist snapshots, including all CLI transitive modules.",
+      distSrcSha256: distSrcIdentity.sha256,
+      distSrcFileCount: distSrcIdentity.fileCount,
+      digestScope:
+        "Complete prepared SDK build inputs plus verified canonical dist/src transformation entries; " +
+        "adopted outputs outside dist/src are excluded.",
     });
     expect(migration.provenance.transformationEngine).not.toHaveProperty("sha256");
+    expect(migration.provenance.transformationEngine).not.toHaveProperty("distSha256");
+    expect(migration.provenance.transformationEngine).not.toHaveProperty("distFileCount");
     const expectedBehaviorBytes = fs.readFileSync(
       path.join(repositoryRoot, "examples/migration-workbench/fixtures/expected-behavior.v1.json"),
     );

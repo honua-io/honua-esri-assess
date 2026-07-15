@@ -461,6 +461,7 @@ describe("migration workbench artifact hardening", () => {
         const result = {
           envSecret: process.env.HONUA_MIGRATION_TEST_SECRET ?? null,
           protocolInput: fs.readFileSync(0, "utf8") || null,
+          homeEntries: fs.readdirSync(process.env.HOME),
         };
         try { fs.readFileSync(${JSON.stringify(sentinelPath)}, "utf8"); result.readDenied = false; }
         catch (error) { result.readDenied = error?.code === "ERR_ACCESS_DENIED"; }
@@ -486,6 +487,7 @@ describe("migration workbench artifact hardening", () => {
       expect(probe.value).toEqual({
         envSecret: null,
         protocolInput: null,
+        homeEntries: [".honua-owned-home"],
         readDenied: true,
         writeDenied: true,
         workspaceWriteDenied: true,

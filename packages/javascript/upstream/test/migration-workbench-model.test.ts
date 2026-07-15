@@ -1,315 +1,149 @@
+import fs from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
 import {
-  applyLiveImportProgress,
-  createFixtureMigrationWorkbenchWorkflow,
-  createMigrationWorkbenchWorkflowFromArtifacts,
-  createWorkbenchReport,
-  runHonuaCloudImportJob,
-  serializeWorkbenchReport,
-} from "../examples/migration-workbench/src/model.js";
-import type { MigrationWorkbenchArtifacts, WorkbenchSourceSummary } from "../examples/migration-workbench/src/types.js";
-import { runEsriCompatCodemod } from "../src/migration/codemod.js";
-import type { ContentImportReport, ContentReconcileReport } from "../src/migration/content.js";
-import type { GeoservicesImportJobReport } from "../src/migration/demo.js";
-import type { LayerReconciliationReport } from "../src/migration/reconcile.js";
-import { buildJsMigrationReport } from "../src/migration/report.js";
-import { scanArcGisUsage } from "../src/migration/scanner.js";
+  parseManifest,
+  parseMapLibreAssessment,
+  parseMigrationReport,
+  parseWidgetReadiness,
+} from "../examples/migration-workbench/src/artifacts.js";
+import { createMigrationWorkbenchViewModel, formatArtifactCommand } from "../examples/migration-workbench/src/model.js";
+import type {
+  MigrationWorkbenchArtifactSet,
+  MigrationWorkbenchViewModel,
+} from "../examples/migration-workbench/src/types.js";
+import { createAssertionMatrix, readJsonPath } from "../examples/migration-workbench/src/workflow.js";
 
-describe("migration workbench model", () => {
-  it("builds a deterministic fixture workflow with all required stages visible", () => {
-    const workflow = createFixtureMigrationWorkbenchWorkflow();
-    const report = createWorkbenchReport(workflow);
-    const json = serializeWorkbenchReport(report);
+const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const artifactRoot = path.join(repositoryRoot, "examples/migration-workbench/public/artifacts/v1");
 
-    expect(workflow.mode).toBe("demo");
-    expect(workflow.stages.map((stage) => stage.id)).toEqual([
-      "scan",
-      "readiness",
-      "codemod",
-      "content",
-      "import",
-      "reconciliation",
-      "report",
-    ]);
-    expect(workflow.stages.find((stage) => stage.id === "import")?.title).toBe("Demo Import Replay");
-    expect(workflow.importItems.some((item) => item.userMessage.includes("no cloud write was attempted"))).toBe(true);
-    expect(workflow.contentItems.some((item) => item.artifactPath.includes("features.geojson"))).toBe(true);
-    expect(report.summary.manualActionCount).toBeGreaterThan(0);
-    expect(report.summary.blockedActionCount).toBeGreaterThan(0);
-    expect(report.notes).toContain(
-      "Feature data imports are tracked as materialized artifacts, not transparent feature-query caches.",
+describe("migration workbench artifact model", () => {
+  it("projects the committed compat report without inventing non-zero residuals", () => {
+    const artifacts = readCommittedArtifacts();
+    const model = createMigrationWorkbenchViewModel(artifacts, artifacts.migrationReport.behaviorProof.observations);
+
+    expect(model.fixture).toBe(artifacts.manifest.fixture);
+    expect(model.target).toBe("honua-compat");
+    expect(metricValue(model.compatibility.metrics, "auto-migrated")).toBe(
+      artifacts.migrationReport.demo.migration.codemodResult.metrics.autoMigratedCallSites,
     );
-    expect(json).toBe(serializeWorkbenchReport(createWorkbenchReport(createFixtureMigrationWorkbenchWorkflow())));
+    expect(metricValue(model.compatibility.metrics, "manual-call-sites")).toBe(0);
+    expect(metricValue(model.compatibility.metrics, "unsupported-modules")).toBe(0);
+    expect(metricValue(model.compatibility.metrics, "blocking-flags")).toBe(0);
+    expect(model.compatibility.manualTodos).toEqual([]);
+    expect(model.compatibility.unsupportedModules).toEqual([]);
+    expect(model.compatibility.gates.every((gate) => gate.passed)).toBe(true);
   });
 
-  it("keeps live Honua Cloud import opt-in and blocked until required config is complete", () => {
-    const missingConfig = createFixtureMigrationWorkbenchWorkflow({
-      mode: "live",
-      cloudImport: { enabled: true },
-    });
+  it("retains every zero codemod category and the complete MapLibre alternative", () => {
+    const artifacts = readCommittedArtifacts();
+    const model = createMigrationWorkbenchViewModel(artifacts, artifacts.migrationReport.behaviorProof.observations);
+    const compatByKind = artifacts.migrationReport.demo.migration.codemodResult.metrics.byKind;
+    const maplibreByKind = artifacts.maplibreAssessment.report.codemodResult.metrics.byKind;
 
-    expect(missingConfig.stages.find((stage) => stage.id === "import")?.title).toBe("Live Honua Cloud Import");
-    expect(missingConfig.importItems.some((item) => item.status === "blocked")).toBe(true);
-    expect(missingConfig.actionItems.some((item) => item.id === "blocked-live-import-config")).toBe(true);
-
-    const configured = createFixtureMigrationWorkbenchWorkflow({
-      mode: "live",
-      cloudImport: {
-        enabled: true,
-        adminBaseUrl: "https://honua.example",
-        sourceServiceUrl: "https://org.maps.arcgis.com/arcgis/rest/services/Hydrants/FeatureServer",
-        layerId: 0,
-        tableName: "hydrants_live",
-      },
-    });
-
-    expect(configured.importItems.some((item) => item.status === "configured")).toBe(true);
-    expect(configured.actionItems.some((item) => item.id === "blocked-live-import-config")).toBe(false);
+    expect(model.compatibility.mappings).toHaveLength(Object.keys(compatByKind).length);
+    expect(model.compatibility.mappings.filter((mapping) => mapping.total === 0).length).toBeGreaterThan(0);
+    expect(model.maplibre.mappings).toHaveLength(Object.keys(maplibreByKind).length);
+    expect(model.maplibre.manualTodos).toEqual(artifacts.maplibreAssessment.residuals.manualTodos);
+    expect(model.maplibre.unsupportedModules).toEqual(artifacts.maplibreAssessment.residuals.unsupportedModules);
+    expect(metricValue(model.maplibre.metrics, "manual-call-sites")).toBe(4);
+    expect(metricValue(model.maplibre.metrics, "unsupported-modules")).toBe(3);
+    expect(metricValue(model.maplibre.metrics, "blocking-flags")).toBe(0);
+    expect(model.maplibre.gates.some((gate) => !gate.passed)).toBe(true);
   });
 
-  it("maps existing migration and content artifact shapes into the workbench report", () => {
-    const artifacts = createExistingMigrationArtifacts();
-    const workflow = createMigrationWorkbenchWorkflowFromArtifacts(artifacts, {
-      generatedAt: "2026-05-05T18:30:00.000Z",
-    });
-    const report = createWorkbenchReport(workflow);
+  it("projects widget guidance and preserves its zero manual category", () => {
+    const artifacts = readCommittedArtifacts();
+    const model = createMigrationWorkbenchViewModel(artifacts, artifacts.migrationReport.behaviorProof.observations);
 
-    expect(workflow.stages.find((stage) => stage.id === "scan")?.metrics[0]?.value).toBe(
-      String(artifacts.scan.filesScanned),
+    expect(model.widgets.summary.manualSites).toBe(0);
+    expect(model.widgets.summary.automatedSites).toBe(2);
+    expect(model.widgets.summary.assistedSites).toBe(1);
+    expect(model.widgets.widgets.map((widget) => widget.guideLink)).toEqual(
+      artifacts.widgetReadiness.report.widgets.map((widget) => widget.guideLink),
     );
-    expect(workflow.stages.find((stage) => stage.id === "codemod")?.metrics[0]?.value).toBe(
-      String(artifacts.migration.codemodResult.metrics.autoMigratedCallSites),
-    );
-    expect(workflow.contentItems.map((item) => item.status)).toContain("manual");
-    expect(workflow.contentItems.map((item) => item.status)).toContain("materialized");
-    expect(workflow.importItems[0]?.status).toBe("simulated");
-    expect(report.summary.reconciliationStatus).toBe("manual");
-    expect(serializeWorkbenchReport(report)).toContain("hydrants_honua");
   });
 
-  it("polls a live Honua Cloud import job and updates the workflow import stage", async () => {
-    const requests: Array<{ url: string; method: string; apiKey?: string; body?: string }> = [];
-    const fetchFn: typeof fetch = (async (input, init) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-      const headers = normalizeHeaders(init?.headers);
-      requests.push({
-        url,
-        method: init?.method ?? "GET",
-        apiKey: headers["x-api-key"],
-        body: typeof init?.body === "string" ? init.body : undefined,
-      });
+  it("rechecks every stored behavior assertion against generated browser observations", () => {
+    const artifacts = readCommittedArtifacts();
+    const observations = artifacts.migrationReport.behaviorProof.observations;
+    const model = createMigrationWorkbenchViewModel(artifacts, observations);
 
-      if (url.endsWith("/api/v1/admin/import/geoservices/start")) {
-        return jsonResponse({ jobId: "job-workbench-1", statusUrl: "jobs/job-workbench-1" }, 202);
-      }
+    expect(model.assertions).toHaveLength(23);
+    expect(model.assertions.every((assertion) => assertion.passed)).toBe(true);
+    expect(model.assertions.every((assertion) => assertion.browserPassed)).toBe(true);
+    expect(model.browserProofPassed).toBe(true);
+    expect(readJsonPath(observations, "$.selection.objectIds[0]")).toBe(41);
 
-      if (url.endsWith("/api/v1/admin/import/geoservices/jobs/job-workbench-1")) {
-        return jsonResponse({
-          status: "Completed",
-          currentPhase: "Done",
-          featuresProcessed: 128,
-          estimatedTotalFeatures: 128,
-        });
-      }
+    const changed = structuredClone(observations) as Record<string, unknown>;
+    changed.table = { countBeforeFilter: 999 };
+    const matrix = createAssertionMatrix(artifacts.migrationReport.behaviorProof.assertions, changed);
+    expect(matrix.some((assertion) => !assertion.browserPassed)).toBe(true);
+  });
 
-      return jsonResponse({ error: "unexpected" }, 404);
-    }) as typeof fetch;
+  it("keeps commands, patch, downloads, and hashes tied to the manifest", () => {
+    const artifacts = readCommittedArtifacts();
+    const model = createMigrationWorkbenchViewModel(artifacts, artifacts.migrationReport.behaviorProof.observations);
 
-    const progress = await runHonuaCloudImportJob(
-      {
-        enabled: true,
-        adminBaseUrl: "https://honua.example",
-        adminApiKey: "test-key",
-        sourceServiceUrl: "https://org.maps.arcgis.com/arcgis/rest/services/Hydrants/FeatureServer",
-        layerId: 0,
-        tableName: "hydrants_live",
-      },
-      { fetchFn },
+    expect(model.commands).toEqual(artifacts.manifest.commands);
+    expect(formatArtifactCommand(model.commands[0]?.executable ?? "", model.commands[0]?.argv ?? [])).toContain(
+      '"dist/src/migration/cli.js"',
     );
+    expect(model.diff).toBe(fs.readFileSync(path.join(artifactRoot, "migration.v1.patch"), "utf8"));
+    expect(model.files).toHaveLength(artifacts.manifest.files.length);
+    expect(model.files.find((file) => file.repositoryPath.endsWith("migration.v1.patch"))?.href).toBe(
+      "/artifacts/v1/migration.v1.patch",
+    );
+    expect(model.files.find((file) => file.repositoryPath.endsWith("migrated-main.js"))?.href).toBeUndefined();
+    expect(model.files.every((file) => /^[a-f0-9]{64}$/u.test(file.sha256))).toBe(true);
+    expect(model.patchProof.applyCheckPassed).toBe(true);
+    expect(model.patchProof.targetTreeEqual).toBe(true);
+  });
 
-    expect(progress.job?.status).toBe("Completed");
-    expect(progress.item.status).toBe("completed");
-    expect(progress.item.processedFeatures).toBe(128);
-    expect(requests[0]).toMatchObject({
-      method: "POST",
-      apiKey: "test-key",
-    });
+  it("rejects an artifact with the wrong schema instead of rendering plausible data", () => {
+    expect(() => parseManifest({ schemaVersion: "honua.migration-workbench.manifest.v0" })).toThrow(
+      "unsupported schemaVersion",
+    );
+    expect(() => parseMigrationReport({ schemaVersion: "honua.migration-workbench.report.v1" })).toThrow(
+      "migration report.demo",
+    );
+  });
 
-    const workflow = createFixtureMigrationWorkbenchWorkflow({
-      mode: "live",
-      cloudImport: {
-        enabled: true,
-        adminBaseUrl: "https://honua.example",
-        sourceServiceUrl: "https://org.maps.arcgis.com/arcgis/rest/services/Hydrants/FeatureServer",
-        layerId: 0,
-        tableName: "hydrants_live",
-      },
-    });
-    const updated = applyLiveImportProgress(workflow, {
-      ...progress,
-      item: { ...progress.item, id: "import-hydrants-0" },
-    });
+  it("removes credential configuration, cloud import, and fabricated fixture modules", () => {
+    const sourceRoot = path.join(repositoryRoot, "examples/migration-workbench/src");
+    expect(fs.existsSync(path.join(sourceRoot, "config.ts"))).toBe(false);
+    expect(fs.existsSync(path.join(sourceRoot, "fixtures.ts"))).toBe(false);
 
-    expect(updated.importItems.find((item) => item.id === "import-hydrants-0")?.status).toBe("completed");
-    expect(updated.stages.find((stage) => stage.id === "import")?.metrics[1]?.value).toBe("1");
+    const presentationSource = ["main.ts", "model.ts", "artifacts.ts", "workflow.ts", "types.ts"]
+      .map((file) => fs.readFileSync(path.join(sourceRoot, file), "utf8"))
+      .join("\n");
+    expect(presentationSource).not.toContain("VITE_");
+    expect(presentationSource).not.toContain("adminApiKey");
+    expect(presentationSource).not.toContain("Cloud import");
+    expect(presentationSource).not.toContain("runEsriCompatCodemod");
   });
 });
 
-function createExistingMigrationArtifacts(): MigrationWorkbenchArtifacts {
-  const fixtureDir = fileURLToPath(new URL("./fixtures/esri-demo-feature-table-relates-app", import.meta.url));
-  const scan = scanArcGisUsage(fixtureDir);
-  const codemod = runEsriCompatCodemod({
-    rootDir: fixtureDir,
-    target: "honua-compat",
-    annotateTodos: true,
-  });
-  const migration = buildJsMigrationReport(fixtureDir, codemod, scan);
-  const source: WorkbenchSourceSummary = {
-    title: "Hydrant migration artifact bridge",
-    fixtureName: "esri-demo-feature-table-relates-app",
-    owner: "City Utilities",
-    sourcePortal: "https://org.maps.arcgis.com",
-    sourceServiceUrl: "https://org.maps.arcgis.com/arcgis/rest/services/Hydrants/FeatureServer",
-    sourceServiceId: "Hydrants",
-    targetServiceId: "hydrants_honua",
-    layerId: 0,
-    appRoot: "test/fixtures/esri-demo-feature-table-relates-app",
-    compatibilityProfile: "Honua JS compat + content import MVP",
-  };
-  const job: GeoservicesImportJobReport = {
-    jobId: "job-artifact-1",
-    status: "Completed",
-    statusUrl: "https://honua.example/api/v1/admin/import/geoservices/jobs/job-artifact-1",
-    pollCount: 1,
-    featuresProcessed: 128,
-    estimatedTotalFeatures: 128,
-  };
-  const contentImport: ContentImportReport = {
-    generatedAt: "2026-05-05T18:20:00.000Z",
-    sourceDir: "/tmp/workbench-export",
-    outputDir: "/tmp/workbench-import",
-    targetBaseUrl: "https://honua.example",
-    manifestPath: "/tmp/workbench-export/content-export-manifest.json",
-    importedHostedLayers: [
-      {
-        itemId: "svc-hydrants",
-        layerId: 0,
-        tableName: "hydrants_honua",
-        status: "completed",
-        job,
-        sourceFeatureCount: 128,
-      },
-    ],
-    importedWebMaps: [
-      {
-        itemId: "wm-hydrants",
-        title: "Hydrant operations",
-        status: "converted",
-        outputPath: "webmaps/hydrant-operations.honua.json",
-        warningCount: 2,
-        manualInterventionNeeded: true,
-        rewrittenUrlCount: 1,
-      },
-    ],
-    summary: {
-      hostedLayersCompleted: 1,
-      hostedLayersFailed: 0,
-      webMapsConverted: 1,
-      webMapsFailed: 0,
-      webMapsManualIntervention: 1,
-    },
-    reportPath: "/tmp/workbench-import/content-import-report.json",
-  };
-  const contentReconcile: ContentReconcileReport = {
-    generatedAt: "2026-05-05T18:21:00.000Z",
-    sourceDir: "/tmp/workbench-export",
-    manifestPath: "/tmp/workbench-export/content-export-manifest.json",
-    importReportPath: "/tmp/workbench-import/content-import-report.json",
-    hostedLayers: [
-      {
-        itemId: "svc-hydrants",
-        layerId: 0,
-        tableName: "hydrants_honua",
-        status: "pass",
-        sourceFeatureCount: 128,
-        targetProcessedCount: 128,
-      },
-    ],
-    webMaps: [
-      {
-        itemId: "wm-hydrants",
-        title: "Hydrant operations",
-        status: "manual",
-        warningCount: 2,
-        reason: "manual intervention required due to unsupported properties",
-      },
-    ],
-    summary: {
-      hostedLayersPassed: 1,
-      hostedLayersFailed: 0,
-      webMapsPassed: 0,
-      webMapsManual: 1,
-      webMapsFailed: 0,
-    },
-    reportPath: "/tmp/workbench-export/content-reconcile-report.json",
-  };
-  const layerReconciliation: LayerReconciliationReport = {
-    sourceBaseUrl: "https://org.maps.arcgis.com",
-    sourceServiceId: "Hydrants",
-    targetBaseUrl: "https://honua.example",
-    targetServiceId: "hydrants_honua",
-    layerId: 0,
-    sampleSize: 25,
-    sourceFeatureCount: 128,
-    targetFeatureCount: 128,
-    countDelta: 0,
-    sourceGeometryValidityRatio: 1,
-    targetGeometryValidityRatio: 1,
-    sourceAttributeKeys: ["FACILITYID", "OBJECTID", "status"],
-    targetAttributeKeys: ["FACILITYID", "OBJECTID", "honua_import_job_id", "status"],
-    missingInTargetAttributeKeys: [],
-    extraInTargetAttributeKeys: ["honua_import_job_id"],
-    checks: [
-      { check: "feature-count", passed: true, detail: "counts match (128)" },
-      { check: "geometry-validity", passed: true, detail: "target valid geometry ratio=1.000" },
-      { check: "attribute-keys", passed: true, detail: "target covers source attribute keys" },
-    ],
-    passed: true,
-  };
-
+function readCommittedArtifacts(): MigrationWorkbenchArtifactSet {
   return {
-    source,
-    scan,
-    migration,
-    contentImport,
-    contentReconcile,
-    layerReconciliation,
+    manifest: parseManifest(readJson("manifest.v1.json")),
+    migrationReport: parseMigrationReport(readJson("migration-report.v1.json")),
+    widgetReadiness: parseWidgetReadiness(readJson("widget-readiness.v1.json")),
+    maplibreAssessment: parseMapLibreAssessment(readJson("maplibre-assessment.v1.json")),
+    diff: fs.readFileSync(path.join(artifactRoot, "migration.v1.patch"), "utf8"),
   };
 }
 
-function jsonResponse(payload: unknown, status = 200): Response {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+function readJson(filename: string): unknown {
+  return JSON.parse(fs.readFileSync(path.join(artifactRoot, filename), "utf8"));
 }
 
-function normalizeHeaders(headers: HeadersInit | undefined): Record<string, string> {
-  const normalized: Record<string, string> = {};
-  if (!headers) return normalized;
-  if (headers instanceof Headers) {
-    headers.forEach((value, key) => {
-      normalized[key.toLowerCase()] = value;
-    });
-    return normalized;
-  }
-  if (Array.isArray(headers)) {
-    for (const [key, value] of headers) normalized[key.toLowerCase()] = value;
-    return normalized;
-  }
-  for (const [key, value] of Object.entries(headers)) normalized[key.toLowerCase()] = value;
-  return normalized;
+function metricValue(
+  metrics: MigrationWorkbenchViewModel["compatibility"]["metrics"],
+  id: string,
+): number | string | undefined {
+  return metrics.find((metric) => metric.id === id)?.value;
 }

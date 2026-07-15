@@ -20,11 +20,11 @@
     "transformationEngine": {
       "path": "dist/src/migration/cli.js",
       "preparedArtifactFormat": "honua.prepared-sdk-artifact.v1",
-      "buildInputsSha256": "ba42a6b136d7ba01ed65807108040cca32f07701f59558ea1af3d5e89217fcf3",
+      "buildInputsSha256": "565204e2b71d0609763d72fd30b245ecc835c8f92556fd308647982090db7802",
       "buildInputFileCount": 1001,
-      "distSha256": "6ee2bb1a3b8fbd9c60a46041bc201fe9f6ae325960fce17d69f505ab81ca2a31",
-      "distFileCount": 2757,
-      "digestScope": "Complete prepared SDK build-input and dist snapshots, including all CLI transitive modules."
+      "distSrcSha256": "a94d52ee2ad1fa790b8f149d5818467197e300529baac4330d4c3a07a64ab941",
+      "distSrcFileCount": 1323,
+      "digestScope": "Complete prepared SDK build inputs plus verified canonical dist/src transformation entries; adopted outputs outside dist/src are excluded."
     },
     "generatedTargetExecution": {
       "processBoundary": "separate Node.js process",

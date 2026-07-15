@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { afterAll, describe, expect, it } from "vitest";
 
@@ -10,6 +9,7 @@ import {
   MIGRATION_WORKBENCH_ARTIFACT_PATHS,
   buildMigrationWorkbenchArtifacts,
   defaultRepositoryRoot,
+  executeIsolatedGeneratedModule,
   verifyMigrationPatch,
 } from "../scripts/lib/migration-workbench-artifacts.mjs";
 
@@ -114,6 +114,19 @@ describe("migration workbench artifact supply chain", () => {
       expect.arrayContaining(["demo", "--target", "honua-compat", "--skip-import", "--skip-reconcile"]),
     );
     expect(JSON.stringify(migration.commands)).not.toMatch(/admin-api-key|credential|token/i);
+    expect(migration.provenance.transformationEngine).toEqual({
+      path: "dist/src/migration/cli.js",
+      sha256: createHash("sha256")
+        .update(fs.readFileSync(path.join(repositoryRoot, "dist/src/migration/cli.js")))
+        .digest("hex"),
+      digestScope: "Entry module bytes only; transitive imports are not covered by this digest.",
+    });
+    expect(migration.provenance.generatedTargetExecution).toMatchObject({
+      processBoundary: "separate Node.js process",
+      inheritedEnvironment: "fixed non-secret allowlist",
+      externalNetworkAttemptsObserved: 0,
+    });
+    expect(migration.provenance).not.toHaveProperty("externalNetworkRequests");
 
     expect(widgets.report.summary).toMatchObject({
       totalSites: 3,
@@ -154,10 +167,13 @@ describe("migration workbench artifact supply chain", () => {
       ),
     ) as { expected: unknown };
     const generatedPath = path.join(repositoryRoot, "examples/migration-workbench/src/generated/migrated-main.js");
-    const generatedModule = await import(`${pathToFileURL(generatedPath).href}?test=${Date.now()}`);
-    const observed = JSON.parse(JSON.stringify(generatedModule.default)) as unknown;
+    const isolated = executeIsolatedGeneratedModule({
+      repositoryRoot,
+      generatedTargetBytes: fs.readFileSync(generatedPath),
+    });
 
-    expect(observed).toEqual(expected.expected);
+    expect(isolated.value).toEqual(expected.expected);
+    expect(isolated.evidence.externalNetworkAttemptsObserved).toBe(0);
   });
 
   it("passes git apply --check and recreates the complete CLI target tree", async () => {
@@ -181,6 +197,13 @@ describe("migration workbench artifact supply chain", () => {
 
     expect(verification.applyCheckPassed).toBe(true);
     expect(verification.targetTreeEqual).toBe(true);
+    expect(verification.directEntryComparisonPassed).toBe(true);
+    expect(verification.applyCheckCommand.argv).toEqual(
+      expect.arrayContaining(["color.ui=false", "core.quotePath=true", "apply", "--check", "--binary"]),
+    );
+    expect(verification.applyCommand.argv).toEqual(
+      expect.arrayContaining(["diff.algorithm=myers", "apply", "--binary", "--whitespace=nowarn"]),
+    );
     expect(verification.appliedTreeSha256).toBe(verification.targetTreeSha256);
     expect(verification.sourceTreeSha256).not.toBe(verification.targetTreeSha256);
   }, 60_000);

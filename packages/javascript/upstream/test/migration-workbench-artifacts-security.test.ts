@@ -333,10 +333,15 @@ describe("migration workbench artifact hardening", () => {
         import * as dnsNamed from "node:dns";
         import dnsPromises from "node:dns/promises";
         import * as dnsPromisesNamed from "node:dns/promises";
-        const topLevelRecordMethods = [
-          "resolve", "resolve4", "resolve6", "resolveAny", "resolveCaa", "resolveCname", "resolveMx",
-          "resolveNaptr", "resolveNs", "resolvePtr", "resolveSoa", "resolveSrv", "resolveTxt", "reverse",
-        ];
+        function ownCallableNames(target) {
+          return Reflect.ownKeys(target).filter((name) =>
+            name !== "Resolver" && typeof name === "string" && typeof target[name] === "function"
+          );
+        }
+        const callbackTopLevelMethods = ownCallableNames(dns);
+        const promiseTopLevelMethods = ownCallableNames(dnsPromises);
+        const callbackNamedMethods = callbackTopLevelMethods.filter((name) => typeof dnsNamed[name] === "function");
+        const promiseNamedMethods = promiseTopLevelMethods.filter((name) => typeof dnsPromisesNamed[name] === "function");
         dns.setServers(["127.0.0.1:${listener.port}"]);
         const callbackResolver = new dns.Resolver();
         const promiseResolver = new dnsPromises.Resolver();
@@ -366,12 +371,13 @@ describe("migration workbench artifact hardening", () => {
         }
         const callbackResults = invokeEvery(callbackResolver, callbackMethods);
         const promiseResults = invokeEvery(promiseResolver, promiseMethods);
-        const callbackTopLevelResults = invokeEvery(dns, topLevelRecordMethods);
-        const promiseTopLevelResults = invokeEvery(dnsPromises, topLevelRecordMethods);
-        const callbackNamedResults = invokeEvery(dnsNamed, topLevelRecordMethods);
-        const promiseNamedResults = invokeEvery(dnsPromisesNamed, topLevelRecordMethods);
+        const callbackTopLevelResults = invokeEvery(dns, callbackTopLevelMethods);
+        const promiseTopLevelResults = invokeEvery(dnsPromises, promiseTopLevelMethods);
+        const callbackNamedResults = invokeEvery(dnsNamed, callbackNamedMethods);
+        const promiseNamedResults = invokeEvery(dnsPromisesNamed, promiseNamedMethods);
         process.stdout.write(JSON.stringify({
-          topLevelRecordMethods,
+          callbackTopLevelMethods,
+          promiseTopLevelMethods,
           callbackMethods,
           promiseMethods,
           callbackResults,
@@ -390,7 +396,8 @@ describe("migration workbench artifact hardening", () => {
         timeoutMs: 10_000,
       });
       const probe = JSON.parse(String(result.stdout)) as {
-        topLevelRecordMethods: string[];
+        callbackTopLevelMethods: string[];
+        promiseTopLevelMethods: string[];
         callbackMethods: string[];
         promiseMethods: string[];
         callbackResults: Record<string, string | null>;
@@ -407,7 +414,8 @@ describe("migration workbench artifact hardening", () => {
       expect(probe.promiseMethods).toEqual(expect.arrayContaining(["resolveAny", "resolveMx", "setServers", "cancel"]));
       expect(Object.values(probe.callbackResults).every((code) => code === "HONUA_NETWORK_DENIED")).toBe(true);
       expect(Object.values(probe.promiseResults).every((code) => code === "HONUA_NETWORK_DENIED")).toBe(true);
-      expect(probe.topLevelRecordMethods).toHaveLength(14);
+      expect(probe.callbackTopLevelMethods).toEqual(expect.arrayContaining(["lookup", "resolveTxt", "reverse"]));
+      expect(probe.promiseTopLevelMethods).toEqual(expect.arrayContaining(["lookup", "resolveTxt", "reverse"]));
       expect(Object.values(probe.callbackTopLevelResults).every((code) => code === "HONUA_NETWORK_DENIED")).toBe(true);
       expect(Object.values(probe.promiseTopLevelResults).every((code) => code === "HONUA_NETWORK_DENIED")).toBe(true);
       expect(Object.values(probe.callbackNamedResults).every((code) => code === "HONUA_NETWORK_DENIED")).toBe(true);
@@ -449,6 +457,13 @@ describe("migration workbench artifact hardening", () => {
         catch (error) { result.readDenied = error?.code === "ERR_ACCESS_DENIED"; }
         try { fs.writeFileSync(${JSON.stringify(escapedWritePath)}, "escaped"); result.writeDenied = false; }
         catch (error) { result.writeDenied = error?.code === "ERR_ACCESS_DENIED"; }
+        try { fs.writeFileSync("workspace-write.txt", "escaped"); result.workspaceWriteDenied = false; }
+        catch (error) { result.workspaceWriteDenied = error?.code === "ERR_ACCESS_DENIED"; }
+        try {
+          fs.symlinkSync(${JSON.stringify(sentinelPath)}, "workspace-link");
+          fs.readFileSync("workspace-link", "utf8");
+          result.symlinkEscapeDenied = false;
+        } catch (error) { result.symlinkEscapeDenied = error?.code === "ERR_ACCESS_DENIED"; }
         try { spawnSync(process.execPath, ["--version"]); result.childDenied = false; }
         catch (error) { result.childDenied = error?.code === "ERR_ACCESS_DENIED"; }
         try { const worker = new Worker("", { eval: true }); await worker.terminate(); result.workerDenied = false; }
@@ -464,6 +479,8 @@ describe("migration workbench artifact hardening", () => {
         protocolInput: null,
         readDenied: true,
         writeDenied: true,
+        workspaceWriteDenied: true,
+        symlinkEscapeDenied: true,
         childDenied: true,
         workerDenied: true,
       });
@@ -483,6 +500,19 @@ describe("migration workbench artifact hardening", () => {
       expect(networkError).toMatch(/denied network operation/i);
       expect(networkError).not.toContain(secret);
 
+      const delayedNetworkProbe = Buffer.from(
+        `setImmediate(() => { try { fetch("http://127.0.0.1:9/"); } catch {} }); export default { queued: true };`,
+        "utf8",
+      );
+      expect(() =>
+        executeIsolatedGeneratedModule({ repositoryRoot, generatedTargetBytes: delayedNetworkProbe }),
+      ).toThrow(/denied network operation/i);
+
+      const oversizedResult = Buffer.from("export default new Array(10001);", "utf8");
+      expect(() => executeIsolatedGeneratedModule({ repositoryRoot, generatedTargetBytes: oversizedResult })).toThrow(
+        /JSON array bound/i,
+      );
+
       const passiveSocketProbe = Buffer.from(
         `
           import net from "node:net";
@@ -497,6 +527,87 @@ describe("migration workbench artifact hardening", () => {
       expect(() =>
         executeIsolatedGeneratedModule({ repositoryRoot, generatedTargetBytes: passiveSocketProbe }),
       ).toThrow(/denied network operation.*net\.Server\.listen.*net\.Server\._listen2/i);
+
+      const lowLevelTcpHandleProbe = Buffer.from(
+        `
+          import net from "node:net";
+          const handle = net._createServerHandle("127.0.0.1", 0, 4, -1, 0);
+          if (typeof handle !== "number") {
+            handle.listen(1);
+            handle.close();
+          }
+          export default { allowed: true };
+        `,
+        "utf8",
+      );
+      expect(() =>
+        executeIsolatedGeneratedModule({ repositoryRoot, generatedTargetBytes: lowLevelTcpHandleProbe }),
+      ).toThrow(/denied network operation \(net\._createServerHandle\)/i);
+
+      const lowLevelDatagramHandleProbe = Buffer.from(
+        `
+          import dgram from "node:dgram";
+          const handle = dgram._createSocketHandle("127.0.0.1", 0, "udp4", -1, 0);
+          if (typeof handle !== "number") handle.close();
+          export default { allowed: true };
+        `,
+        "utf8",
+      );
+      expect(() =>
+        executeIsolatedGeneratedModule({ repositoryRoot, generatedTargetBytes: lowLevelDatagramHandleProbe }),
+      ).toThrow(/denied network operation \(dgram\._createSocketHandle\)/i);
+
+      const networkConstructorProbe = Buffer.from(
+        `
+          import dgram from "node:dgram";
+          import dns from "node:dns";
+          import dnsPromises from "node:dns/promises";
+          import http from "node:http";
+          import https from "node:https";
+          import tls from "node:tls";
+          const attempts = {};
+          try { new dgram.Socket("udp4"); attempts.dgramSocket = "allowed"; }
+          catch (error) { attempts.dgramSocket = error?.code ?? "denied"; }
+          try { new dns.Resolver(); attempts.dnsResolver = "allowed"; }
+          catch (error) { attempts.dnsResolver = error?.code ?? "denied"; }
+          try { new dnsPromises.Resolver(); attempts.dnsPromisesResolver = "allowed"; }
+          catch (error) { attempts.dnsPromisesResolver = error?.code ?? "denied"; }
+          try { new http.ClientRequest({ host: "127.0.0.1", port: 9 }); attempts.clientRequest = "allowed"; }
+          catch (error) { attempts.clientRequest = error?.code ?? "denied"; }
+          try { new http.Agent().createConnection({ host: "127.0.0.1", port: 9 }); attempts.httpAgent = "allowed"; }
+          catch (error) { attempts.httpAgent = error?.code ?? "denied"; }
+          try { new https.Agent().createConnection({ host: "127.0.0.1", port: 9 }); attempts.httpsAgent = "allowed"; }
+          catch (error) { attempts.httpsAgent = error?.code ?? "denied"; }
+          try { tls.createSecurePair(); attempts.tlsSecurePair = "allowed"; }
+          catch (error) { attempts.tlsSecurePair = error?.code ?? "denied"; }
+          try { new tls.TLSSocket(); attempts.tlsSocket = "allowed"; }
+          catch (error) { attempts.tlsSocket = error?.code ?? "denied"; }
+          export default attempts;
+        `,
+        "utf8",
+      );
+      expect(() =>
+        executeIsolatedGeneratedModule({ repositoryRoot, generatedTargetBytes: networkConstructorProbe }),
+      ).toThrow(
+        /denied network operation.*dgram\.Socket.*dns\.Resolver.*dns\.promises\.Resolver.*http\.ClientRequest.*http\.Agent\.createConnection.*https\.Agent\.createConnection.*tls\.createSecurePair.*tls\.TLSSocket/i,
+      );
+
+      const builtinAliasProbe = Buffer.from(
+        `
+          const httpClient = process.getBuiltinModule("_http_client");
+          const tlsWrap = process.getBuiltinModule("_tls_wrap");
+          const attempts = {};
+          try { new httpClient.ClientRequest({ host: "127.0.0.1", port: 9 }); attempts.clientRequest = "allowed"; }
+          catch (error) { attempts.clientRequest = error?.code ?? "denied"; }
+          try { new tlsWrap.TLSSocket(); attempts.tlsSocket = "allowed"; }
+          catch (error) { attempts.tlsSocket = error?.code ?? "denied"; }
+          export default attempts;
+        `,
+        "utf8",
+      );
+      expect(() => executeIsolatedGeneratedModule({ repositoryRoot, generatedTargetBytes: builtinAliasProbe })).toThrow(
+        /denied network operation.*_http_client\.ClientRequest.*_tls_wrap\.TLSSocket/i,
+      );
 
       const spoofedEnvelope = Buffer.from(
         `import fs from "node:fs"; fs.writeSync(1, JSON.stringify({ protocol: "honua.migration-workbench.runner.v1", nonce: "${"0".repeat(
@@ -579,11 +690,13 @@ describe("migration workbench artifact hardening", () => {
           import os from "node:os";
           const pid = ${sentinel.pid};
           const attempts = {};
-          for (const name of ["kill", "_kill", "_debugProcess", "_debugEnd"]) {
+          for (const name of ["kill", "_kill", "_debugProcess", "_debugEnd", "binding", "_linkedBinding", "dlopen"]) {
             if (typeof process[name] !== "function") continue;
             try {
               if (name === "kill") process[name](pid, "SIGTERM");
               else if (name === "_kill") process[name](pid, 15);
+              else if (name === "binding" || name === "_linkedBinding") process[name]("tcp_wrap");
+              else if (name === "dlopen") process[name]({}, "/tmp/denied.node");
               else process[name](pid);
               attempts[name] = "allowed";
             } catch (error) {
@@ -598,7 +711,9 @@ describe("migration workbench artifact hardening", () => {
       );
       expect(() =>
         executeIsolatedGeneratedModule({ repositoryRoot, generatedTargetBytes: processControlProbe }),
-      ).toThrow(/denied process control operation.*process\.kill.*os\.setPriority/i);
+      ).toThrow(
+        /denied process control operation.*process\.kill.*process\.binding.*process\._linkedBinding.*process\.dlopen.*os\.setPriority/i,
+      );
       expect(() => process.kill(sentinel.pid!, 0)).not.toThrow();
       expect(sentinel.exitCode).toBeNull();
     } finally {
@@ -617,17 +732,6 @@ describe("migration workbench artifact hardening", () => {
       fs.writeFileSync(outputPath, original);
       originals.set(repositoryPath, original);
     }
-    const retiredPath = path.join(
-      transactionRepository,
-      "examples/migration-workbench/public/artifacts/v1/retired.v0.json",
-    );
-    const retiredGeneratedPath = path.join(
-      transactionRepository,
-      "examples/migration-workbench/src/generated/retired-generated.js",
-    );
-    fs.writeFileSync(retiredPath, "retired");
-    fs.writeFileSync(retiredGeneratedPath, "retired-generated");
-
     expect(() =>
       materializeArtifactSet({
         mode: "write",
@@ -635,7 +739,7 @@ describe("migration workbench artifact hardening", () => {
         artifacts,
         testHooks: {
           afterReplacement(replacementCount) {
-            if (replacementCount === artifactPaths.length + 2) {
+            if (replacementCount === artifactPaths.length) {
               throw new Error("injected replacement failure");
             }
           },
@@ -647,16 +751,11 @@ describe("migration workbench artifact hardening", () => {
         true,
       );
     }
-    expect(fs.readFileSync(retiredPath, "utf8")).toBe("retired");
-    expect(fs.readFileSync(retiredGeneratedPath, "utf8")).toBe("retired-generated");
-
     materializeArtifactSet({
       mode: "write",
       repositoryRoot: transactionRepository,
       artifacts,
     });
-    expect(fs.existsSync(retiredPath)).toBe(false);
-    expect(fs.existsSync(retiredGeneratedPath)).toBe(false);
     expect(() =>
       materializeArtifactSet({
         mode: "check",
@@ -665,6 +764,44 @@ describe("migration workbench artifact hardening", () => {
       }),
     ).not.toThrow();
   }, 60_000);
+
+  it("refuses non-owned artifact-root entries without deleting or replacing anything", () => {
+    const artifacts = readCommittedArtifactSet();
+    const transactionRepository = makeTempDir("migration-transaction-non-owned-entry");
+    const originals = new Map<string, Buffer>();
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(transactionRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      const original = Buffer.from(`original:${repositoryPath}\n`, "utf8");
+      fs.writeFileSync(outputPath, original);
+      originals.set(repositoryPath, original);
+    }
+    const unrelatedPublicPath = path.join(
+      transactionRepository,
+      "examples/migration-workbench/public/artifacts/v1/user-notes.json",
+    );
+    const unrelatedGeneratedPath = path.join(
+      transactionRepository,
+      "examples/migration-workbench/src/generated/user-helper.js",
+    );
+    fs.writeFileSync(unrelatedPublicPath, "user-notes\n");
+    fs.writeFileSync(unrelatedGeneratedPath, "user-helper\n");
+
+    expect(() => materializeArtifactSet({ mode: "write", repositoryRoot: transactionRepository, artifacts })).toThrow(
+      /non-owned entries.*will not be deleted automatically.*user-notes.*user-helper/i,
+    );
+    expect(() => materializeArtifactSet({ mode: "check", repositoryRoot: transactionRepository, artifacts })).toThrow(
+      /stale[\s\S]*unexpected non-owned artifact entry/i,
+    );
+
+    expect(fs.readFileSync(unrelatedPublicPath, "utf8")).toBe("user-notes\n");
+    expect(fs.readFileSync(unrelatedGeneratedPath, "utf8")).toBe("user-helper\n");
+    for (const [repositoryPath, original] of originals) {
+      expect(fs.readFileSync(path.join(transactionRepository, repositoryPath)).equals(original), repositoryPath).toBe(
+        true,
+      );
+    }
+  });
 
   it("preserves committed artifacts when transaction cleanup fails after the commit point", () => {
     const artifacts = readCommittedArtifactSet();
@@ -697,6 +834,43 @@ describe("migration workbench artifact hardening", () => {
     }
   });
 
+  it("revalidates installed artifacts after the cleanup hook and retains recovery backups", () => {
+    const artifacts = readCommittedArtifactSet();
+    const transactionRepository = makeTempDir("migration-transaction-final-state-race");
+    const originals = new Map<string, Buffer>();
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(transactionRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      const original = Buffer.from(`original:${repositoryPath}\n`, "utf8");
+      fs.writeFileSync(outputPath, original);
+      originals.set(repositoryPath, original);
+    }
+    let recoveryRoot = "";
+    const mutatedPath = artifactPaths[0];
+
+    expect(() =>
+      materializeArtifactSet({
+        mode: "write",
+        repositoryRoot: transactionRepository,
+        artifacts,
+        testHooks: {
+          beforeCleanup(transactionRoot, activeRepositoryRoot) {
+            recoveryRoot = transactionRoot;
+            fs.writeFileSync(path.join(activeRepositoryRoot, mutatedPath), "post-commit mutation\n");
+          },
+        },
+      }),
+    ).toThrow(
+      /committed.*cleanup failed.*not rolled back.*installed transaction artifact.*immutable original identity/i,
+    );
+
+    expect(fs.existsSync(recoveryRoot)).toBe(true);
+    expect(fs.readFileSync(path.join(transactionRepository, mutatedPath), "utf8")).toBe("post-commit mutation\n");
+    expect(
+      fs.readFileSync(path.join(recoveryRoot, "backups", "artifact-000")).equals(originals.get(mutatedPath)!),
+    ).toBe(true);
+  });
+
   it("refuses transaction-root path swaps before cleanup and never deletes the substituted directory", () => {
     const artifacts = readCommittedArtifactSet();
     const transactionRepository = makeTempDir("migration-transaction-cleanup-path-swap");
@@ -725,7 +899,7 @@ describe("migration workbench artifact hardening", () => {
           },
         },
       }),
-    ).toThrow(/committed.*cleanup failed.*immutable root identity/i);
+    ).toThrow(/committed.*cleanup failed.*immutable (?:root|original) identity/i);
 
     expect(fs.readFileSync(path.join(substitutedRoot, "sentinel.txt"), "utf8")).toBe("must-survive\n");
     expect(fs.existsSync(path.join(movedTransactionRoot, "backups"))).toBe(true);
@@ -1021,137 +1195,6 @@ describe("migration workbench artifact hardening", () => {
     ).toBe(true);
   });
 
-  it("preserves directory recovery state when a retired directory backup tree is tampered", () => {
-    const artifacts = readCommittedArtifactSet();
-    const transactionRepository = makeTempDir("migration-transaction-tampered-directory-repository");
-    const originals = new Map<string, Buffer>();
-    for (const repositoryPath of artifactPaths) {
-      const outputPath = path.join(transactionRepository, repositoryPath);
-      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-      const original = Buffer.from(`original:${repositoryPath}\n`, "utf8");
-      fs.writeFileSync(outputPath, original);
-      originals.set(repositoryPath, original);
-    }
-    const retiredDirectory = path.join(
-      transactionRepository,
-      "examples/migration-workbench/public/artifacts/v1/retired-directory",
-    );
-    fs.mkdirSync(path.join(retiredDirectory, "nested"), { recursive: true });
-    fs.writeFileSync(path.join(retiredDirectory, "nested", "original.json"), '{"original":true}\n');
-    let recoveryRoot = "";
-
-    expect(() =>
-      materializeArtifactSet({
-        mode: "write",
-        repositoryRoot: transactionRepository,
-        artifacts,
-        testHooks: {
-          afterReplacement(replacementCount) {
-            if (replacementCount !== artifactPaths.length + 1) return;
-            recoveryRoot = activeMaterializationTransactionRoot(transactionRepository);
-            fs.writeFileSync(path.join(recoveryRoot, "backups", "retired-000", "nested", "tampered.json"), "{}");
-            throw new Error("injected rollback with tampered retired directory backup");
-          },
-        },
-      }),
-    ).toThrow(
-      /rollback was incomplete.*rollback backup does not match its immutable original identity.*tampered retired directory backup/i,
-    );
-
-    expect(fs.existsSync(retiredDirectory)).toBe(false);
-    expect(fs.existsSync(path.join(recoveryRoot, "backups", "retired-000", "nested", "tampered.json"))).toBe(true);
-    for (const [repositoryPath, original] of originals) {
-      expect(fs.readFileSync(path.join(transactionRepository, repositoryPath)).equals(original), repositoryPath).toBe(
-        true,
-      );
-    }
-  });
-
-  it("detects retired-directory root ownership changes before rollback", () => {
-    const alternateOwnership = alternateSupplementaryOwnership();
-    if (!alternateOwnership) return;
-    const artifacts = readCommittedArtifactSet();
-    const transactionRepository = makeTempDir("migration-transaction-tampered-directory-owner");
-    for (const repositoryPath of artifactPaths) {
-      const outputPath = path.join(transactionRepository, repositoryPath);
-      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-      fs.writeFileSync(outputPath, `original:${repositoryPath}\n`);
-    }
-    const retiredDirectory = path.join(
-      transactionRepository,
-      "examples/migration-workbench/public/artifacts/v1/retired-directory-owner",
-    );
-    fs.mkdirSync(path.join(retiredDirectory, "nested"), { recursive: true });
-    fs.writeFileSync(path.join(retiredDirectory, "nested", "original.json"), '{"original":true}\n');
-    let recoveryRoot = "";
-
-    expect(() =>
-      materializeArtifactSet({
-        mode: "write",
-        repositoryRoot: transactionRepository,
-        artifacts,
-        testHooks: {
-          afterReplacement(replacementCount) {
-            if (replacementCount !== artifactPaths.length + 1) return;
-            recoveryRoot = activeMaterializationTransactionRoot(transactionRepository);
-            fs.chownSync(
-              path.join(recoveryRoot, "backups", "retired-000"),
-              alternateOwnership.uid,
-              alternateOwnership.gid,
-            );
-            throw new Error("injected rollback with changed retired-directory owner");
-          },
-        },
-      }),
-    ).toThrow(
-      /rollback was incomplete.*rollback backup does not match its immutable original identity.*directory owner/i,
-    );
-
-    expect(fs.existsSync(retiredDirectory)).toBe(false);
-    expect(fs.statSync(path.join(recoveryRoot, "backups", "retired-000")).gid).toBe(alternateOwnership.gid);
-  });
-
-  it("rejects nested backup mode tampering instead of restoring unsafe permissions", () => {
-    const artifacts = readCommittedArtifactSet();
-    const transactionRepository = makeTempDir("migration-transaction-tampered-directory-mode");
-    for (const repositoryPath of artifactPaths) {
-      const outputPath = path.join(transactionRepository, repositoryPath);
-      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-      fs.writeFileSync(outputPath, `original:${repositoryPath}\n`);
-    }
-    const retiredDirectory = path.join(
-      transactionRepository,
-      "examples/migration-workbench/public/artifacts/v1/retired-directory-mode",
-    );
-    const privateFile = path.join(retiredDirectory, "nested", "private.json");
-    fs.mkdirSync(path.dirname(privateFile), { recursive: true });
-    fs.writeFileSync(privateFile, '{"private":true}\n', { mode: 0o600 });
-    fs.chmodSync(privateFile, 0o600);
-    let recoveryRoot = "";
-
-    expect(() =>
-      materializeArtifactSet({
-        mode: "write",
-        repositoryRoot: transactionRepository,
-        artifacts,
-        testHooks: {
-          afterReplacement(replacementCount) {
-            if (replacementCount !== artifactPaths.length + 1) return;
-            recoveryRoot = activeMaterializationTransactionRoot(transactionRepository);
-            fs.chmodSync(path.join(recoveryRoot, "backups", "retired-000", "nested", "private.json"), 0o666);
-            throw new Error("injected rollback with unsafe nested backup mode");
-          },
-        },
-      }),
-    ).toThrow(
-      /rollback was incomplete.*rollback backup does not match its immutable original identity.*unsafe nested/i,
-    );
-
-    expect(fs.existsSync(retiredDirectory)).toBe(false);
-    const recoveryFile = path.join(recoveryRoot, "backups", "retired-000", "nested", "private.json");
-    expect(fs.statSync(recoveryFile).mode & 0o777).toBe(0o666);
-  });
-
   it("rejects late unexpected artifact entries in write and check modes without deleting them", () => {
     const artifacts = readCommittedArtifactSet();
     const writeRepository = makeTempDir("migration-transaction-late-entry-write");
@@ -1201,7 +1244,7 @@ describe("migration workbench artifact hardening", () => {
           },
         },
       }),
-    ).toThrow(/stale[\s\S]*late-unexpected[\s\S]*unexpected retired artifact entry/i);
+    ).toThrow(/stale[\s\S]*late-unexpected[\s\S]*unexpected non-owned artifact entry/i);
     expect(fs.readFileSync(checkLatePath, "utf8")).toBe("late-check\n");
   });
 
@@ -1293,10 +1336,48 @@ describe("migration workbench artifact hardening", () => {
     ).rejects.toThrow(/prepared SDK artifact is stale or incomplete/i);
     fs.writeFileSync(cliPath, cliBytes);
 
+    for (const [repositoryPath, mutation] of [
+      ["scripts/lib/migration-workbench-execution-runner.mjs", "// concurrent runner edit\n"],
+      ["scripts/lib/migration-workbench-network-guard.mjs", "// concurrent guard edit\n"],
+    ] as const) {
+      const harnessPath = path.join(fakeRoot, repositoryPath);
+      const harnessBytes = fs.readFileSync(harnessPath);
+      await expect(
+        buildMigrationWorkbenchArtifacts({
+          repositoryRoot: fakeRoot,
+          temporaryRoot: makeTempDir("migration-execution-harness-toctou"),
+          testHooks: {
+            afterCommand(commandId) {
+              if (commandId === "honua-compat-demo") fs.appendFileSync(harnessPath, mutation);
+            },
+          },
+        }),
+      ).rejects.toThrow(/execution runner or network guard changed/i);
+      fs.writeFileSync(harnessPath, harnessBytes);
+    }
+
     await materializeMigrationWorkbenchArtifacts({ mode: "write", repositoryRoot: fakeRoot });
     const committed = new Map(
       artifactPaths.map((repositoryPath) => [repositoryPath, fs.readFileSync(path.join(fakeRoot, repositoryPath))]),
     );
+    const runnerPath = path.join(fakeRoot, "scripts/lib/migration-workbench-execution-runner.mjs");
+    const runnerBytes = fs.readFileSync(runnerPath);
+    await expect(
+      materializeMigrationWorkbenchArtifacts({
+        mode: "write",
+        repositoryRoot: fakeRoot,
+        testHooks: {
+          beforePublication() {
+            fs.appendFileSync(runnerPath, "// edit before publication\n");
+          },
+        },
+      }),
+    ).rejects.toThrow(/(?:execution runner or network guard changed|prepared SDK artifact is stale)/i);
+    fs.writeFileSync(runnerPath, runnerBytes);
+    for (const [repositoryPath, expectedBytes] of committed) {
+      expect(fs.readFileSync(path.join(fakeRoot, repositoryPath)).equals(expectedBytes), repositoryPath).toBe(true);
+    }
+
     await expect(
       materializeMigrationWorkbenchArtifacts({
         mode: "write",
@@ -1410,15 +1491,17 @@ describe("migration workbench artifact hardening", () => {
 
     const retiredPath = path.join(fakeRoot, "examples/migration-workbench/public/artifacts/v1/retired.v0.json");
     fs.writeFileSync(retiredPath, "retired");
-    expectGeneratorFailure(runGenerator(fakeRoot, "--check"), /unexpected retired artifact entry/i);
-    expectGeneratorSuccess(runGenerator(fakeRoot, "--write"));
-    expect(fs.existsSync(retiredPath)).toBe(false);
+    expectGeneratorFailure(runGenerator(fakeRoot, "--check"), /unexpected non-owned artifact entry/i);
+    expectGeneratorFailure(runGenerator(fakeRoot, "--write"), /non-owned entries.*will not be deleted automatically/i);
+    expect(fs.readFileSync(retiredPath, "utf8")).toBe("retired");
+    fs.unlinkSync(retiredPath);
 
     const retiredGeneratedPath = path.join(fakeRoot, "examples/migration-workbench/src/generated/retired-generated.js");
     fs.writeFileSync(retiredGeneratedPath, "retired-generated");
-    expectGeneratorFailure(runGenerator(fakeRoot, "--check"), /unexpected retired artifact entry/i);
-    expectGeneratorSuccess(runGenerator(fakeRoot, "--write"));
-    expect(fs.existsSync(retiredGeneratedPath)).toBe(false);
+    expectGeneratorFailure(runGenerator(fakeRoot, "--check"), /unexpected non-owned artifact entry/i);
+    expectGeneratorFailure(runGenerator(fakeRoot, "--write"), /non-owned entries.*will not be deleted automatically/i);
+    expect(fs.readFileSync(retiredGeneratedPath, "utf8")).toBe("retired-generated");
+    fs.unlinkSync(retiredGeneratedPath);
 
     const outsideRoot = makeTempDir("migration-cli-outside");
     const sentinelPath = path.join(outsideRoot, "sentinel.txt");

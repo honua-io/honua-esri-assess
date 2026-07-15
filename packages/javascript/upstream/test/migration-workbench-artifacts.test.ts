@@ -72,6 +72,24 @@ function preparedDistSrcDigest(entries: Array<{ path: string; bytes: number; sha
   return { sha256: digest.digest("hex"), fileCount: distSrcEntries.length };
 }
 
+function executionHarnessDigest(files: Array<{ repositoryPath: string; byteLength: number; sha256: string }>): string {
+  const digest = createHash("sha256");
+  for (const value of [
+    Buffer.from("honua.migration-workbench.execution-harness.v1", "utf8"),
+    ...files.flatMap((file) => [
+      Buffer.from(file.repositoryPath, "utf8"),
+      Buffer.from(String(file.byteLength), "ascii"),
+      Buffer.from(file.sha256, "ascii"),
+    ]),
+  ]) {
+    const length = Buffer.alloc(8);
+    length.writeBigUInt64BE(BigInt(value.length));
+    digest.update(length);
+    digest.update(value);
+  }
+  return digest.digest("hex");
+}
+
 afterAll(() => {
   for (const temporaryRoot of tempDirs) {
     fs.rmSync(temporaryRoot, { recursive: true, force: true });
@@ -186,8 +204,22 @@ describe("migration workbench artifact supply chain", () => {
     expect(migration.provenance.generatedTargetExecution).toMatchObject({
       processBoundary: "separate Node.js process",
       inheritedEnvironment: "fixed non-secret allowlist",
-      externalNetworkAttemptsObserved: 0,
+      trustBoundary: "repository-controlled generated target; this guard is not an arbitrary-code security sandbox",
+      protocolNoncePurpose: "parent/runner response correlation, not same-process code authentication",
+      guardedNetworkApiAttemptsObserved: 0,
     });
+    const executionHarness = migration.provenance.generatedTargetExecution.executionHarness as {
+      combinedSha256: string;
+      runner: { repositoryPath: string; byteLength: number; sha256: string };
+      networkGuard: { repositoryPath: string; byteLength: number; sha256: string };
+    };
+    const executionHarnessFiles = [executionHarness.runner, executionHarness.networkGuard];
+    for (const file of executionHarnessFiles) {
+      const bytes = fs.readFileSync(path.join(repositoryRoot, file.repositoryPath));
+      expect(file.byteLength).toBe(bytes.length);
+      expect(file.sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+    }
+    expect(executionHarness.combinedSha256).toBe(executionHarnessDigest(executionHarnessFiles));
     expect(migration.provenance).not.toHaveProperty("externalNetworkRequests");
 
     expect(widgets.report.summary).toMatchObject({
@@ -246,7 +278,7 @@ describe("migration workbench artifact supply chain", () => {
     });
 
     expect(isolated.value).toEqual(expected.expected);
-    expect(isolated.evidence.externalNetworkAttemptsObserved).toBe(0);
+    expect(isolated.evidence.guardedNetworkApiAttemptsObserved).toBe(0);
   });
 
   it("passes git apply --check and recreates the complete CLI target tree", async () => {

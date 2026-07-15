@@ -1,8 +1,10 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import dgram from "node:dgram";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { afterAll, describe, expect, it } from "vitest";
 
@@ -116,6 +118,71 @@ function expectGeneratorSuccess(result: ReturnType<typeof runGenerator>): void {
   expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
 }
 
+async function startUdpCounter(counterPath: string): Promise<{ child: ReturnType<typeof spawn>; port: number }> {
+  const listenerSource = `
+    import dgram from "node:dgram";
+    import fs from "node:fs";
+    const counterPath = process.argv[1];
+    let count = 0;
+    const server = dgram.createSocket("udp4");
+    server.on("message", () => fs.writeFileSync(counterPath, String(++count)));
+    server.bind(0, "127.0.0.1", () => process.stdout.write(String(server.address().port) + "\\n"));
+  `;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", listenerSource, counterPath], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const port = await new Promise<number>((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(() => reject(new Error(`UDP listener did not become ready: ${stderr}`)), 5_000);
+    child.stderr?.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.stdout?.on("data", (chunk) => {
+      stdout += String(chunk);
+      const newline = stdout.indexOf("\n");
+      if (newline >= 0) {
+        clearTimeout(timeout);
+        resolve(Number.parseInt(stdout.slice(0, newline), 10));
+      }
+    });
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once("exit", (code) => {
+      if (!stdout.includes("\n")) {
+        clearTimeout(timeout);
+        reject(new Error(`UDP listener exited early with code ${code}: ${stderr}`));
+      }
+    });
+  });
+  return { child, port };
+}
+
+async function sendUdpControl(port: number): Promise<void> {
+  const socket = dgram.createSocket("udp4");
+  try {
+    await new Promise<void>((resolve, reject) => {
+      socket.send(Buffer.from("control"), port, "127.0.0.1", (error) => (error ? reject(error) : resolve()));
+    });
+  } finally {
+    socket.close();
+  }
+}
+
+async function waitForCounter(counterPath: string, expected: number): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const count = fs.existsSync(counterPath) ? Number.parseInt(fs.readFileSync(counterPath, "utf8"), 10) : 0;
+    if (count === expected) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`UDP counter did not reach ${expected}.`);
+}
+
 afterAll(() => {
   for (const temporaryRoot of [...tempDirs].reverse()) {
     fs.rmSync(temporaryRoot, { recursive: true, force: true });
@@ -212,6 +279,86 @@ describe("migration workbench artifact hardening", () => {
     }
   }, 60_000);
 
+  it("locks every callback and promise Resolver method before any DNS packet can escape", async () => {
+    const listenerRoot = makeTempDir("migration-dns-listener");
+    const counterPath = path.join(listenerRoot, "packets.txt");
+    const listener = await startUdpCounter(counterPath);
+    try {
+      await sendUdpControl(listener.port);
+      await waitForCounter(counterPath, 1);
+
+      const guardUrl = pathToFileURL(
+        path.join(repositoryRoot, "scripts/lib/migration-workbench-network-guard.mjs"),
+      ).href;
+      const probeSource = `
+        import dns from "node:dns";
+        import dnsPromises from "node:dns/promises";
+        const callbackResolver = new dns.Resolver();
+        const promiseResolver = new dnsPromises.Resolver();
+        callbackResolver.setServers(["127.0.0.1:${listener.port}"]);
+        promiseResolver.setServers(["127.0.0.1:${listener.port}"]);
+        function methodNames(instance) {
+          const names = [];
+          let prototype = Object.getPrototypeOf(instance);
+          while (prototype && prototype !== Object.prototype) {
+            for (const name of Reflect.ownKeys(prototype)) {
+              const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
+              if (typeof name === "string" && name !== "constructor" && descriptor && typeof descriptor.value === "function") names.push(name);
+            }
+            prototype = Object.getPrototypeOf(prototype);
+          }
+          return [...new Set(names)];
+        }
+        const callbackMethods = methodNames(callbackResolver);
+        const promiseMethods = methodNames(promiseResolver);
+        const guard = await import(${JSON.stringify(guardUrl)});
+        function invokeEvery(instance, names) {
+          return Object.fromEntries(names.map((name) => {
+            let code = null;
+            try { instance[name]("blocked.test", () => {}); } catch (error) { code = error?.code ?? null; }
+            return [name, code];
+          }));
+        }
+        const callbackResults = invokeEvery(callbackResolver, callbackMethods);
+        const promiseResults = invokeEvery(promiseResolver, promiseMethods);
+        process.stdout.write(JSON.stringify({
+          callbackMethods,
+          promiseMethods,
+          callbackResults,
+          promiseResults,
+          attempts: guard.snapshotDeniedNetworkAttempts(),
+        }));
+      `;
+      const result = runBoundedCommand(process.execPath, ["--input-type=module", "-e", probeSource], {
+        cwd: repositoryRoot,
+        env: process.env,
+        label: "DNS Resolver guard probe",
+        timeoutMs: 10_000,
+      });
+      const probe = JSON.parse(String(result.stdout)) as {
+        callbackMethods: string[];
+        promiseMethods: string[];
+        callbackResults: Record<string, string | null>;
+        promiseResults: Record<string, string | null>;
+        attempts: string[];
+      };
+      expect(probe.callbackMethods).toEqual(
+        expect.arrayContaining(["resolveAny", "resolveMx", "setServers", "cancel"]),
+      );
+      expect(probe.promiseMethods).toEqual(expect.arrayContaining(["resolveAny", "resolveMx", "setServers", "cancel"]));
+      expect(Object.values(probe.callbackResults).every((code) => code === "HONUA_NETWORK_DENIED")).toBe(true);
+      expect(Object.values(probe.promiseResults).every((code) => code === "HONUA_NETWORK_DENIED")).toBe(true);
+      expect(probe.attempts).toEqual(
+        expect.arrayContaining(["dns.Resolver.resolveAny", "dns.promises.Resolver.resolveAny"]),
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(Number.parseInt(fs.readFileSync(counterPath, "utf8"), 10)).toBe(1);
+    } finally {
+      listener.child.kill("SIGTERM");
+    }
+  }, 30_000);
+
   it("isolates environment, reads, writes, child processes, workers, network, and hangs", () => {
     const outsideRoot = makeTempDir("migration-isolation-outside");
     const sentinelPath = path.join(outsideRoot, "sentinel.txt");
@@ -277,6 +424,32 @@ describe("migration workbench artifact hardening", () => {
         /invalid result envelope/i,
       );
 
+      const intrinsicForgeryTarget = Buffer.from(
+        `
+          import fs from "node:fs";
+          const nativeStringify = JSON.stringify.bind(JSON);
+          const forgedValue = { trusted: "forged" };
+          JSON.stringify = (value) => nativeStringify(value?.nonce
+            ? { protocol: value.protocol, nonce: value.nonce, value: forgedValue, networkAttempts: [] }
+            : forgedValue);
+          JSON.parse = () => forgedValue;
+          Object.prototype.toJSON = () => forgedValue;
+          Array.prototype.join = () => "";
+          Array.prototype[Symbol.iterator] = function* () { yield "nonce"; };
+          Object.freeze = (value) => value;
+          process.stdout.write = () => true;
+          fs.writeSync = () => 0;
+          export default { trusted: "actual" };
+        `,
+        "utf8",
+      );
+      const intrinsicForgery = executeIsolatedGeneratedModule({
+        repositoryRoot,
+        generatedTargetBytes: intrinsicForgeryTarget,
+      });
+      expect(intrinsicForgery.value).toEqual({ trusted: "actual" });
+      expect(intrinsicForgery.value).not.toEqual({ trusted: "forged" });
+
       const hangingTarget = Buffer.from(
         "setInterval(() => {}, 1000); await new Promise(() => {}); export default {};",
         "utf8",
@@ -315,7 +488,12 @@ describe("migration workbench artifact hardening", () => {
       transactionRepository,
       "examples/migration-workbench/public/artifacts/v1/retired.v0.json",
     );
+    const retiredGeneratedPath = path.join(
+      transactionRepository,
+      "examples/migration-workbench/src/generated/retired-generated.js",
+    );
     fs.writeFileSync(retiredPath, "retired");
+    fs.writeFileSync(retiredGeneratedPath, "retired-generated");
 
     expect(() =>
       materializeArtifactSet({
@@ -324,7 +502,7 @@ describe("migration workbench artifact hardening", () => {
         artifacts: generated.artifacts,
         testHooks: {
           afterReplacement(replacementCount) {
-            if (replacementCount === 2) {
+            if (replacementCount === artifactPaths.length + 2) {
               throw new Error("injected replacement failure");
             }
           },
@@ -337,6 +515,7 @@ describe("migration workbench artifact hardening", () => {
       );
     }
     expect(fs.readFileSync(retiredPath, "utf8")).toBe("retired");
+    expect(fs.readFileSync(retiredGeneratedPath, "utf8")).toBe("retired-generated");
 
     materializeArtifactSet({
       mode: "write",
@@ -344,6 +523,7 @@ describe("migration workbench artifact hardening", () => {
       artifacts: generated.artifacts,
     });
     expect(fs.existsSync(retiredPath)).toBe(false);
+    expect(fs.existsSync(retiredGeneratedPath)).toBe(false);
     expect(() =>
       materializeArtifactSet({
         mode: "check",
@@ -373,6 +553,12 @@ describe("migration workbench artifact hardening", () => {
     expectGeneratorFailure(runGenerator(fakeRoot, "--check"), /unexpected retired artifact entry/i);
     expectGeneratorSuccess(runGenerator(fakeRoot, "--write"));
     expect(fs.existsSync(retiredPath)).toBe(false);
+
+    const retiredGeneratedPath = path.join(fakeRoot, "examples/migration-workbench/src/generated/retired-generated.js");
+    fs.writeFileSync(retiredGeneratedPath, "retired-generated");
+    expectGeneratorFailure(runGenerator(fakeRoot, "--check"), /unexpected retired artifact entry/i);
+    expectGeneratorSuccess(runGenerator(fakeRoot, "--write"));
+    expect(fs.existsSync(retiredGeneratedPath)).toBe(false);
 
     const outsideRoot = makeTempDir("migration-cli-outside");
     const sentinelPath = path.join(outsideRoot, "sentinel.txt");

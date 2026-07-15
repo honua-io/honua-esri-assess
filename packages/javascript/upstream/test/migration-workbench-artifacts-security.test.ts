@@ -19,6 +19,7 @@ import {
   materializeMigrationWorkbenchArtifacts,
   regularTreeSnapshotsEqual,
   runBoundedCommand,
+  verifyMigrationPatch,
 } from "../scripts/lib/migration-workbench-artifacts.mjs";
 import { prepareSdkArtifact } from "../scripts/lib/prepared-sdk-artifact.mjs";
 
@@ -101,6 +102,16 @@ function activeMaterializationTransactionRoot(repositoryRoot: string): string {
     .find((name) => name.startsWith("migration-workbench-materialize-"));
   if (!transactionName) throw new Error("transaction root was not created");
   return path.join(transactionParent, transactionName);
+}
+
+function alternateSupplementaryOwnership(): { uid: number; gid: number } | undefined {
+  const getuid = process.getuid;
+  const getgid = process.getgid;
+  const getgroups = process.getgroups;
+  if (!getuid || !getgid || !getgroups) return undefined;
+  const primaryGroup = getgid();
+  const alternateGroup = getgroups().find((group) => group !== primaryGroup);
+  return alternateGroup === undefined ? undefined : { uid: getuid(), gid: alternateGroup };
 }
 
 function runGenerator(fakeRoot: string, mode: "--write" | "--check", environment = process.env) {
@@ -319,7 +330,14 @@ describe("migration workbench artifact hardening", () => {
       ).href;
       const probeSource = `
         import dns from "node:dns";
+        import * as dnsNamed from "node:dns";
         import dnsPromises from "node:dns/promises";
+        import * as dnsPromisesNamed from "node:dns/promises";
+        const topLevelRecordMethods = [
+          "resolve", "resolve4", "resolve6", "resolveAny", "resolveCaa", "resolveCname", "resolveMx",
+          "resolveNaptr", "resolveNs", "resolvePtr", "resolveSoa", "resolveSrv", "resolveTxt", "reverse",
+        ];
+        dns.setServers(["127.0.0.1:${listener.port}"]);
         const callbackResolver = new dns.Resolver();
         const promiseResolver = new dnsPromises.Resolver();
         callbackResolver.setServers(["127.0.0.1:${listener.port}"]);
@@ -348,11 +366,20 @@ describe("migration workbench artifact hardening", () => {
         }
         const callbackResults = invokeEvery(callbackResolver, callbackMethods);
         const promiseResults = invokeEvery(promiseResolver, promiseMethods);
+        const callbackTopLevelResults = invokeEvery(dns, topLevelRecordMethods);
+        const promiseTopLevelResults = invokeEvery(dnsPromises, topLevelRecordMethods);
+        const callbackNamedResults = invokeEvery(dnsNamed, topLevelRecordMethods);
+        const promiseNamedResults = invokeEvery(dnsPromisesNamed, topLevelRecordMethods);
         process.stdout.write(JSON.stringify({
+          topLevelRecordMethods,
           callbackMethods,
           promiseMethods,
           callbackResults,
           promiseResults,
+          callbackTopLevelResults,
+          promiseTopLevelResults,
+          callbackNamedResults,
+          promiseNamedResults,
           attempts: guard.snapshotDeniedNetworkAttempts(),
         }));
       `;
@@ -363,10 +390,15 @@ describe("migration workbench artifact hardening", () => {
         timeoutMs: 10_000,
       });
       const probe = JSON.parse(String(result.stdout)) as {
+        topLevelRecordMethods: string[];
         callbackMethods: string[];
         promiseMethods: string[];
         callbackResults: Record<string, string | null>;
         promiseResults: Record<string, string | null>;
+        callbackTopLevelResults: Record<string, string | null>;
+        promiseTopLevelResults: Record<string, string | null>;
+        callbackNamedResults: Record<string, string | null>;
+        promiseNamedResults: Record<string, string | null>;
         attempts: string[];
       };
       expect(probe.callbackMethods).toEqual(
@@ -375,8 +407,18 @@ describe("migration workbench artifact hardening", () => {
       expect(probe.promiseMethods).toEqual(expect.arrayContaining(["resolveAny", "resolveMx", "setServers", "cancel"]));
       expect(Object.values(probe.callbackResults).every((code) => code === "HONUA_NETWORK_DENIED")).toBe(true);
       expect(Object.values(probe.promiseResults).every((code) => code === "HONUA_NETWORK_DENIED")).toBe(true);
+      expect(probe.topLevelRecordMethods).toHaveLength(14);
+      expect(Object.values(probe.callbackTopLevelResults).every((code) => code === "HONUA_NETWORK_DENIED")).toBe(true);
+      expect(Object.values(probe.promiseTopLevelResults).every((code) => code === "HONUA_NETWORK_DENIED")).toBe(true);
+      expect(Object.values(probe.callbackNamedResults).every((code) => code === "HONUA_NETWORK_DENIED")).toBe(true);
+      expect(Object.values(probe.promiseNamedResults).every((code) => code === "HONUA_NETWORK_DENIED")).toBe(true);
       expect(probe.attempts).toEqual(
-        expect.arrayContaining(["dns.Resolver.resolveAny", "dns.promises.Resolver.resolveAny"]),
+        expect.arrayContaining([
+          "dns.Resolver.resolveAny",
+          "dns.promises.Resolver.resolveAny",
+          "dns.resolveTxt",
+          "dns/promises.resolveTxt",
+        ]),
       );
 
       await new Promise((resolve) => setTimeout(resolve, 250));
@@ -441,6 +483,21 @@ describe("migration workbench artifact hardening", () => {
       expect(networkError).toMatch(/denied network operation/i);
       expect(networkError).not.toContain(secret);
 
+      const passiveSocketProbe = Buffer.from(
+        `
+          import net from "node:net";
+          const server = net.createServer();
+          const result = {};
+          try { server.listen(0); result.listen = "allowed"; } catch (error) { result.listen = error?.code ?? "denied"; }
+          try { server._listen2(null, 0, 6, 0); result.listen2 = "allowed"; } catch (error) { result.listen2 = error?.code ?? "denied"; }
+          export default result;
+        `,
+        "utf8",
+      );
+      expect(() =>
+        executeIsolatedGeneratedModule({ repositoryRoot, generatedTargetBytes: passiveSocketProbe }),
+      ).toThrow(/denied network operation.*net\.Server\.listen.*net\.Server\._listen2/i);
+
       const spoofedEnvelope = Buffer.from(
         `import fs from "node:fs"; fs.writeSync(1, JSON.stringify({ protocol: "honua.migration-workbench.runner.v1", nonce: "${"0".repeat(
           64,
@@ -488,6 +545,20 @@ describe("migration workbench artifact hardening", () => {
           timeoutMs: 300,
         }),
       ).toThrow(/timed out after 300ms/i);
+
+      const signalResistantTarget = Buffer.from(
+        `process.on("SIGTERM", () => {}); setTimeout(() => process.exit(0), 4000); await new Promise(() => {}); export default {};`,
+        "utf8",
+      );
+      const timeoutStartedAt = Date.now();
+      expect(() =>
+        executeIsolatedGeneratedModule({
+          repositoryRoot,
+          generatedTargetBytes: signalResistantTarget,
+          timeoutMs: 300,
+        }),
+      ).toThrow(/timed out after 300ms/i);
+      expect(Date.now() - timeoutStartedAt).toBeLessThan(2_000);
     } finally {
       if (previousSecret === undefined) {
         delete process.env.HONUA_MIGRATION_TEST_SECRET;
@@ -496,6 +567,44 @@ describe("migration workbench artifact hardening", () => {
       }
     }
   }, 30_000);
+
+  it("denies caught cross-process signal, debug, and priority operations", () => {
+    const sentinel = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      stdio: "ignore",
+    });
+    if (!sentinel.pid) throw new Error("process-control sentinel did not start");
+    try {
+      const processControlProbe = Buffer.from(
+        `
+          import os from "node:os";
+          const pid = ${sentinel.pid};
+          const attempts = {};
+          for (const name of ["kill", "_kill", "_debugProcess", "_debugEnd"]) {
+            if (typeof process[name] !== "function") continue;
+            try {
+              if (name === "kill") process[name](pid, "SIGTERM");
+              else if (name === "_kill") process[name](pid, 15);
+              else process[name](pid);
+              attempts[name] = "allowed";
+            } catch (error) {
+              attempts[name] = error?.code ?? "denied";
+            }
+          }
+          try { os.setPriority(pid, 10); attempts.setPriority = "allowed"; }
+          catch (error) { attempts.setPriority = error?.code ?? "denied"; }
+          export default attempts;
+        `,
+        "utf8",
+      );
+      expect(() =>
+        executeIsolatedGeneratedModule({ repositoryRoot, generatedTargetBytes: processControlProbe }),
+      ).toThrow(/denied process control operation.*process\.kill.*os\.setPriority/i);
+      expect(() => process.kill(sentinel.pid!, 0)).not.toThrow();
+      expect(sentinel.exitCode).toBeNull();
+    } finally {
+      sentinel.kill("SIGKILL");
+    }
+  });
 
   it("applies staged artifacts transactionally and rolls handled failures back", () => {
     const artifacts = readCommittedArtifactSet();
@@ -588,6 +697,123 @@ describe("migration workbench artifact hardening", () => {
     }
   });
 
+  it("refuses transaction-root path swaps before cleanup and never deletes the substituted directory", () => {
+    const artifacts = readCommittedArtifactSet();
+    const transactionRepository = makeTempDir("migration-transaction-cleanup-path-swap");
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(transactionRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, `original:${repositoryPath}\n`);
+    }
+    const swapSource = makeTempDir("migration-cleanup-sentinel", path.join(transactionRepository, ".tmp"));
+    const sentinelPath = path.join(swapSource, "sentinel.txt");
+    fs.writeFileSync(sentinelPath, "must-survive\n");
+    let substitutedRoot = "";
+    let movedTransactionRoot = "";
+
+    expect(() =>
+      materializeArtifactSet({
+        mode: "write",
+        repositoryRoot: transactionRepository,
+        artifacts,
+        testHooks: {
+          beforeCleanup(transactionRoot) {
+            substitutedRoot = transactionRoot;
+            movedTransactionRoot = `${transactionRoot}-moved`;
+            fs.renameSync(transactionRoot, movedTransactionRoot);
+            fs.renameSync(swapSource, transactionRoot);
+          },
+        },
+      }),
+    ).toThrow(/committed.*cleanup failed.*immutable root identity/i);
+
+    expect(fs.readFileSync(path.join(substitutedRoot, "sentinel.txt"), "utf8")).toBe("must-survive\n");
+    expect(fs.existsSync(path.join(movedTransactionRoot, "backups"))).toBe(true);
+    for (const [repositoryPath, expectedBytes] of artifacts) {
+      expect(
+        fs.readFileSync(path.join(transactionRepository, repositoryPath)).equals(expectedBytes),
+        repositoryPath,
+      ).toBe(true);
+    }
+    fs.rmSync(substitutedRoot, { recursive: true, force: true });
+    fs.rmSync(movedTransactionRoot, { recursive: true, force: true });
+  });
+
+  it("refuses unexpected transaction children during committed cleanup without deleting them", () => {
+    const artifacts = readCommittedArtifactSet();
+    const transactionRepository = makeTempDir("migration-transaction-cleanup-child-injection");
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(transactionRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, `original:${repositoryPath}\n`);
+    }
+    const unrelatedRoot = makeTempDir("migration-cleanup-child-sentinel");
+    fs.writeFileSync(path.join(unrelatedRoot, "sentinel.txt"), "must-survive\n");
+    let transactionRoot = "";
+
+    expect(() =>
+      materializeArtifactSet({
+        mode: "write",
+        repositoryRoot: transactionRepository,
+        artifacts,
+        testHooks: {
+          beforeCleanup(currentTransactionRoot) {
+            transactionRoot = currentTransactionRoot;
+            fs.renameSync(unrelatedRoot, path.join(currentTransactionRoot, "injected-victim"));
+          },
+        },
+      }),
+    ).toThrow(/committed.*cleanup failed.*unexpected entries/i);
+
+    expect(fs.readFileSync(path.join(transactionRoot, "injected-victim", "sentinel.txt"), "utf8")).toBe(
+      "must-survive\n",
+    );
+    for (const [repositoryPath, expectedBytes] of artifacts) {
+      expect(fs.readFileSync(path.join(transactionRepository, repositoryPath)).equals(expectedBytes)).toBe(true);
+    }
+    fs.rmSync(transactionRoot, { recursive: true, force: true });
+  });
+
+  it("refuses unexpected transaction children during rollback cleanup without deleting them", () => {
+    const artifacts = readCommittedArtifactSet();
+    const transactionRepository = makeTempDir("migration-transaction-rollback-child-injection");
+    const originals = new Map<string, Buffer>();
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(transactionRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      const original = Buffer.from(`original:${repositoryPath}\n`, "utf8");
+      fs.writeFileSync(outputPath, original);
+      originals.set(repositoryPath, original);
+    }
+    const unrelatedRoot = makeTempDir("migration-rollback-child-sentinel");
+    fs.writeFileSync(path.join(unrelatedRoot, "sentinel.txt"), "must-survive\n");
+    let transactionRoot = "";
+
+    expect(() =>
+      materializeArtifactSet({
+        mode: "write",
+        repositoryRoot: transactionRepository,
+        artifacts,
+        testHooks: {
+          afterReplacement(replacementCount) {
+            if (replacementCount !== 2) return;
+            transactionRoot = activeMaterializationTransactionRoot(transactionRepository);
+            fs.renameSync(unrelatedRoot, path.join(transactionRoot, "injected-victim"));
+            throw new Error("injected rollback after child substitution");
+          },
+        },
+      }),
+    ).toThrow(/rollback completed.*cleanup failed.*unexpected entries.*child substitution/i);
+
+    expect(fs.readFileSync(path.join(transactionRoot, "injected-victim", "sentinel.txt"), "utf8")).toBe(
+      "must-survive\n",
+    );
+    for (const [repositoryPath, original] of originals) {
+      expect(fs.readFileSync(path.join(transactionRepository, repositoryPath)).equals(original)).toBe(true);
+    }
+    fs.rmSync(transactionRoot, { recursive: true, force: true });
+  });
+
   it("reports incomplete recovery and preserves the installed replacement when a required rollback backup is missing", () => {
     const artifacts = readCommittedArtifactSet();
     const transactionRepository = makeTempDir("migration-transaction-missing-backup-repository");
@@ -619,6 +845,95 @@ describe("migration workbench artifact hardening", () => {
     const firstArtifactPath = artifactPaths[0];
     expect(
       fs.readFileSync(path.join(transactionRepository, firstArtifactPath)).equals(artifacts.get(firstArtifactPath)!),
+    ).toBe(true);
+    expect(
+      fs.readFileSync(path.join(transactionRepository, artifactPaths[1])).equals(originals.get(artifactPaths[1])!),
+    ).toBe(true);
+  });
+
+  it("refuses to commit a modified installed artifact and preserves both competing bytes and recovery backup", () => {
+    const artifacts = readCommittedArtifactSet();
+    const transactionRepository = makeTempDir("migration-transaction-installed-commit-race");
+    const originals = new Map<string, Buffer>();
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(transactionRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      const original = Buffer.from(`original:${repositoryPath}\n`, "utf8");
+      fs.writeFileSync(outputPath, original);
+      originals.set(repositoryPath, original);
+    }
+    const firstArtifactPath = artifactPaths[0];
+    const firstOutputPath = path.join(transactionRepository, firstArtifactPath);
+    const competingBytes = Buffer.from("concurrent replacement before commit\n", "utf8");
+    let recoveryRoot = "";
+
+    expect(() =>
+      materializeArtifactSet({
+        mode: "write",
+        repositoryRoot: transactionRepository,
+        artifacts,
+        testHooks: {
+          afterReplacement(replacementCount) {
+            if (replacementCount !== artifactPaths.length) return;
+            recoveryRoot = activeMaterializationTransactionRoot(transactionRepository);
+            fs.writeFileSync(firstOutputPath, competingBytes);
+          },
+        },
+      }),
+    ).toThrow(/rollback was incomplete.*installed artifact during rollback.*immutable original identity/i);
+
+    expect(fs.existsSync(firstOutputPath)).toBe(false);
+    expect(fs.readFileSync(path.join(recoveryRoot, "backups", "artifact-000.installed")).equals(competingBytes)).toBe(
+      true,
+    );
+    expect(
+      fs.readFileSync(path.join(recoveryRoot, "backups", "artifact-000")).equals(originals.get(firstArtifactPath)!),
+    ).toBe(true);
+    for (const repositoryPath of artifactPaths.slice(1)) {
+      expect(
+        fs.readFileSync(path.join(transactionRepository, repositoryPath)).equals(originals.get(repositoryPath)!),
+      ).toBe(true);
+    }
+  });
+
+  it("quarantines rather than unlinks a concurrently replaced destination during failure rollback", () => {
+    const artifacts = readCommittedArtifactSet();
+    const transactionRepository = makeTempDir("migration-transaction-installed-rollback-race");
+    const originals = new Map<string, Buffer>();
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(transactionRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      const original = Buffer.from(`original:${repositoryPath}\n`, "utf8");
+      fs.writeFileSync(outputPath, original);
+      originals.set(repositoryPath, original);
+    }
+    const firstArtifactPath = artifactPaths[0];
+    const firstOutputPath = path.join(transactionRepository, firstArtifactPath);
+    const competingBytes = Buffer.from("concurrent replacement during rollback\n", "utf8");
+    let recoveryRoot = "";
+
+    expect(() =>
+      materializeArtifactSet({
+        mode: "write",
+        repositoryRoot: transactionRepository,
+        artifacts,
+        testHooks: {
+          afterReplacement(replacementCount) {
+            if (replacementCount !== 2) return;
+            recoveryRoot = activeMaterializationTransactionRoot(transactionRepository);
+            fs.writeFileSync(firstOutputPath, competingBytes);
+            throw new Error("injected failure after concurrent destination replacement");
+          },
+        },
+      }),
+    ).toThrow(/rollback was incomplete.*installed artifact during rollback.*concurrent destination replacement/i);
+
+    expect(fs.existsSync(firstOutputPath)).toBe(false);
+    expect(fs.readFileSync(path.join(recoveryRoot, "backups", "artifact-000.installed")).equals(competingBytes)).toBe(
+      true,
+    );
+    expect(
+      fs.readFileSync(path.join(recoveryRoot, "backups", "artifact-000")).equals(originals.get(firstArtifactPath)!),
     ).toBe(true);
     expect(
       fs.readFileSync(path.join(transactionRepository, artifactPaths[1])).equals(originals.get(artifactPaths[1])!),
@@ -666,6 +981,46 @@ describe("migration workbench artifact hardening", () => {
     expect(fs.readFileSync(path.join(recoveryRoot, "backups", "artifact-000"), "utf8")).toBe("tampered-backup\n");
   });
 
+  it("detects file-backup ownership changes before rollback", () => {
+    const alternateOwnership = alternateSupplementaryOwnership();
+    if (!alternateOwnership) return;
+    const artifacts = readCommittedArtifactSet();
+    const transactionRepository = makeTempDir("migration-transaction-tampered-file-owner");
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(transactionRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, `original:${repositoryPath}\n`);
+    }
+    let recoveryRoot = "";
+
+    expect(() =>
+      materializeArtifactSet({
+        mode: "write",
+        repositoryRoot: transactionRepository,
+        artifacts,
+        testHooks: {
+          afterReplacement(replacementCount) {
+            if (replacementCount !== 2) return;
+            recoveryRoot = activeMaterializationTransactionRoot(transactionRepository);
+            fs.chownSync(
+              path.join(recoveryRoot, "backups", "artifact-000"),
+              alternateOwnership.uid,
+              alternateOwnership.gid,
+            );
+            throw new Error("injected rollback with changed file-backup owner");
+          },
+        },
+      }),
+    ).toThrow(
+      /rollback was incomplete.*rollback backup does not match its immutable original identity.*file-backup owner/i,
+    );
+
+    expect(fs.statSync(path.join(recoveryRoot, "backups", "artifact-000")).gid).toBe(alternateOwnership.gid);
+    expect(
+      fs.readFileSync(path.join(transactionRepository, artifactPaths[0])).equals(artifacts.get(artifactPaths[0])!),
+    ).toBe(true);
+  });
+
   it("preserves directory recovery state when a retired directory backup tree is tampered", () => {
     const artifacts = readCommittedArtifactSet();
     const transactionRepository = makeTempDir("migration-transaction-tampered-directory-repository");
@@ -710,6 +1065,144 @@ describe("migration workbench artifact hardening", () => {
         true,
       );
     }
+  });
+
+  it("detects retired-directory root ownership changes before rollback", () => {
+    const alternateOwnership = alternateSupplementaryOwnership();
+    if (!alternateOwnership) return;
+    const artifacts = readCommittedArtifactSet();
+    const transactionRepository = makeTempDir("migration-transaction-tampered-directory-owner");
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(transactionRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, `original:${repositoryPath}\n`);
+    }
+    const retiredDirectory = path.join(
+      transactionRepository,
+      "examples/migration-workbench/public/artifacts/v1/retired-directory-owner",
+    );
+    fs.mkdirSync(path.join(retiredDirectory, "nested"), { recursive: true });
+    fs.writeFileSync(path.join(retiredDirectory, "nested", "original.json"), '{"original":true}\n');
+    let recoveryRoot = "";
+
+    expect(() =>
+      materializeArtifactSet({
+        mode: "write",
+        repositoryRoot: transactionRepository,
+        artifacts,
+        testHooks: {
+          afterReplacement(replacementCount) {
+            if (replacementCount !== artifactPaths.length + 1) return;
+            recoveryRoot = activeMaterializationTransactionRoot(transactionRepository);
+            fs.chownSync(
+              path.join(recoveryRoot, "backups", "retired-000"),
+              alternateOwnership.uid,
+              alternateOwnership.gid,
+            );
+            throw new Error("injected rollback with changed retired-directory owner");
+          },
+        },
+      }),
+    ).toThrow(
+      /rollback was incomplete.*rollback backup does not match its immutable original identity.*directory owner/i,
+    );
+
+    expect(fs.existsSync(retiredDirectory)).toBe(false);
+    expect(fs.statSync(path.join(recoveryRoot, "backups", "retired-000")).gid).toBe(alternateOwnership.gid);
+  });
+
+  it("rejects nested backup mode tampering instead of restoring unsafe permissions", () => {
+    const artifacts = readCommittedArtifactSet();
+    const transactionRepository = makeTempDir("migration-transaction-tampered-directory-mode");
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(transactionRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, `original:${repositoryPath}\n`);
+    }
+    const retiredDirectory = path.join(
+      transactionRepository,
+      "examples/migration-workbench/public/artifacts/v1/retired-directory-mode",
+    );
+    const privateFile = path.join(retiredDirectory, "nested", "private.json");
+    fs.mkdirSync(path.dirname(privateFile), { recursive: true });
+    fs.writeFileSync(privateFile, '{"private":true}\n', { mode: 0o600 });
+    fs.chmodSync(privateFile, 0o600);
+    let recoveryRoot = "";
+
+    expect(() =>
+      materializeArtifactSet({
+        mode: "write",
+        repositoryRoot: transactionRepository,
+        artifacts,
+        testHooks: {
+          afterReplacement(replacementCount) {
+            if (replacementCount !== artifactPaths.length + 1) return;
+            recoveryRoot = activeMaterializationTransactionRoot(transactionRepository);
+            fs.chmodSync(path.join(recoveryRoot, "backups", "retired-000", "nested", "private.json"), 0o666);
+            throw new Error("injected rollback with unsafe nested backup mode");
+          },
+        },
+      }),
+    ).toThrow(
+      /rollback was incomplete.*rollback backup does not match its immutable original identity.*unsafe nested/i,
+    );
+
+    expect(fs.existsSync(retiredDirectory)).toBe(false);
+    const recoveryFile = path.join(recoveryRoot, "backups", "retired-000", "nested", "private.json");
+    expect(fs.statSync(recoveryFile).mode & 0o777).toBe(0o666);
+  });
+
+  it("rejects late unexpected artifact entries in write and check modes without deleting them", () => {
+    const artifacts = readCommittedArtifactSet();
+    const writeRepository = makeTempDir("migration-transaction-late-entry-write");
+    const originals = new Map<string, Buffer>();
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(writeRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      const original = Buffer.from(`original:${repositoryPath}\n`, "utf8");
+      fs.writeFileSync(outputPath, original);
+      originals.set(repositoryPath, original);
+    }
+    const writeLatePath = path.join(
+      writeRepository,
+      "examples/migration-workbench/public/artifacts/v1/late-unexpected.json",
+    );
+    expect(() =>
+      materializeArtifactSet({
+        mode: "write",
+        repositoryRoot: writeRepository,
+        artifacts,
+        testHooks: {
+          beforePublication() {
+            fs.writeFileSync(writeLatePath, "late-write\n");
+          },
+        },
+      }),
+    ).toThrow(/all handled replacements were rolled back.*final-state verification.*late-unexpected/i);
+    expect(fs.readFileSync(writeLatePath, "utf8")).toBe("late-write\n");
+    for (const [repositoryPath, original] of originals) {
+      expect(fs.readFileSync(path.join(writeRepository, repositoryPath)).equals(original)).toBe(true);
+    }
+
+    const checkRepository = makeTempDir("migration-transaction-late-entry-check");
+    materializeArtifactSet({ mode: "write", repositoryRoot: checkRepository, artifacts });
+    const checkLatePath = path.join(
+      checkRepository,
+      "examples/migration-workbench/public/artifacts/v1/late-unexpected.json",
+    );
+    expect(() =>
+      materializeArtifactSet({
+        mode: "check",
+        repositoryRoot: checkRepository,
+        artifacts,
+        testHooks: {
+          beforePublication() {
+            fs.writeFileSync(checkLatePath, "late-check\n");
+          },
+        },
+      }),
+    ).toThrow(/stale[\s\S]*late-unexpected[\s\S]*unexpected retired artifact entry/i);
+    expect(fs.readFileSync(checkLatePath, "utf8")).toBe("late-check\n");
   });
 
   it("keeps artifacts stable across adopted non-source outputs while rejecting owned dist/src mutation", async () => {
@@ -770,7 +1263,7 @@ describe("migration workbench artifact hardening", () => {
           },
         },
       }),
-    ).rejects.toThrow(/immutable migration workbench source snapshot did not match/i);
+    ).rejects.toThrow(/source-snapshot.*immutable original identity/i);
 
     await expect(
       buildMigrationWorkbenchArtifacts({
@@ -819,6 +1312,86 @@ describe("migration workbench artifact hardening", () => {
       expect(fs.readFileSync(path.join(fakeRoot, repositoryPath)).equals(expectedBytes), repositoryPath).toBe(true);
     }
   }, 120_000);
+
+  it("refuses unexpected build-scratch children instead of recursively deleting unrelated data", async () => {
+    const fakeRoot = makeFakeRepository();
+    const unrelatedRoot = makeTempDir("migration-build-cleanup-sentinel");
+    fs.writeFileSync(path.join(unrelatedRoot, "sentinel.txt"), "must-survive\n");
+    let buildTemporaryRoot = "";
+
+    await expect(
+      buildMigrationWorkbenchArtifacts({
+        repositoryRoot: fakeRoot,
+        temporaryRoot: makeTempDir("migration-build-cleanup-parent"),
+        testHooks: {
+          afterCommand(commandId, _repositoryRoot, sourceSnapshot) {
+            if (commandId !== "honua-compat-demo") return;
+            buildTemporaryRoot = path.dirname(sourceSnapshot.sourceSnapshotRoot);
+            fs.renameSync(unrelatedRoot, path.join(buildTemporaryRoot, "injected-victim"));
+          },
+        },
+      }),
+    ).rejects.toThrow(/build temporary root (?:contains unexpected entries|does not match its fixed owned-entry set)/i);
+
+    expect(fs.readFileSync(path.join(buildTemporaryRoot, "injected-victim", "sentinel.txt"), "utf8")).toBe(
+      "must-survive\n",
+    );
+    fs.rmSync(buildTemporaryRoot, { recursive: true, force: true });
+  }, 120_000);
+
+  it("detects substitution of an allowlisted build-scratch directory before cleanup", async () => {
+    const fakeRoot = makeFakeRepository();
+    const buildParent = makeTempDir("migration-build-owned-substitution-parent");
+    const unrelatedRoot = makeTempDir("migration-build-owned-substitution-sentinel");
+    fs.writeFileSync(path.join(unrelatedRoot, "sentinel.txt"), "must-survive\n");
+    let buildTemporaryRoot = "";
+    let movedOwnedRoot = "";
+
+    await expect(
+      buildMigrationWorkbenchArtifacts({
+        repositoryRoot: fakeRoot,
+        temporaryRoot: buildParent,
+        testHooks: {
+          afterCommand(commandId, _repositoryRoot, sourceSnapshot) {
+            if (commandId !== "honua-maplibre-dry-run") return;
+            buildTemporaryRoot = path.dirname(sourceSnapshot.sourceSnapshotRoot);
+            movedOwnedRoot = path.join(buildParent, "owned-cli-home-moved");
+            fs.renameSync(path.join(buildTemporaryRoot, "cli-home"), movedOwnedRoot);
+            fs.renameSync(unrelatedRoot, path.join(buildTemporaryRoot, "cli-home"));
+          },
+        },
+      }),
+    ).rejects.toThrow(/migration build entry cli-home.*immutable root identity/i);
+
+    expect(fs.readFileSync(path.join(buildTemporaryRoot, "cli-home", "sentinel.txt"), "utf8")).toBe("must-survive\n");
+    expect(fs.existsSync(movedOwnedRoot)).toBe(true);
+    fs.rmSync(buildTemporaryRoot, { recursive: true, force: true });
+    fs.rmSync(movedOwnedRoot, { recursive: true, force: true });
+  }, 120_000);
+
+  it("never replaces a pre-existing patch-verification scratch directory", () => {
+    const temporaryRoot = makeTempDir("migration-patch-verification-existing");
+    const sourceTreePath = path.join(temporaryRoot, "source");
+    const targetTreePath = path.join(temporaryRoot, "target");
+    const verificationRoot = path.join(temporaryRoot, "patch-verification");
+    fs.mkdirSync(sourceTreePath);
+    fs.mkdirSync(targetTreePath);
+    fs.mkdirSync(verificationRoot);
+    fs.writeFileSync(path.join(sourceTreePath, "value.txt"), "source\n");
+    fs.writeFileSync(path.join(targetTreePath, "value.txt"), "target\n");
+    const sentinelPath = path.join(verificationRoot, "sentinel.txt");
+    fs.writeFileSync(sentinelPath, "must-survive\n");
+
+    expect(() =>
+      verifyMigrationPatch({
+        sourceTreePath,
+        targetTreePath,
+        patchBytes: Buffer.from("unused\n", "utf8"),
+        temporaryRoot,
+      }),
+    ).toThrow(/patch verification root already exists.*will not be replaced/i);
+    expect(fs.readFileSync(sentinelPath, "utf8")).toBe("must-survive\n");
+  });
 
   it("exercises the real generator CLI for missing, stale, unexpected, symlink, special-file, write, and check states", () => {
     const fakeRoot = makeFakeRepository();

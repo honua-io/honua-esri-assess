@@ -10,8 +10,10 @@ import {
   buildMigrationWorkbenchArtifacts,
   defaultRepositoryRoot,
   executeIsolatedGeneratedModule,
+  hashRegularTree,
   verifyMigrationPatch,
 } from "../scripts/lib/migration-workbench-artifacts.mjs";
+import { verifyPreparedSdkArtifact } from "../scripts/lib/prepared-sdk-artifact.mjs";
 
 const repositoryRoot = defaultRepositoryRoot();
 const tempDirs: string[] = [];
@@ -28,6 +30,21 @@ function parseArtifact(artifacts: Map<string, Buffer>, repositoryPath: string): 
     throw new Error(`Artifact ${repositoryPath} was not generated.`);
   }
   return JSON.parse(bytes.toString("utf8")) as Record<string, any>;
+}
+
+function sourceSnapshotDigest(fixtureTreeSha256: string, expectedBehaviorSha256: string): string {
+  const digest = createHash("sha256");
+  for (const value of [
+    Buffer.from("honua.migration-workbench.source-snapshot.v1", "utf8"),
+    Buffer.from(fixtureTreeSha256, "ascii"),
+    Buffer.from(expectedBehaviorSha256, "ascii"),
+  ]) {
+    const length = Buffer.alloc(8);
+    length.writeBigUInt64BE(BigInt(value.length));
+    digest.update(length);
+    digest.update(value);
+  }
+  return digest.digest("hex");
 }
 
 afterAll(() => {
@@ -114,12 +131,27 @@ describe("migration workbench artifact supply chain", () => {
       expect.arrayContaining(["demo", "--target", "honua-compat", "--skip-import", "--skip-reconcile"]),
     );
     expect(JSON.stringify(migration.commands)).not.toMatch(/admin-api-key|credential|token/i);
+    const preparedSdk = verifyPreparedSdkArtifact({ projectRoot: repositoryRoot });
     expect(migration.provenance.transformationEngine).toEqual({
       path: "dist/src/migration/cli.js",
-      sha256: createHash("sha256")
-        .update(fs.readFileSync(path.join(repositoryRoot, "dist/src/migration/cli.js")))
-        .digest("hex"),
-      digestScope: "Entry module bytes only; transitive imports are not covered by this digest.",
+      preparedArtifactFormat: preparedSdk.format,
+      buildInputsSha256: preparedSdk.inputs.sha256,
+      buildInputFileCount: preparedSdk.inputs.fileCount,
+      distSha256: preparedSdk.dist.sha256,
+      distFileCount: preparedSdk.dist.fileCount,
+      digestScope: "Complete prepared SDK build-input and dist snapshots, including all CLI transitive modules.",
+    });
+    expect(migration.provenance.transformationEngine).not.toHaveProperty("sha256");
+    const expectedBehaviorBytes = fs.readFileSync(
+      path.join(repositoryRoot, "examples/migration-workbench/fixtures/expected-behavior.v1.json"),
+    );
+    const expectedBehaviorSha256 = createHash("sha256").update(expectedBehaviorBytes).digest("hex");
+    const fixtureTreeSha256 = hashRegularTree(path.join(repositoryRoot, "examples/arcgis-source-app"));
+    expect(migration.provenance.sourceSnapshot).toEqual({
+      fixtureTreeSha256,
+      expectedBehaviorPath: "examples/migration-workbench/fixtures/expected-behavior.v1.json",
+      expectedBehaviorSha256,
+      combinedSha256: sourceSnapshotDigest(fixtureTreeSha256, expectedBehaviorSha256),
     });
     expect(migration.provenance.generatedTargetExecution).toMatchObject({
       processBoundary: "separate Node.js process",
@@ -158,6 +190,17 @@ describe("migration workbench artifact supply chain", () => {
       unsupportedModules: maplibre.report.unhandledArcGisModules,
     });
   }, 60_000);
+
+  it("prepares and verifies the SDK manifest before standalone artifact generation", () => {
+    const scripts = JSON.parse(fs.readFileSync(path.join(repositoryRoot, "package.json"), "utf8")).scripts as Record<
+      string,
+      string
+    >;
+    for (const name of ["demo:migration-workbench:artifacts:write", "demo:migration-workbench:artifacts:check"]) {
+      expect(scripts[name]).toMatch(/^npm run prepare:test-sdk --silent && node /);
+      expect(scripts[name]).not.toContain("npm run build");
+    }
+  });
 
   it("executes generated behavior against independent expectations", async () => {
     const expected = JSON.parse(

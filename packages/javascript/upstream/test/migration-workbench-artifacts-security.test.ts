@@ -16,9 +16,11 @@ import {
   digestTreeSnapshot,
   executeIsolatedGeneratedModule,
   materializeArtifactSet,
+  materializeMigrationWorkbenchArtifacts,
   regularTreeSnapshotsEqual,
   runBoundedCommand,
 } from "../scripts/lib/migration-workbench-artifacts.mjs";
+import { prepareSdkArtifact } from "../scripts/lib/prepared-sdk-artifact.mjs";
 
 const repositoryRoot = defaultRepositoryRoot();
 const tempDirs: string[] = [];
@@ -55,6 +57,11 @@ function makeFakeRepository(): string {
   const fakeRoot = makeTempDir("migration-workbench-security-repo", parent);
   for (const repositoryPath of [
     "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "vitest.config.ts",
+    ".nvmrc",
+    "LICENSE",
     "dist",
     "examples/arcgis-source-app",
     "examples/migration-workbench/fixtures/expected-behavior.v1.json",
@@ -62,9 +69,14 @@ function makeFakeRepository(): string {
     "scripts/lib/migration-workbench-artifacts.mjs",
     "scripts/lib/migration-workbench-execution-runner.mjs",
     "scripts/lib/migration-workbench-network-guard.mjs",
+    "scripts/lib/prepared-sdk-artifact.mjs",
   ]) {
     copyIntoFakeRepository(fakeRoot, repositoryPath);
   }
+  for (const repositoryPath of ["src", "test", "bench", "config"]) {
+    fs.mkdirSync(path.join(fakeRoot, repositoryPath));
+  }
+  prepareSdkArtifact({ projectRoot: fakeRoot, mode: "capture" });
   const sourceNodeModules = path.join(repositoryRoot, "node_modules");
   const fakeNodeModules = path.join(fakeRoot, "node_modules");
   fs.mkdirSync(fakeNodeModules);
@@ -74,6 +86,12 @@ function makeFakeRepository(): string {
     fs.symlinkSync(sourcePath, path.join(fakeNodeModules, name), stat.isDirectory() ? "dir" : "file");
   }
   return fakeRoot;
+}
+
+function readCommittedArtifactSet(): Map<string, Buffer> {
+  return new Map(
+    artifactPaths.map((repositoryPath) => [repositoryPath, fs.readFileSync(path.join(repositoryRoot, repositoryPath))]),
+  );
 }
 
 function runGenerator(fakeRoot: string, mode: "--write" | "--check", environment = process.env) {
@@ -470,11 +488,8 @@ describe("migration workbench artifact hardening", () => {
     }
   }, 30_000);
 
-  it("applies staged artifacts transactionally and rolls handled failures back", async () => {
-    const generated = await buildMigrationWorkbenchArtifacts({
-      repositoryRoot,
-      temporaryRoot: makeTempDir("migration-transaction-build"),
-    });
+  it("applies staged artifacts transactionally and rolls handled failures back", () => {
+    const artifacts = readCommittedArtifactSet();
     const transactionRepository = makeTempDir("migration-transaction-repository");
     const originals = new Map<string, Buffer>();
     for (const repositoryPath of artifactPaths) {
@@ -499,7 +514,7 @@ describe("migration workbench artifact hardening", () => {
       materializeArtifactSet({
         mode: "write",
         repositoryRoot: transactionRepository,
-        artifacts: generated.artifacts,
+        artifacts,
         testHooks: {
           afterReplacement(replacementCount) {
             if (replacementCount === artifactPaths.length + 2) {
@@ -520,7 +535,7 @@ describe("migration workbench artifact hardening", () => {
     materializeArtifactSet({
       mode: "write",
       repositoryRoot: transactionRepository,
-      artifacts: generated.artifacts,
+      artifacts,
     });
     expect(fs.existsSync(retiredPath)).toBe(false);
     expect(fs.existsSync(retiredGeneratedPath)).toBe(false);
@@ -528,10 +543,135 @@ describe("migration workbench artifact hardening", () => {
       materializeArtifactSet({
         mode: "check",
         repositoryRoot: transactionRepository,
-        artifacts: generated.artifacts,
+        artifacts,
       }),
     ).not.toThrow();
   }, 60_000);
+
+  it("preserves committed artifacts when transaction cleanup fails after the commit point", () => {
+    const artifacts = readCommittedArtifactSet();
+    const transactionRepository = makeTempDir("migration-transaction-cleanup-repository");
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(transactionRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, `original:${repositoryPath}\n`);
+    }
+
+    expect(() =>
+      materializeArtifactSet({
+        mode: "write",
+        repositoryRoot: transactionRepository,
+        artifacts,
+        testHooks: {
+          beforeCleanup(transactionRoot) {
+            fs.rmSync(path.join(transactionRoot, "backups", "artifact-000"), { force: true });
+            throw new Error("injected committed cleanup failure");
+          },
+        },
+      }),
+    ).toThrow(/committed.*cleanup failed.*preserved.*not rolled back.*injected committed cleanup failure/i);
+
+    for (const [repositoryPath, expectedBytes] of artifacts) {
+      expect(
+        fs.readFileSync(path.join(transactionRepository, repositoryPath)).equals(expectedBytes),
+        repositoryPath,
+      ).toBe(true);
+    }
+  });
+
+  it("reports incomplete recovery and preserves the installed replacement when a required rollback backup is missing", () => {
+    const artifacts = readCommittedArtifactSet();
+    const transactionRepository = makeTempDir("migration-transaction-missing-backup-repository");
+    const originals = new Map<string, Buffer>();
+    for (const repositoryPath of artifactPaths) {
+      const outputPath = path.join(transactionRepository, repositoryPath);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      const original = Buffer.from(`original:${repositoryPath}\n`, "utf8");
+      fs.writeFileSync(outputPath, original);
+      originals.set(repositoryPath, original);
+    }
+
+    expect(() =>
+      materializeArtifactSet({
+        mode: "write",
+        repositoryRoot: transactionRepository,
+        artifacts,
+        testHooks: {
+          afterReplacement(replacementCount) {
+            if (replacementCount !== 2) return;
+            const transactionParent = path.join(transactionRepository, ".tmp");
+            const transactionName = fs
+              .readdirSync(transactionParent)
+              .find((name) => name.startsWith("migration-workbench-materialize-"));
+            if (!transactionName) throw new Error("transaction root was not created");
+            fs.rmSync(path.join(transactionParent, transactionName, "backups", "artifact-000"), { force: true });
+            throw new Error("injected rollback with missing backup");
+          },
+        },
+      }),
+    ).toThrow(/rollback was incomplete.*required rollback backup is missing.*injected rollback with missing backup/i);
+
+    const firstArtifactPath = artifactPaths[0];
+    expect(
+      fs.readFileSync(path.join(transactionRepository, firstArtifactPath)).equals(artifacts.get(firstArtifactPath)!),
+    ).toBe(true);
+    expect(
+      fs.readFileSync(path.join(transactionRepository, artifactPaths[1])).equals(originals.get(artifactPaths[1])!),
+    ).toBe(true);
+  });
+
+  it("uses one immutable source snapshot and rejects live-source or prepared-dist TOCTOU mutation", async () => {
+    const fakeRoot = makeFakeRepository();
+    const fixtureScenarioPath = path.join(fakeRoot, "examples/arcgis-source-app/src/workbench-scenario.js");
+    const fixtureScenarioBytes = fs.readFileSync(fixtureScenarioPath);
+
+    await expect(
+      buildMigrationWorkbenchArtifacts({
+        repositoryRoot: fakeRoot,
+        temporaryRoot: makeTempDir("migration-source-toctou"),
+        testHooks: {
+          afterCommand(commandId) {
+            if (commandId === "honua-compat-demo") fs.appendFileSync(fixtureScenarioPath, "\n// concurrent edit\n");
+          },
+        },
+      }),
+    ).rejects.toThrow(/live migration workbench source inputs changed/i);
+    fs.writeFileSync(fixtureScenarioPath, fixtureScenarioBytes);
+
+    const cliPath = path.join(fakeRoot, "dist/src/migration/cli.js");
+    const cliBytes = fs.readFileSync(cliPath);
+    await expect(
+      buildMigrationWorkbenchArtifacts({
+        repositoryRoot: fakeRoot,
+        temporaryRoot: makeTempDir("migration-prepared-dist-toctou"),
+        testHooks: {
+          afterCommand(commandId) {
+            if (commandId === "honua-compat-demo") fs.appendFileSync(cliPath, "\n// concurrent dist edit\n");
+          },
+        },
+      }),
+    ).rejects.toThrow(/prepared SDK artifact is stale or incomplete/i);
+    fs.writeFileSync(cliPath, cliBytes);
+
+    await materializeMigrationWorkbenchArtifacts({ mode: "write", repositoryRoot: fakeRoot });
+    const committed = new Map(
+      artifactPaths.map((repositoryPath) => [repositoryPath, fs.readFileSync(path.join(fakeRoot, repositoryPath))]),
+    );
+    await expect(
+      materializeMigrationWorkbenchArtifacts({
+        mode: "write",
+        repositoryRoot: fakeRoot,
+        testHooks: {
+          beforePublication() {
+            fs.appendFileSync(fixtureScenarioPath, "\n// edit before publication\n");
+          },
+        },
+      }),
+    ).rejects.toThrow(/live migration workbench source inputs changed/i);
+    for (const [repositoryPath, expectedBytes] of committed) {
+      expect(fs.readFileSync(path.join(fakeRoot, repositoryPath)).equals(expectedBytes), repositoryPath).toBe(true);
+    }
+  }, 120_000);
 
   it("exercises the real generator CLI for missing, stale, unexpected, symlink, special-file, write, and check states", () => {
     const fakeRoot = makeFakeRepository();

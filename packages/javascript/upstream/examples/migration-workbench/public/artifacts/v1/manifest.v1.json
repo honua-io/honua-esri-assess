@@ -5,6 +5,12 @@
   "provenance": {
     "fixture": "examples/arcgis-source-app",
     "scenario": "examples/arcgis-source-app/src/workbench-scenario.js",
+    "sourceSnapshot": {
+      "fixtureTreeSha256": "7e79a2243b70da6efd3b90a206f834e8fc63eb8200905d0f5564586c2b70f87b",
+      "expectedBehaviorPath": "examples/migration-workbench/fixtures/expected-behavior.v1.json",
+      "expectedBehaviorSha256": "bdd9eba31748936a4a7be7bc476ba4fed6a740f8f38f0362ce1aac7ee7bb8ef1",
+      "combinedSha256": "632eff429543e5c2e354a705e233e4a99657ab9718feaa61bba3429b8d12c031"
+    },
     "authorship": "Original Honua-authored repository fixture",
     "licenseScope": "Apache-2.0 repository license; no third-party sample source is reproduced in these artifacts",
     "excludedFixture": {
@@ -13,8 +19,12 @@
     },
     "transformationEngine": {
       "path": "dist/src/migration/cli.js",
-      "sha256": "0942fe7928572aefd42df1edc7eb70acb3448192c77fd42cd007a3b1fcf84776",
-      "digestScope": "Entry module bytes only; transitive imports are not covered by this digest."
+      "preparedArtifactFormat": "honua.prepared-sdk-artifact.v1",
+      "buildInputsSha256": "ba42a6b136d7ba01ed65807108040cca32f07701f59558ea1af3d5e89217fcf3",
+      "buildInputFileCount": 1001,
+      "distSha256": "6ee2bb1a3b8fbd9c60a46041bc201fe9f6ae325960fce17d69f505ab81ca2a31",
+      "distFileCount": 2757,
+      "digestScope": "Complete prepared SDK build-input and dist snapshots, including all CLI transitive modules."
     },
     "generatedTargetExecution": {
       "processBoundary": "separate Node.js process",
@@ -94,8 +104,8 @@
     {
       "repositoryPath": "examples/migration-workbench/public/artifacts/v1/migration-report.v1.json",
       "mediaType": "application/json",
-      "bytes": 59334,
-      "sha256": "ca0c2b2ee0d2c81e4e93061284046c2af0d8f72795eed86407cf267d334281c0"
+      "bytes": 59993,
+      "sha256": "c4dc667605a91d66ffec2dfc009e85c17932b11fe98a6617ca3da362a3e31cba"
     },
     {
       "repositoryPath": "examples/migration-workbench/public/artifacts/v1/migration.v1.patch",

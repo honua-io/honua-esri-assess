@@ -20,7 +20,7 @@
     "transformationEngine": {
       "path": "dist/src/migration/cli.js",
       "preparedArtifactFormat": "honua.prepared-sdk-artifact.v1",
-      "buildInputsSha256": "33301ee40ae6ab3ae78ed71ed9a82816021b5866a526145e5e46f19e0db7e07e",
+      "buildInputsSha256": "a79b5880c18716ef6470ff064c7c05489c0f090fcc0b5fd9a661176819c13ef9",
       "buildInputFileCount": 1001,
       "distSrcSha256": "a94d52ee2ad1fa790b8f149d5818467197e300529baac4330d4c3a07a64ab941",
       "distSrcFileCount": 1323,
@@ -30,14 +30,30 @@
       "processBoundary": "separate Node.js process",
       "permissionModel": "Node.js experimental permission model",
       "readableScope": "repository runtime, isolated target, and resolved dependency roots",
-      "writableScope": "isolated execution workspace only",
+      "writableScope": "no filesystem writes granted to the generated-target process",
       "inheritedEnvironment": "fixed non-secret allowlist",
       "childProcesses": "denied by the Node.js permission model",
       "workerThreads": "denied by the Node.js permission model",
-      "processControl": "denied by locked process signal, debug, and priority guards",
-      "networkGuardScope": "standard Node.js HTTP, HTTPS, fetch, WebSocket, net, TLS, DNS, and datagram APIs",
-      "externalNetworkAttemptsObserved": 0,
-      "externalProcessControlAttemptsObserved": 0,
+      "processControl": "denied by locked process signal, debug, priority, native-addon, and binding guards",
+      "networkGuardScope": "standard Node.js HTTP, HTTPS, fetch, WebSocket, net, TLS, DNS, and datagram APIs plus exposed low-level binding entry points",
+      "trustBoundary": "repository-controlled generated target; this guard is not an arbitrary-code security sandbox",
+      "protocolNoncePurpose": "parent/runner response correlation, not same-process code authentication",
+      "memoryBound": "128 MiB V8 old-space cap plus bounded JSON traversal and subprocess buffers",
+      "executionHarness": {
+        "combinedSha256": "6b7fd66cbc8ae691776af5ce1c7a729377bbb54c70a15fab61b3889d45c9a172",
+        "runner": {
+          "repositoryPath": "scripts/lib/migration-workbench-execution-runner.mjs",
+          "byteLength": 7033,
+          "sha256": "72a5aa5dbfe4232ddcaee9c39ec1fcf03db8ac0aa574560bc6362e0da6dc3f1b"
+        },
+        "networkGuard": {
+          "repositoryPath": "scripts/lib/migration-workbench-network-guard.mjs",
+          "byteLength": 8737,
+          "sha256": "71973eea8325bfdc7216c8daab1e0463abea9e57c2a3685c4301e447e2652e86"
+        }
+      },
+      "guardedNetworkApiAttemptsObserved": 0,
+      "guardedProcessControlAttemptsObserved": 0,
       "timeoutMs": 10000
     },
     "sourceUpload": false,
@@ -106,8 +122,8 @@
     {
       "repositoryPath": "examples/migration-workbench/public/artifacts/v1/migration-report.v1.json",
       "mediaType": "application/json",
-      "bytes": 60184,
-      "sha256": "cbd9f0739ab53c20cdaf29a98cc9fde8c39004bca0ac13df87357016244f69e8"
+      "bytes": 61201,
+      "sha256": "d4280a19562d4cdf7d81eccc447c4c590a6039aa12a4d5b7f4d3419c690ce4cc"
     },
     {
       "repositoryPath": "examples/migration-workbench/public/artifacts/v1/migration.v1.patch",

@@ -19,6 +19,7 @@ import {
   materializeMigrationWorkbenchArtifacts,
   regularTreeSnapshotsEqual,
   runBoundedCommand,
+  selectNodePermissionModelFlag,
   verifyMigrationPatch,
 } from "../scripts/lib/migration-workbench-artifacts.mjs";
 import { prepareSdkArtifact } from "../scripts/lib/prepared-sdk-artifact.mjs";
@@ -228,6 +229,14 @@ afterAll(() => {
 });
 
 describe("migration workbench artifact hardening", () => {
+  it("selects the supported Node permission-model flag and fails closed", () => {
+    expect(selectNodePermissionModelFlag(new Set(["--permission", "--experimental-permission"]))).toBe("--permission");
+    expect(selectNodePermissionModelFlag(new Set(["--experimental-permission"]))).toBe("--experimental-permission");
+    expect(() => selectNodePermissionModelFlag(new Set())).toThrow(
+      /does not expose a supported permission-model flag/i,
+    );
+  });
+
   it("uses unambiguous length-framed tree records plus direct byte equality", () => {
     const firstTree = makeTempDir("migration-tree-collision-a");
     const secondTree = makeTempDir("migration-tree-collision-b");

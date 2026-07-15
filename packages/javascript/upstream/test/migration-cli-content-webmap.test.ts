@@ -5,9 +5,9 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 import { getProjectRoot, withCliLock } from "./migration-cli-lock.js";
+import { getPreparedMigrationCliPath } from "./prepared-sdk-artifacts.js";
 
 const tempDirs: string[] = [];
-let builtOnce = false;
 
 function makeTempDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "honua-cli-content-"));
@@ -16,26 +16,12 @@ function makeTempDir(): string {
 }
 
 function ensureBuiltCliArtifacts(): void {
-  withCliLock(() => {
-    const cliPath = path.join(getProjectRoot(), "dist", "src", "migration", "cli.js");
-    if (builtOnce && fs.existsSync(cliPath)) {
-      return;
-    }
-
-    const buildResult = spawnSync("npm", ["run", "build", "--silent"], {
-      cwd: getProjectRoot(),
-      encoding: "utf8",
-    });
-    if (buildResult.status !== 0) {
-      throw new Error(buildResult.stderr || buildResult.stdout || "failed to build migration CLI");
-    }
-    builtOnce = true;
-  });
+  getPreparedMigrationCliPath();
 }
 
 function runCli(args: readonly string[], cwd: string): { status: number | null; stdout: string; stderr: string } {
   return withCliLock(() => {
-    const cliPath = path.join(getProjectRoot(), "dist", "src", "migration", "cli.js");
+    const cliPath = getPreparedMigrationCliPath();
     const result = spawnSync("node", [cliPath, ...args], {
       cwd,
       encoding: "utf8",

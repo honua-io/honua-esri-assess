@@ -1,4 +1,3 @@
-import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,9 +8,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runEsriCompatCodemod } from "../src/migration/codemod.js";
 import { buildJsMigrationReport } from "../src/migration/report.js";
 import { scanArcGisUsage } from "../src/migration/scanner.js";
+import { getPreparedEsriCompatEntryPath } from "./prepared-sdk-artifacts.js";
 
 const tempDirs: string[] = [];
-let builtOnce = false;
 
 function makeTempDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "honua-featuretable-demo-"));
@@ -24,24 +23,12 @@ function fixturePath(...parts: string[]): string {
   return path.join(fixturesDir, ...parts);
 }
 
-function projectRoot(): string {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-}
-
 function compatDistEntry(): string {
-  return path.join(projectRoot(), "dist", "src", "esri-compat-entry.js");
+  return getPreparedEsriCompatEntryPath();
 }
 
 function ensureBuiltCompatArtifacts(): void {
-  if (builtOnce && fs.existsSync(compatDistEntry())) {
-    return;
-  }
-
-  execSync("npm run build --silent", {
-    cwd: projectRoot(),
-    stdio: "pipe",
-  });
-  builtOnce = true;
+  getPreparedEsriCompatEntryPath();
 }
 
 async function migrateAndRunFixture(fixtureName: string): Promise<{

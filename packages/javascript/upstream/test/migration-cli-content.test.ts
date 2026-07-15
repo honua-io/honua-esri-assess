@@ -1,4 +1,4 @@
-import { execSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -6,10 +6,10 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getProjectRoot, withCliLockAsync } from "./migration-cli-lock.js";
+import { getPreparedMigrationCliPath } from "./prepared-sdk-artifacts.js";
 
 let server: http.Server | undefined;
 let portalUrl = "";
-let builtOnce = false;
 
 const tempDirs: string[] = [];
 
@@ -19,18 +19,8 @@ function makeTempDir(): string {
   return dir;
 }
 
-async function ensureBuiltCliArtifacts(): Promise<void> {
-  await withCliLockAsync(() => {
-    if (builtOnce) {
-      return;
-    }
-
-    execSync("npm run build --silent", {
-      cwd: getProjectRoot(),
-      stdio: "pipe",
-    });
-    builtOnce = true;
-  });
+function ensureBuiltCliArtifacts(): void {
+  getPreparedMigrationCliPath();
 }
 
 beforeAll(async () => {
@@ -160,7 +150,7 @@ describe("migration cli content", () => {
   it("runs content scan", { timeout: 180_000 }, async () => {
     await ensureBuiltCliArtifacts();
 
-    const result = await runCli(["dist/src/migration/cli.js", "content", "scan", "--portal", portalUrl]);
+    const result = await runCli(["content", "scan", "--portal", portalUrl]);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("contentScan");
@@ -172,15 +162,7 @@ describe("migration cli content", () => {
     await ensureBuiltCliArtifacts();
     const outputDir = path.join(makeTempDir(), "export");
 
-    const result = await runCli([
-      "dist/src/migration/cli.js",
-      "content",
-      "export",
-      "--portal",
-      portalUrl,
-      "--output-dir",
-      outputDir,
-    ]);
+    const result = await runCli(["content", "export", "--portal", portalUrl, "--output-dir", outputDir]);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("contentExport");
@@ -201,7 +183,7 @@ describe("migration cli content", () => {
 
 async function runCli(args: readonly string[]): Promise<{ status: number | null; stdout: string; stderr: string }> {
   return withCliLockAsync(async () => {
-    const child = spawn("node", args, {
+    const child = spawn(process.execPath, [getPreparedMigrationCliPath(), ...args], {
       cwd: getProjectRoot(),
       stdio: ["ignore", "pipe", "pipe"],
     });

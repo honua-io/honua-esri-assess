@@ -1,26 +1,16 @@
-import { execSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { getProjectRoot, withCliLock, withCliLockAsync } from "./migration-cli-lock.js";
+import { getProjectRoot, withCliLockAsync } from "./migration-cli-lock.js";
+import { getPreparedMigrationCliPath } from "./prepared-sdk-artifacts.js";
 
 let server: http.Server | undefined;
 let baseUrl = "";
-let builtOnce = false;
 
 function ensureBuiltCliArtifacts(): void {
-  withCliLock(() => {
-    if (builtOnce) {
-      return;
-    }
-
-    execSync("npm run build --silent", {
-      cwd: getProjectRoot(),
-      stdio: "pipe",
-    });
-    builtOnce = true;
-  });
+  getPreparedMigrationCliPath();
 }
 
 beforeAll(async () => {
@@ -82,7 +72,6 @@ describe("migration cli reconcile", () => {
   it("returns exit code 0 when reconciliation checks pass", { timeout: 60_000 }, async () => {
     ensureBuiltCliArtifacts();
     const result = await runCli([
-      "dist/src/migration/cli.js",
       "reconcile",
       "--source-base-url",
       `${baseUrl}/source`,
@@ -107,7 +96,6 @@ describe("migration cli reconcile", () => {
     ensureBuiltCliArtifacts();
     const result = await runCli(
       [
-        "dist/src/migration/cli.js",
         "reconcile",
         "--source-base-url",
         `${baseUrl}/source`,
@@ -141,7 +129,7 @@ function runCli(
   return withCliLockAsync(
     () =>
       new Promise((resolve, reject) => {
-        const child = spawn("node", args, {
+        const child = spawn(process.execPath, [getPreparedMigrationCliPath(), ...args], {
           cwd: getProjectRoot(),
           env: {
             ...process.env,

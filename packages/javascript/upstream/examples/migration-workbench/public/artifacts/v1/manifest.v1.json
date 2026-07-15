@@ -11,9 +11,24 @@
       "path": "test/fixtures/esri-demo-feature-table-relates-app",
       "reason": "Not used because publishable license evidence for that adapted fixture was not established for this public artifact supply chain."
     },
-    "transformationEngine": "dist/src/migration/cli.js",
+    "transformationEngine": {
+      "path": "dist/src/migration/cli.js",
+      "sha256": "0942fe7928572aefd42df1edc7eb70acb3448192c77fd42cd007a3b1fcf84776",
+      "digestScope": "Entry module bytes only; transitive imports are not covered by this digest."
+    },
+    "generatedTargetExecution": {
+      "processBoundary": "separate Node.js process",
+      "permissionModel": "Node.js experimental permission model",
+      "readableScope": "repository runtime, isolated target, and resolved dependency roots",
+      "writableScope": "isolated execution workspace only",
+      "inheritedEnvironment": "fixed non-secret allowlist",
+      "childProcesses": "denied by the Node.js permission model",
+      "workerThreads": "denied by the Node.js permission model",
+      "networkGuardScope": "standard Node.js HTTP, HTTPS, fetch, WebSocket, net, TLS, DNS, and datagram APIs",
+      "externalNetworkAttemptsObserved": 0,
+      "timeoutMs": 10000
+    },
     "sourceUpload": false,
-    "externalNetworkRequests": false,
     "credentialsRequired": false
   },
   "commands": [
@@ -79,8 +94,8 @@
     {
       "repositoryPath": "examples/migration-workbench/public/artifacts/v1/migration-report.v1.json",
       "mediaType": "application/json",
-      "bytes": 56645,
-      "sha256": "8f1753be4a3486a4ef2c7d1893693e143e70d7c8fb3872e9cbac16f330dde831"
+      "bytes": 59334,
+      "sha256": "ca0c2b2ee0d2c81e4e93061284046c2af0d8f72795eed86407cf267d334281c0"
     },
     {
       "repositoryPath": "examples/migration-workbench/public/artifacts/v1/migration.v1.patch",

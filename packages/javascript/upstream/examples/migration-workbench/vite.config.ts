@@ -8,12 +8,11 @@ const repoRoot = path.resolve(exampleRoot, "../..");
 
 export default defineConfig({
   root: exampleRoot,
-  envDir: exampleRoot,
   resolve: {
     alias: [
       {
-        find: "@honua/sdk-js/migration",
-        replacement: path.resolve(repoRoot, "src/migration-entry.ts"),
+        find: "@honua/sdk-js/esri-compat",
+        replacement: path.resolve(repoRoot, "src/esri-compat-entry.ts"),
       },
       {
         find: "@honua/sdk-js",
@@ -33,5 +32,8 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // Slice 1 intentionally records public compatibility constructor names as
+    // behavior evidence. Preserve those names in the bundled runtime evidence.
+    minify: false,
   },
 });

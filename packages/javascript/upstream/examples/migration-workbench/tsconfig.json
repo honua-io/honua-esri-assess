@@ -8,12 +8,14 @@
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
     "allowSyntheticDefaultImports": true,
+    "allowJs": true,
+    "checkJs": false,
     "baseUrl": ".",
     "types": ["vite/client"],
     "paths": {
       "@honua/sdk-js": ["../../src/index.ts"],
-      "@honua/sdk-js/migration": ["../../src/migration-entry.ts"]
+      "@honua/sdk-js/esri-compat": ["../../src/esri-compat-entry.ts"]
     }
   },
-  "include": ["src/**/*.ts", "vite.config.ts"]
+  "include": ["src/**/*", "vite.config.ts"]
 }

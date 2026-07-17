@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.8.0](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.7.1...honua-esri-assess-v0.8.0) (2026-07-17)
+
+
+### Features
+
+* **cli:** add caps command to crosswalk footprints to Honua capability keys ([#85](https://github.com/honua-io/honua-esri-assess/issues/85)) ([2d40702](https://github.com/honua-io/honua-esri-assess/commit/2d407028a1a3a50d97185bf09110236387480f28))
+* sync bundled crosswalk with the canonical capability vocabulary ([#86](https://github.com/honua-io/honua-esri-assess/issues/86)) ([5f35036](https://github.com/honua-io/honua-esri-assess/commit/5f35036dc150f97a02680b0938b221c4e074b0c4))
+
+
+### Bug Fixes
+
+* refuse to clobber scan output and harden Esri response parsing ([#78](https://github.com/honua-io/honua-esri-assess/issues/78)) ([ed370f3](https://github.com/honua-io/honua-esri-assess/commit/ed370f3dc44b62ee7988713aaf02a73d9146f570))
+
+
+### Documentation
+
+* refresh README for v0.7 CLI surface and v0.2 schema ([#82](https://github.com/honua-io/honua-esri-assess/issues/82)) ([25fe844](https://github.com/honua-io/honua-esri-assess/commit/25fe84473b9126cb4f54e8fc227e3a4375532482))
+
 ## [0.7.1](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.7.0...honua-esri-assess-v0.7.1) (2026-06-10)
 
 

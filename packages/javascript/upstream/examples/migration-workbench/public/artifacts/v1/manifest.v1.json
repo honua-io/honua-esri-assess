@@ -20,10 +20,10 @@
     "transformationEngine": {
       "path": "dist/src/migration/cli.js",
       "preparedArtifactFormat": "honua.prepared-sdk-artifact.v1",
-      "buildInputsSha256": "2c550f31b08a0e5a0adf2e8d28cf7c496d372e85f0a7bf5ecaa82d8f711cf5d5",
-      "buildInputFileCount": 1059,
-      "distSrcSha256": "ffe0565e8fb3f60f827a4875e47ce3e775cc542ed6ee212d96eb52c066476a0f",
-      "distSrcFileCount": 1410,
+      "buildInputsSha256": "3812468e74fb7787fac4756b736d20b62f2f37a5ea436769f79e9e14e098fa99",
+      "buildInputFileCount": 1061,
+      "distSrcSha256": "24e5007bea96bacf4ed16d090b39c1c5c7ef830d775de68d3f0b8967e57862b7",
+      "distSrcFileCount": 1413,
       "digestScope": "Complete prepared SDK build inputs plus verified canonical dist/src transformation entries; adopted outputs outside dist/src are excluded."
     },
     "generatedTargetExecution": {
@@ -123,7 +123,7 @@
       "repositoryPath": "examples/migration-workbench/public/artifacts/v1/migration-report.v1.json",
       "mediaType": "application/json",
       "bytes": 61201,
-      "sha256": "a9cc5b1516e4c1ec76af78c60b20990d27afea783c425bba52da59fcb7aa925a"
+      "sha256": "29b576d16268cc5050f6bc702a01c4abc9cc168f2afb652a18fb30f89ba2ff20"
     },
     {
       "repositoryPath": "examples/migration-workbench/public/artifacts/v1/migration.v1.patch",

@@ -1,19 +1,41 @@
 {
   "schemaVersion": "capability-keys.v1",
-  "source": "DRAFT-FIXTURE (replace with honua-server published artifact)",
+  "source": "Synced from honua-server docs/gis/data/capability-keys.v1.json (crosswalks.esriAssess) + capability-no-go-allowlist.v1.json on trunk, 2026-07-17. Regenerate on vocabulary changes; see README.",
   "crosswalks": {
     "esriAssessRegistry": {
-      "feature-service": ["serve.feature-service"],
-      "map-service": ["serve.map-service"],
-      "editing": ["editing.feature-edits"],
-      "geocoding": ["geocoding.single-line"],
-      "vector-tiles": ["serve.vector-tiles"],
-      "image-service": ["raster.cog"],
-      "web-map": ["serve.feature-service", "serve.map-service"],
-      "geoprocessing": [],
-      "scene-service": [],
-      "survey123": [],
-      "dashboards-apps": [],
+      "web-map": [
+        "identity.portal-sharing"
+      ],
+      "feature-service": [
+        "serve.geoservices-featureserver"
+      ],
+      "map-service": [
+        "serve.geoservices-mapserver"
+      ],
+      "vector-tiles": [
+        "serve.geoservices-vectortileserver"
+      ],
+      "editing": [
+        "editing.featureserver-edits"
+      ],
+      "image-service": [
+        "serve.geoservices-imageserver"
+      ],
+      "scene-service": [
+        "serve.i3s-scene"
+      ],
+      "survey123": [
+        "fieldops.forms"
+      ],
+      "dashboards-apps": [
+        "collaboration.map-sessions"
+      ],
+      "geocoding": [
+        "geocoding.forward"
+      ],
+      "geoprocessing": [
+        "process.geoprocessing"
+      ],
       "utility-network": null,
       "parcel-fabric": null,
       "lrs": null

@@ -27,15 +27,15 @@ def _load(path: Path) -> dict:
 
 
 def test_build_url_omits_units_when_none() -> None:
-    url = build_url(("serve.feature-service", "serve.map-service"), None)
+    url = build_url(("serve.geoservices-featureserver", "serve.geoservices-mapserver"), None)
 
-    assert url == f"{CATALOG_BASE_URL}?caps=serve.feature-service,serve.map-service"
+    assert url == f"{CATALOG_BASE_URL}?caps=serve.geoservices-featureserver,serve.geoservices-mapserver"
 
 
 def test_build_url_includes_units_when_present() -> None:
-    url = build_url(("serve.feature-service",), 4)
+    url = build_url(("serve.geoservices-featureserver",), 4)
 
-    assert url == f"{CATALOG_BASE_URL}?caps=serve.feature-service&units=4"
+    assert url == f"{CATALOG_BASE_URL}?caps=serve.geoservices-featureserver&units=4"
 
 
 def test_build_url_empty_keys() -> None:
@@ -60,15 +60,16 @@ def test_to_json_dict_shape_for_sample_footprint() -> None:
         "locator": "example.maps.arcgis.com/0123ABCDEF456789",
     }
     assert payload["crosswalk"]["schemaVersion"] == "capability-keys.v1"
-    assert payload["crosswalk"]["source"].startswith("DRAFT-FIXTURE")
+    assert "capability-keys.v1.json" in payload["crosswalk"]["source"]
     assert {entry["key"] for entry in payload["capabilities"]} == {
-        "serve.feature-service",
-        "serve.map-service",
+        "serve.geoservices-featureserver",
+        "identity.portal-sharing",
+        "fieldops.forms",
     }
-    assert {entry["assessKey"] for entry in payload["unmapped"]} == {"survey123"}
+    assert payload["unmapped"] == []  # every detected key in the sample now maps
     assert payload["unitsEstimate"] is None
     assert payload["url"] == (
-        "https://honua.io/capabilities.html?caps=serve.feature-service,serve.map-service"
+        "https://honua.io/capabilities.html?caps=fieldops.forms,identity.portal-sharing,serve.geoservices-featureserver"
     )
 
 

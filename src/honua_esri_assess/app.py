@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typer
 
+from honua_esri_assess.commands.caps import caps_command
 from honua_esri_assess.commands.report import report_command
 from honua_esri_assess.commands.scan import scan_app
 from honua_esri_assess.commands.schema import schema_app
@@ -46,6 +47,13 @@ cli_app.command(
     "verdict",
     help="Render a per-shop-profile migratability verdict from EsriFootprint.json.",
 )(verdict_command)
+cli_app.command(
+    "caps",
+    help=(
+        "Crosswalk EsriFootprint.json to Honua capability keys, emitting "
+        "honua-caps.json plus a shareable catalog URL."
+    ),
+)(caps_command)
 cli_app.command("version", help="Print package and bundled schema versions.")(
     version_command
 )

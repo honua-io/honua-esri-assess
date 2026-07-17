@@ -221,3 +221,55 @@ def test_report_overwrites_with_force(tmp_path: Path) -> None:
 
     assert exit_code == 0
     assert output.read_text(encoding="utf-8") != "PRIOR REPORT"
+
+
+# --- caps overwrite refusal ------------------------------------------------
+
+
+def test_caps_refuses_to_overwrite_json_without_force(tmp_path: Path, capsys) -> None:
+    footprint = _sample_footprint()
+    input_path = tmp_path / "EsriFootprint.json"
+    input_path.write_text(json.dumps(footprint), encoding="utf-8")
+    json_output = tmp_path / "honua-caps.json"
+    json_output.write_text("PRIOR CAPS", encoding="utf-8")
+
+    exit_code = cli_main(
+        [
+            "caps",
+            "--input",
+            str(input_path),
+            "--json",
+            str(json_output),
+            "--output",
+            "-",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert "report.input.exists" in captured.err
+    assert json_output.read_text(encoding="utf-8") == "PRIOR CAPS"
+
+
+def test_caps_overwrites_json_with_force(tmp_path: Path) -> None:
+    footprint = _sample_footprint()
+    input_path = tmp_path / "EsriFootprint.json"
+    input_path.write_text(json.dumps(footprint), encoding="utf-8")
+    json_output = tmp_path / "honua-caps.json"
+    json_output.write_text("PRIOR CAPS", encoding="utf-8")
+
+    exit_code = cli_main(
+        [
+            "caps",
+            "--input",
+            str(input_path),
+            "--json",
+            str(json_output),
+            "--output",
+            "-",
+            "--force",
+        ]
+    )
+
+    assert exit_code == 0
+    assert json.loads(json_output.read_text(encoding="utf-8"))["schemaVersion"] == "honua-caps.v1"

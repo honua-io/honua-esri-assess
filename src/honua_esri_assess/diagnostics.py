@@ -255,6 +255,30 @@ class ReportRenderError(AssessmentError):
         )
 
 
+class ReportCrosswalkError(AssessmentError):
+    """The ``caps`` command's crosswalk document failed validation at load.
+
+    Covers both structural problems (missing fields, wrong types) and the
+    "unknown assess key" contract from honua-io/honua-esri-assess#84: a
+    crosswalk that references an esri-assess-registry key not present in
+    :data:`honua_esri_assess.verdict.registry.CAPABILITY_REGISTRY` must fail
+    loudly rather than silently mapping nothing.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        context: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            message,
+            code="report.crosswalk.invalid",
+            exit_code=5,
+            context=context,
+        )
+
+
 class ServerError(AssessmentError):
     code = "server.error"
     exit_code = 10
@@ -455,6 +479,7 @@ __all__ = [
     "PortalNotFoundError",
     "PortalRateLimitedError",
     "PortalSchemaError",
+    "ReportCrosswalkError",
     "ReportInputError",
     "ReportRenderError",
     "ReportSchemaValidationError",

@@ -16,12 +16,26 @@ _FORBIDDEN_HOSTS = re.compile(
     re.IGNORECASE,
 )
 
+# Documented, non-network exceptions (issue #84): the ``caps`` command builds
+# a *shareable catalog URL* pointing at honua.io as plain output data -- it is
+# printed/written to the artifact, never fetched. No HTTP client in this
+# codebase is ever pointed at this constant; see
+# ``honua_esri_assess.caps.renderer.CATALOG_BASE_URL`` and
+# ``tests/caps/test_cli.py::test_caps_never_fetches_network_by_default``,
+# which asserts the default ``caps`` run makes zero network calls.
+_ALLOWED_PHONE_HOME_REFERENCES: frozenset[tuple[str, str]] = frozenset(
+    {("caps/renderer.py", "https://honua.io")}
+)
+
 
 def test_source_has_no_phone_home_urls() -> None:
     offenders: list[str] = []
     for path in SRC_ROOT.rglob("*.py"):
         text = path.read_text(encoding="utf-8")
+        relative = path.relative_to(SRC_ROOT).as_posix()
         for match in _FORBIDDEN_HOSTS.finditer(text):
+            if (relative, match.group(0)) in _ALLOWED_PHONE_HOME_REFERENCES:
+                continue
             line = text[: match.start()].count("\n") + 1
             offenders.append(f"{path}:{line}: {match.group(0)}")
     assert not offenders, "phone-home host found in source:\n" + "\n".join(offenders)

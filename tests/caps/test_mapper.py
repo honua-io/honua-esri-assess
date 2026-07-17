@@ -33,29 +33,32 @@ def test_evaluate_sample_footprint_maps_expected_capabilities() -> None:
     result = evaluate(footprint, crosswalk)
 
     capabilities = _by_key(result.capabilities)
-    assert set(capabilities) == {"serve.feature-service", "serve.map-service"}
+    assert set(capabilities) == {"serve.geoservices-featureserver", "identity.portal-sharing", "fieldops.forms"}
 
-    feature_service = capabilities["serve.feature-service"]
-    assert feature_service.assess_keys == ("feature-service", "web-map")
-    assert feature_service.matched_inventory_count == 3  # 2 Feature Service + 1 Web Map
+    feature_service = capabilities["serve.geoservices-featureserver"]
+    assert feature_service.assess_keys == ("feature-service",)
+    assert capabilities["identity.portal-sharing"].assess_keys == ("web-map",)
+    assert capabilities["fieldops.forms"].assess_keys == ("survey123",)
+    assert feature_service.matched_inventory_count == 2  # 2 Feature Service items; Web Map now maps to identity.portal-sharing
     assert feature_service.tier == "go"
 
-    map_service = capabilities["serve.map-service"]
-    assert map_service.assess_keys == ("web-map",)
-    assert map_service.matched_inventory_count == 1
-    assert map_service.tier == "go"
+    portal_sharing = capabilities["identity.portal-sharing"]
+    assert portal_sharing.matched_inventory_count == 1
+    assert portal_sharing.tier == "go"
 
 
-def test_evaluate_sample_footprint_reports_survey123_as_unmapped() -> None:
+def test_evaluate_sample_footprint_maps_survey123_to_fieldops_forms() -> None:
     footprint = _load(SAMPLE)
     crosswalk = load_bundled_crosswalk()
 
     result = evaluate(footprint, crosswalk)
 
     unmapped = _by_assess_key(result.unmapped)
-    assert unmapped["survey123"].reason == "unmapped"
-    assert unmapped["survey123"].matched_inventory_count == 1
-    assert unmapped["survey123"].tier == "conditional"
+    capabilities = _by_key(result.capabilities)
+    assert "survey123" not in unmapped
+    forms = capabilities["fieldops.forms"]
+    assert forms.matched_inventory_count == 1
+    assert forms.tier == "conditional"
 
 
 def test_evaluate_sample_footprint_has_no_units_estimate() -> None:
@@ -79,7 +82,7 @@ def test_evaluate_utility_network_marks_not_supported() -> None:
     assert unmapped["utility-network"].matched_inventory_count == 1
 
     capabilities = _by_key(result.capabilities)
-    assert set(capabilities) == {"serve.feature-service", "serve.map-service", "editing.feature-edits"}
+    assert set(capabilities) == {"serve.geoservices-featureserver", "serve.geoservices-mapserver", "editing.featureserver-edits"}
 
 
 def test_evaluate_utility_network_units_estimate_falls_back_to_one() -> None:
@@ -107,7 +110,8 @@ def test_evaluate_portal_federation_reports_dashboard_as_unmapped() -> None:
     result = evaluate(footprint, crosswalk)
 
     unmapped = _by_assess_key(result.unmapped)
-    assert unmapped["dashboards-apps"].reason == "unmapped"
+    assert "dashboards-apps" not in unmapped
+    assert "collaboration.map-sessions" in _by_key(result.capabilities)
 
 
 def test_evaluate_never_drops_a_detected_capability() -> None:

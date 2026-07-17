@@ -26,7 +26,7 @@ def test_bundled_crosswalk_loads_and_validates() -> None:
     crosswalk = load_bundled_crosswalk()
 
     assert crosswalk.schema_version == "capability-keys.v1"
-    assert crosswalk.source.startswith("DRAFT-FIXTURE")
+    assert "capability-keys.v1.json" in crosswalk.source
 
 
 def test_bundled_crosswalk_covers_every_registry_key() -> None:
@@ -45,15 +45,20 @@ def test_bundled_crosswalk_covers_every_registry_key() -> None:
 def test_capability_keys_for_mapped_entry() -> None:
     crosswalk = load_bundled_crosswalk()
 
-    assert crosswalk.capability_keys_for("feature-service") == ("serve.feature-service",)
-    assert crosswalk.capability_keys_for("web-map") == (
-        "serve.feature-service",
-        "serve.map-service",
-    )
+    assert crosswalk.capability_keys_for("feature-service") == ("serve.geoservices-featureserver",)
+    assert crosswalk.capability_keys_for("web-map") == ("identity.portal-sharing",)
 
 
 def test_capability_keys_for_unmapped_entry_is_empty_tuple() -> None:
-    crosswalk = load_bundled_crosswalk()
+    # Every bundled registry key is now mapped or not-supported, so exercise
+    # the empty-list ("known, not yet mapped") semantics with an inline doc.
+    crosswalk = parse_crosswalk(
+        {
+            "schemaVersion": "capability-keys.v1",
+            "source": "inline test doc",
+            "crosswalks": {"esriAssessRegistry": {"geoprocessing": []}},
+        }
+    )
 
     assert crosswalk.capability_keys_for("geoprocessing") == ()
 

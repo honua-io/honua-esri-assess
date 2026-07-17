@@ -35,10 +35,11 @@ def test_caps_writes_json_and_markdown(tmp_path: Path, capsys) -> None:
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     assert payload["schemaVersion"] == "honua-caps.v1"
     assert {entry["key"] for entry in payload["capabilities"]} == {
-        "serve.feature-service",
-        "serve.map-service",
+        "serve.geoservices-featureserver",
+        "identity.portal-sharing",
+        "fieldops.forms",
     }
-    assert {entry["assessKey"] for entry in payload["unmapped"]} == {"survey123"}
+    assert payload["unmapped"] == []  # every detected key in the sample now maps
 
     markdown = md_path.read_text(encoding="utf-8")
     assert markdown.startswith("# Honua Capability Crosswalk")
@@ -191,7 +192,7 @@ def test_caps_crosswalk_url_override_is_explicit_opt_in(capsys) -> None:
     custom_crosswalk = {
         "schemaVersion": "capability-keys.v1",
         "source": "test-remote-crosswalk",
-        "crosswalks": {"esriAssessRegistry": {"feature-service": ["serve.feature-service"]}},
+        "crosswalks": {"esriAssessRegistry": {"feature-service": ["serve.geoservices-featureserver"]}},
     }
     responses.add(
         responses.GET,

@@ -156,7 +156,7 @@ describe("migration demo helpers", () => {
 
     expect(requests).toHaveLength(1);
     expect(requests[0]?.headers["x-api-key"]).toBe("demo-key");
-    expect(requests.some((request) => request.url.startsWith("https://attacker.example"))).toBe(false);
+    expect(requests.some((request) => hasOrigin(request.url, "https://attacker.example"))).toBe(false);
   });
 
   it("rejects same-origin geoservices import status URLs outside the import API path", async () => {
@@ -294,6 +294,19 @@ describe("migration demo helpers", () => {
     expect(fs.existsSync(path.join(report.workingAppDir, "src", "main.ts"))).toBe(true);
   });
 });
+
+/**
+ * Exact origin comparison via `URL` parsing, not substring/`startsWith`
+ * matching (which can be spoofed by a host such as
+ * `https://attacker.example.evil.test`).
+ */
+function hasOrigin(url: string, origin: string): boolean {
+  try {
+    return new URL(url).origin === new URL(origin).origin;
+  } catch {
+    return false;
+  }
+}
 
 function normalizeHeaders(headers: HeadersInit | undefined): Record<string, string> {
   if (!headers) {

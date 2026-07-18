@@ -6,6 +6,7 @@ import {
   analyzeEsriSampleFixture,
   classifyArcGisServiceUrl,
   extractEsriSampleReferences,
+  findArcGisServiceUrls,
   loadEsriSampleCorpusManifest,
   summarizeEsriSampleCorpus,
 } from "../src/migration/sample-corpus.js";
@@ -146,5 +147,65 @@ describe("Esri sample migration corpus", () => {
     expect(extraction.serviceUrls).toHaveLength(1);
     expect(extraction.portalItems).toEqual([{ id: "abcdef0123456789abcdef0123456789" }]);
     expect(extraction.guardrailFlags).toEqual(["external-live-service-reference"]);
+  });
+
+  describe("ReDoS resistance (js/polynomial-redos regression coverage)", () => {
+    it("stays linear-time when the anchor repeats with no closing service kind (no forbidden chars, no scheme match point)", () => {
+      // Adversarial shape from the original regex's CodeQL finding: many
+      // repetitions of the anchor literal, never followed by a service
+      // kind, with no whitespace/quote to bound a backtracking engine's
+      // retry positions.
+      const adversarial = `http://x${"/arcgis/rest/services/".repeat(60_000)}z`;
+
+      const start = performance.now();
+      const matches = findArcGisServiceUrls(adversarial);
+      const elapsedMs = performance.now() - start;
+
+      expect(matches).toEqual([]);
+      expect(elapsedMs).toBeLessThan(1000);
+    });
+
+    it("stays linear-time when a bare URL prefix repeats without ever reaching the anchor", () => {
+      const adversarial = `${"http://a".repeat(60_000)}/arcgis/rest/services/x/FeatureServer`;
+
+      const start = performance.now();
+      const matches = findArcGisServiceUrls(adversarial);
+      const elapsedMs = performance.now() - start;
+
+      expect(matches).toHaveLength(1);
+      expect(elapsedMs).toBeLessThan(1000);
+    });
+
+    it("still finds real service URLs interleaved with pathological filler", () => {
+      const noise = "/arcgis/rest/services/".repeat(5_000);
+      const real = "https://example.com/arcgis/rest/services/Hosted/Parcels/FeatureServer/3";
+      const source = `${noise} some text ${real} more ${noise}`;
+
+      const start = performance.now();
+      const extraction = extractEsriSampleReferences(source);
+      const elapsedMs = performance.now() - start;
+
+      expect(extraction.serviceUrls).toEqual([
+        {
+          url: real,
+          normalizedUrl: real,
+          kind: "FeatureServer",
+          servicePath: "Hosted/Parcels",
+          layerId: 3,
+        },
+      ]);
+      expect(elapsedMs).toBeLessThan(1000);
+    });
+
+    it("classifyArcGisServiceUrl trims a long run of trailing punctuation in linear time", () => {
+      const adversarial = `https://example.com/arcgis/rest/services/Hosted/Parcels/FeatureServer/3${")".repeat(200_000)}`;
+
+      const start = performance.now();
+      const service = classifyArcGisServiceUrl(adversarial);
+      const elapsedMs = performance.now() - start;
+
+      expect(service.normalizedUrl).toBe("https://example.com/arcgis/rest/services/Hosted/Parcels/FeatureServer/3");
+      expect(elapsedMs).toBeLessThan(1000);
+    });
   });
 });

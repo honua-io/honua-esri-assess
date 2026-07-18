@@ -1,10 +1,195 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { trimTrailingCharsIn } from "../core/path-utils.js";
+
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
-const ARCGIS_SERVICE_URL_REGEX =
-  /https?:\/\/[^\s"'`<>)]+?\/arcgis\/rest\/services\/[^\s"'`<>)]+?\/(?:FeatureServer|MapServer|ImageServer|VectorTileServer|GeometryServer|GPServer|GeocodeServer|RouteServer|NAServer)(?:\/[A-Za-z0-9_-]+)?(?:\/\d+)?(?:\?[^\s"'`<>)]+)?/gi;
+
+/**
+ * ArcGIS REST service kinds recognized when scanning sample source text for
+ * service URLs (e.g. `.../arcgis/rest/services/Folder/Svc/FeatureServer/0`).
+ */
+const ARCGIS_SERVICE_KINDS_LOWER = [
+  "featureserver",
+  "mapserver",
+  "imageserver",
+  "vectortileserver",
+  "geometryserver",
+  "gpserver",
+  "geocodeserver",
+  "routeserver",
+  "naserver",
+];
+
+const ARCGIS_ANCHOR = "/arcgis/rest/services/";
+
+// Single-character whitespace test, applied one code unit at a time below ?
+// this is O(1) per character, not a scan over the whole (attacker-influenced)
+// source string, so it carries none of the polynomial-matching risk that
+// motivated replacing the original combined regex.
+const WHITESPACE_RE = /\s/;
+
+/**
+ * Whitespace and delimiter characters that terminate a bare URL scanned out
+ * of free-form sample source text (mirrors the `[^\s"'`<>)]` character class
+ * previously used in a regex-based extractor).
+ */
+function isForbiddenUrlChar(code: number): boolean {
+  switch (code) {
+    case 34: // "
+    case 39: // '
+    case 96: // `
+    case 60: // <
+    case 62: // >
+    case 41: // )
+      return true;
+    default:
+      return WHITESPACE_RE.test(String.fromCharCode(code));
+  }
+}
+
+function isPathSegmentChar(code: number): boolean {
+  return (
+    (code >= 48 && code <= 57) || // 0-9
+    (code >= 65 && code <= 90) || // A-Z
+    (code >= 97 && code <= 122) || // a-z
+    code === 95 || // _
+    code === 45 // -
+  );
+}
+
+function isDigitChar(code: number): boolean {
+  return code >= 48 && code <= 57;
+}
+
+/**
+ * Consume the optional `/segment`, `/digits`, and `?query` suffix that may
+ * follow an ArcGIS service-kind keyword, returning the index immediately
+ * after the last consumed character.
+ */
+function consumeOptionalServiceSuffix(source: string, start: number): number {
+  let pos = start;
+
+  if (pos < source.length && source.charCodeAt(pos) === 47 /* '/' */) {
+    let end = pos + 1;
+    while (end < source.length && isPathSegmentChar(source.charCodeAt(end))) {
+      end += 1;
+    }
+    if (end > pos + 1) {
+      pos = end;
+    }
+  }
+
+  if (pos < source.length && source.charCodeAt(pos) === 47 /* '/' */) {
+    let end = pos + 1;
+    while (end < source.length && isDigitChar(source.charCodeAt(end))) {
+      end += 1;
+    }
+    if (end > pos + 1) {
+      pos = end;
+    }
+  }
+
+  if (pos < source.length && source.charCodeAt(pos) === 63 /* '?' */) {
+    let end = pos + 1;
+    while (end < source.length && !isForbiddenUrlChar(source.charCodeAt(end))) {
+      end += 1;
+    }
+    if (end > pos + 1) {
+      pos = end;
+    }
+  }
+
+  return pos;
+}
+
+/**
+ * Starting at `anchorIndex` (the position of a `/arcgis/rest/services/`
+ * anchor already matched by the caller), attempt to consume a full service
+ * path + kind keyword. Returns `matchEnd: -1` when no kind keyword is found,
+ * along with `deadEnd`: the furthest index scanned, so the caller can skip
+ * straight past it instead of re-scanning the same span for the next
+ * candidate anchor (this bound is what keeps the overall scan linear).
+ */
+function tryConsumeServiceMatch(
+  source: string,
+  lower: string,
+  anchorIndex: number,
+): { matchEnd: number; deadEnd: number } {
+  const pos = anchorIndex + ARCGIS_ANCHOR.length;
+  if (pos >= source.length || isForbiddenUrlChar(source.charCodeAt(pos))) {
+    return { matchEnd: -1, deadEnd: pos };
+  }
+
+  let cursor = pos + 1;
+  while (cursor < source.length) {
+    const code = source.charCodeAt(cursor);
+    if (isForbiddenUrlChar(code)) {
+      return { matchEnd: -1, deadEnd: cursor };
+    }
+    if (code === 47 /* '/' */) {
+      for (const kindLower of ARCGIS_SERVICE_KINDS_LOWER) {
+        if (lower.startsWith(kindLower, cursor + 1)) {
+          const kindEnd = cursor + 1 + kindLower.length;
+          return { matchEnd: consumeOptionalServiceSuffix(source, kindEnd), deadEnd: kindEnd };
+        }
+      }
+    }
+    cursor += 1;
+  }
+  return { matchEnd: -1, deadEnd: cursor };
+}
+
+/**
+ * Linear-time replacement for a regex that combined two adjacent unbounded
+ * `[^...]` quantifiers around a literal anchor (`.../arcgis/rest/services/`)
+ * ? a shape CodeQL flags as `js/polynomial-redos` because a regex engine can
+ * be forced into O(n^2) work re-trying the match at every position of an
+ * adversarial input (e.g. many repetitions of the anchor with no service
+ * kind ever following). This scan makes a single forward pass over `source`,
+ * bounding every backtrack-shaped decision (finding the URL's scheme, and
+ * finding the service-kind keyword) to a span that is never re-visited by a
+ * later iteration, so total work is O(source.length) regardless of input
+ * shape.
+ */
+export function findArcGisServiceUrls(source: string): string[] {
+  const lower = source.toLowerCase();
+  const n = source.length;
+  const matches: string[] = [];
+
+  let schemeStart = -1;
+  let i = 0;
+  while (i < n) {
+    const code = source.charCodeAt(i);
+    if (isForbiddenUrlChar(code)) {
+      schemeStart = -1;
+      i += 1;
+      continue;
+    }
+
+    if (schemeStart === -1 && (lower.startsWith("https://", i) || lower.startsWith("http://", i))) {
+      schemeStart = i;
+    }
+
+    if (schemeStart !== -1 && lower.startsWith(ARCGIS_ANCHOR, i)) {
+      const result = tryConsumeServiceMatch(source, lower, i);
+      if (result.matchEnd !== -1) {
+        matches.push(source.slice(schemeStart, result.matchEnd));
+        i = result.matchEnd;
+        schemeStart = -1;
+        continue;
+      }
+      i = result.deadEnd;
+      continue;
+    }
+
+    i += 1;
+  }
+
+  return matches;
+}
+
 const PORTAL_ITEM_OBJECT_REGEX =
   /\bportalItem\s*:\s*\{[\s\S]{0,320}?\bid\s*:\s*["']([A-Za-z0-9_-]{6,})["'][\s\S]{0,320}?\}/g;
 const PORTAL_ITEM_ID_REGEX = /\b(?:itemId|portalItemId)\s*:\s*["']([A-Za-z0-9_-]{6,})["']/g;
@@ -265,8 +450,8 @@ export function extractEsriSampleReferences(source: string): EsriSampleReference
   const portalItems: PortalItemReference[] = [];
   const guardrailFlags = new Set<EsriSampleGuardrailFlag>();
 
-  for (const match of source.matchAll(ARCGIS_SERVICE_URL_REGEX)) {
-    const service = classifyArcGisServiceUrl(match[0]);
+  for (const rawUrl of findArcGisServiceUrls(source)) {
+    const service = classifyArcGisServiceUrl(rawUrl);
     serviceUrls.push(service);
     if (service.normalizedUrl.startsWith("http://") || service.normalizedUrl.startsWith("https://")) {
       guardrailFlags.add("external-live-service-reference");
@@ -301,7 +486,7 @@ export function extractEsriSampleReferences(source: string): EsriSampleReference
 }
 
 export function classifyArcGisServiceUrl(url: string): ArcGisServiceReference {
-  const cleanedUrl = url.replace(/[),.;\]]+$/, "");
+  const cleanedUrl = trimTrailingCharsIn(url, "),.;]");
   const parsed = new URL(cleanedUrl);
   parsed.search = "";
   parsed.hash = "";

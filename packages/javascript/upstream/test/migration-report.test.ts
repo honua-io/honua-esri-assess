@@ -448,4 +448,81 @@ describe("buildJsMigrationReport", () => {
       },
     ]);
   });
+
+  describe("ReDoS resistance (js/polynomial-redos regression coverage)", () => {
+    it("stays linear-time parsing a barrel import clause with a long run of unclosed braces", () => {
+      const codemodResult = createCodemodResult();
+      // Adversarial shape from the original regex's CodeQL finding: a long
+      // run of '{' with no closing '}', which forces a backtracking engine
+      // to retry the unbounded quantifier at every start position.
+      const adversarialImportClause = "{".repeat(500_000);
+      const scanReport: ArcGisScanReport = {
+        rootDir: "/tmp/app",
+        filesScanned: 1,
+        filesWithArcGisImports: 1,
+        imports: [
+          {
+            file: "/tmp/app/src/main.ts",
+            modulePath: "@arcgis/core/layers",
+            importClause: adversarialImportClause,
+            symbols: [],
+          },
+        ],
+        symbolUsageCounts: {},
+        flags: ["arcgis-barrel-imports-detected"],
+      };
+
+      const start = performance.now();
+      const report = buildJsMigrationReport("/tmp/app", codemodResult, scanReport);
+      const elapsedMs = performance.now() - start;
+
+      // No closing '}' means no importable names are extracted, so the
+      // module is treated as unhandled rather than crashing or hanging.
+      expect(report.unhandledArcGisModules).toEqual([
+        {
+          modulePath: "@arcgis/core/layers",
+          usageStyle: "static-import",
+          count: 1,
+        },
+      ]);
+      expect(elapsedMs).toBeLessThan(1000);
+    });
+
+    it("resolves 'first { paired with first }' deterministically and in linear time, even with a well-formed clause buried inside", () => {
+      const codemodResult = createCodemodResult();
+      const adversarialImportClause = `${"{".repeat(200_000)} { FeatureLayer }`;
+      const scanReport: ArcGisScanReport = {
+        rootDir: "/tmp/app",
+        filesScanned: 1,
+        filesWithArcGisImports: 1,
+        imports: [
+          {
+            file: "/tmp/app/src/main.ts",
+            modulePath: "@arcgis/core/layers",
+            importClause: adversarialImportClause,
+            symbols: ["FeatureLayer"],
+          },
+        ],
+        symbolUsageCounts: { FeatureLayer: 1 },
+        flags: ["arcgis-barrel-imports-detected"],
+      };
+
+      const start = performance.now();
+      const report = buildJsMigrationReport("/tmp/app", codemodResult, scanReport);
+      const elapsedMs = performance.now() - start;
+
+      // The first '{...}' pair found (the leading, name-less braces) yields
+      // no importable names, so the module is still reported unhandled ?
+      // this asserts we match "first closing brace" semantics rather than
+      // silently changing behavior, while proving it terminates quickly.
+      expect(report.unhandledArcGisModules).toEqual([
+        {
+          modulePath: "@arcgis/core/layers",
+          usageStyle: "static-import",
+          count: 1,
+        },
+      ]);
+      expect(elapsedMs).toBeLessThan(1000);
+    });
+  });
 });

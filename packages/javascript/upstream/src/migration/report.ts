@@ -306,14 +306,36 @@ function resolveSupportedKindsForImportHit(hit: ArcGisScanReport["imports"][numb
   return kinds;
 }
 
+/**
+ * Return the text between the first `{` and the next `}` in `value`, or
+ * `undefined` if no such pair exists.
+ *
+ * Equivalent to `value.match(/\{([^}]+)\}/)?.[1]` but avoids an unanchored
+ * regex whose quantifier can be retried at every character position of an
+ * attacker-influenced `importClause` (CodeQL: `js/polynomial-redos`, O(n^2)
+ * on inputs with no closing `}`). `indexOf` scans forward only once per
+ * call, so this stays O(n) regardless of input shape.
+ */
+function extractBracedContent(value: string): string | undefined {
+  const openIndex = value.indexOf("{");
+  if (openIndex < 0) {
+    return undefined;
+  }
+  const closeIndex = value.indexOf("}", openIndex + 1);
+  if (closeIndex < 0) {
+    return undefined;
+  }
+  return value.slice(openIndex + 1, closeIndex);
+}
+
 function extractImportedNamesFromClause(importClause: string): string[] {
   const names: string[] = [];
-  const namedMatch = importClause.match(/\{([^}]+)\}/);
-  if (!namedMatch) {
+  const namedContent = extractBracedContent(importClause);
+  if (namedContent === undefined) {
     return names;
   }
 
-  for (const token of namedMatch[1].split(",")) {
+  for (const token of namedContent.split(",")) {
     const value = token.trim();
     if (!value || value === "*") {
       continue;

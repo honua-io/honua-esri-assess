@@ -1329,7 +1329,7 @@ describe("migration workbench artifact hardening", () => {
           },
         },
       }),
-    ).rejects.toThrow(/live migration workbench source inputs changed/i);
+    ).rejects.toThrow(/(?:live migration workbench source inputs changed|prepared SDK artifact is stale)/i);
     fs.writeFileSync(fixtureScenarioPath, fixtureScenarioBytes);
 
     const cliPath = path.join(fakeRoot, "dist/src/migration/cli.js");
@@ -1399,7 +1399,7 @@ describe("migration workbench artifact hardening", () => {
           },
         },
       }),
-    ).rejects.toThrow(/live migration workbench source inputs changed/i);
+    ).rejects.toThrow(/(?:live migration workbench source inputs changed|prepared SDK artifact is stale)/i);
     for (const [repositoryPath, expectedBytes] of committed) {
       expect(fs.readFileSync(path.join(fakeRoot, repositoryPath)).equals(expectedBytes), repositoryPath).toBe(true);
     }
@@ -1552,10 +1552,16 @@ describe("migration workbench artifact hardening", () => {
     const outsideRoot = makeTempDir("migration-required-input-outside");
     const outsideFile = path.join(outsideRoot, "expected.json");
     fs.writeFileSync(outsideFile, '{"sentinel":"unchanged"}\n');
+    // expected-behavior.v1.json and arcgis-source-app both live under
+    // examples/, which the prepared-SDK inputs snapshot now walks (#652):
+    // its own generic symlink rejection in collectTree() fires during
+    // `prepare:test-sdk`, before the generator's dedicated
+    // "unsafe symbolic link" check gets a chance to run. Either check
+    // failing closed satisfies this test's security property.
     const expectedPath = path.join(fakeRoot, "examples/migration-workbench/fixtures/expected-behavior.v1.json");
     fs.unlinkSync(expectedPath);
     fs.symlinkSync(outsideFile, expectedPath, "file");
-    expectGeneratorFailure(runGenerator(fakeRoot, "--check"), /unsafe symbolic link/i);
+    expectGeneratorFailure(runGenerator(fakeRoot, "--check"), /unsafe symbolic link|SDK tree contains a symlink/i);
     expect(fs.readFileSync(outsideFile, "utf8")).toBe('{"sentinel":"unchanged"}\n');
 
     fs.unlinkSync(expectedPath);
@@ -1563,7 +1569,7 @@ describe("migration workbench artifact hardening", () => {
     const fixturePath = path.join(fakeRoot, "examples/arcgis-source-app");
     fs.rmSync(fixturePath, { recursive: true });
     fs.symlinkSync(outsideRoot, fixturePath, "dir");
-    expectGeneratorFailure(runGenerator(fakeRoot, "--check"), /unsafe symbolic link/i);
+    expectGeneratorFailure(runGenerator(fakeRoot, "--check"), /unsafe symbolic link|SDK tree contains a symlink/i);
     expect(fs.readFileSync(outsideFile, "utf8")).toBe('{"sentinel":"unchanged"}\n');
   }, 30_000);
 

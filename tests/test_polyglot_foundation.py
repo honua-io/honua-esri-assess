@@ -21,10 +21,17 @@ def _load_runtime_package():
     return module
 
 
-def test_marker_only_runtime_directories_are_genuinely_absent() -> None:
+def test_runtime_detection_matches_the_checked_out_package_state() -> None:
     module = _load_runtime_package()
-    assert module.detect("javascript") == (False, "")
-    assert module.detect("maui") == (False, "")
+    javascript_present = (REPO_ROOT / "packages/javascript/package.json").is_file()
+    javascript = module.detect("javascript")
+    assert javascript[0] is javascript_present
+    assert bool(javascript[1]) is javascript_present
+
+    maui_present = any((REPO_ROOT / "packages/maui").rglob("*.csproj"))
+    maui = module.detect("maui")
+    assert maui[0] is maui_present
+    assert bool(maui[1]) is maui_present
 
 
 def test_partial_runtime_package_cannot_be_silently_skipped(tmp_path: Path) -> None:

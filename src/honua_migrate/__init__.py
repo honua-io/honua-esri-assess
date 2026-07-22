@@ -20,6 +20,7 @@ from .contracts import (
     Readiness,
     ReconciliationResult,
     SafetyMode,
+    plan_digest,
 )
 from .contract_validation import (
     assert_artifact_safe,
@@ -49,5 +50,6 @@ __all__ = [
     "SafetyMode",
     "assert_artifact_safe",
     "load_contract_schema",
+    "plan_digest",
     "validate_contract",
 ]

@@ -24,6 +24,7 @@ from honua_migrate import (
     SafetyMode,
     assert_artifact_safe,
     load_contract_schema,
+    plan_digest,
     validate_contract,
 )
 
@@ -48,6 +49,9 @@ def test_plan_digest_is_deterministic_and_detects_tampering() -> None:
     second = plan.to_dict()
     assert first == second
     assert plan.verify(first)
+    assert first["plan_digest"] == plan_digest(
+        {key: value for key, value in first.items() if key != "plan_digest"}
+    )
     first["actions"][0]["layer"] = 4
     assert not plan.verify(first)
 

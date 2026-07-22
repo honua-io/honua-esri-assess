@@ -11,5 +11,7 @@ npx honua-js-migrate scan ./src
 npx honua-js-migrate codemod ./src --write --report migration-report.json
 ```
 
+The JavaScript package supports Node.js 20.19 and newer.
+
 The JavaScript executable is intentionally named `honua-js-migrate`; the
 unqualified `honua-migrate` command belongs to the canonical Python CLI.

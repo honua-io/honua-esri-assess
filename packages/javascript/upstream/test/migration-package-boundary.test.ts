@@ -12,6 +12,7 @@ describe("standalone package boundary", () => {
       repository: { type: string; url: string; directory: string };
       homepage: string;
       bugs: { url: string };
+      engines: { node: string };
       bin: Record<string, string>;
       dependencies: Record<string, string>;
     };
@@ -24,6 +25,7 @@ describe("standalone package boundary", () => {
     });
     expect(packageJson.homepage).toBe("https://github.com/honua-io/honua-migrate#readme");
     expect(packageJson.bugs).toEqual({ url: "https://github.com/honua-io/honua-migrate/issues" });
+    expect(packageJson.engines).toEqual({ node: ">=20.19.0" });
     expect(packageJson.bin).toEqual({ "honua-js-migrate": "./dist/migration/cli.js" });
     expect(packageJson.bin).not.toHaveProperty("honua-migrate");
     expect(packageJson.dependencies).toHaveProperty("@honua/sdk");
@@ -39,6 +41,7 @@ describe("standalone package boundary", () => {
         npmPackage: string;
         version: string;
         releaseTag: string;
+        nodeEngine: string;
       };
     };
 
@@ -49,6 +52,7 @@ describe("standalone package boundary", () => {
       npmPackage: "@honua/honua-migrate",
       version: "0.1.3-beta.0",
       releaseTag: "javascript-v0.1.3-beta.0",
+      nodeEngine: ">=20.19.0",
     });
   });
 

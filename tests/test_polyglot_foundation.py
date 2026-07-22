@@ -58,6 +58,11 @@ def test_ci_preserves_python_and_self_activates_runtime_gates() -> None:
     assert "npm audit --audit-level=high" in workflow
     assert "NuGetAuditMode=all" in workflow
 
+    javascript_workflow = (
+        REPO_ROOT / ".github" / "workflows" / "javascript-migration.yml"
+    ).read_text(encoding="utf-8")
+    assert "node-version: 20.19.0" in javascript_workflow
+
 
 def test_publish_lanes_are_tag_validated_and_dry_run_capable() -> None:
     for name, package in (

@@ -4,6 +4,12 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/honua-io/honua-esri-assess/badge)](https://scorecard.dev/viewer/?uri=github.com/honua-io/honua-esri-assess)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
+> **Command transition:** `honua-migrate assess` is now the primary assessment
+> surface. The `honua-esri-assess` command, module invocation, Python imports,
+> and artifact contracts remain compatible through the documented transition
+> window, with removal no earlier than `honua-migrate` 1.2. See the
+> [assessment transition policy](docs/assessment-transition.md).
+
 A **read-only** command-line tool that inventories an organization's Esri
 footprint — ArcGIS Online, ArcGIS Server / Enterprise, and FileGDB workspaces —
 and produces a versioned `EsriFootprint.json` artifact plus human-readable

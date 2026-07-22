@@ -26,11 +26,13 @@ except Exception:  # pragma: no cover - older Typer shares the standalone Click
     _CLICK_EXCEPTIONS = (click.ClickException,)
 
 from .app import cli_app
+from ._deprecation import warn_legacy_surface
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the Typer application and return a process-style exit code."""
 
+    warn_legacy_surface(stacklevel=2)
     try:
         result = cli_app(
             args=argv,

@@ -48,6 +48,7 @@ filegdb = [
 dev = [
   "build>=1.2,<2",
   "hatch>=1.9,<2",
+  "httpx>=0.27,<1",
   "mypy>=1.10,<3",
   "packaging>=24,<27",
   "pip-audit>=2.9,<3",

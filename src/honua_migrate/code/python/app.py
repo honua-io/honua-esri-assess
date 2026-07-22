@@ -35,10 +35,14 @@ def scan_command(
         Path | None,
         typer.Option("--output", help="Write the JSON report here (default: stdout)."),
     ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Replace existing output files."),
+    ] = False,
 ) -> None:
     """Classify ArcPy calls without importing ArcPy or using the network."""
 
-    _finish(_cmd_scan(argparse.Namespace(path=path, output=output)))
+    _finish(_cmd_scan(argparse.Namespace(path=path, output=output, force=force)))
 
 
 @python_app.command("translate")
@@ -52,12 +56,21 @@ def translate_command(
         Path | None,
         typer.Option("--evidence", help="Write parity evidence to this path."),
     ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Replace existing output files."),
+    ] = False,
 ) -> None:
     """Translate recognized calls into built-in Honua process payloads."""
 
     _finish(
         _cmd_translate(
-            argparse.Namespace(path=path, output=output, evidence=evidence)
+            argparse.Namespace(
+                path=path,
+                output=output,
+                evidence=evidence,
+                force=force,
+            )
         )
     )
 
@@ -74,6 +87,18 @@ def run_command(
         bool,
         typer.Option("--dry-run", help="Emit payloads without contacting the server."),
     ] = False,
+    acknowledge: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            "--acknowledge",
+            help="Acknowledge that non-dry-run execution mutates the Honua target.",
+        ),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Replace existing output files."),
+    ] = False,
 ) -> None:
     """Run recognized built-in processes, or preview them with ``--dry-run``."""
 
@@ -84,6 +109,8 @@ def run_command(
                 server=server,
                 output=output,
                 dry_run=dry_run,
+                acknowledge=acknowledge,
+                force=force,
             )
         )
     )
@@ -100,11 +127,22 @@ def pyt_command(
         Path | None,
         typer.Option("--evidence", help="Write aggregated parity evidence here."),
     ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Replace existing output files."),
+    ] = False,
 ) -> None:
     """Parse a Python toolbox and classify its geoprocessing calls."""
 
     _finish(
-        _cmd_pyt(argparse.Namespace(path=path, output=output, evidence=evidence))
+        _cmd_pyt(
+            argparse.Namespace(
+                path=path,
+                output=output,
+                evidence=evidence,
+                force=force,
+            )
+        )
     )
 
 
@@ -119,11 +157,22 @@ def atbx_command(
         Path | None,
         typer.Option("--evidence", help="Write aggregated parity evidence here."),
     ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Replace existing output files."),
+    ] = False,
 ) -> None:
     """Parse a clean-room ModelBuilder .atbx toolbox."""
 
     _finish(
-        _cmd_atbx(argparse.Namespace(path=path, output=output, evidence=evidence))
+        _cmd_atbx(
+            argparse.Namespace(
+                path=path,
+                output=output,
+                evidence=evidence,
+                force=force,
+            )
+        )
     )
 
 
@@ -142,6 +191,10 @@ def gpservice_command(
         Path | None,
         typer.Option("--evidence", help="Write aggregated parity evidence here."),
     ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Replace existing output files."),
+    ] = False,
 ) -> None:
     """Classify tasks from an ArcGIS REST GPServer definition."""
 
@@ -152,6 +205,7 @@ def gpservice_command(
                 url=url,
                 output=output,
                 evidence=evidence,
+                force=force,
             )
         )
     )

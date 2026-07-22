@@ -241,7 +241,17 @@ def test_cli_run_executes_via_mock_transport(tmp_path: Path, monkeypatch) -> Non
     sdk_module.HonuaClient = Client
     monkeypatch.setitem(sys.modules, "honua_sdk", sdk_module)
 
-    rc = main(["run", str(script), "--server", "http://example.test", "--output", str(out)])
+    rc = main(
+        [
+            "run",
+            str(script),
+            "--server",
+            "http://example.test",
+            "--output",
+            str(out),
+            "--yes",
+        ]
+    )
 
     assert rc == 0
     result = json.loads(out.read_text())
@@ -254,7 +264,17 @@ def test_cli_run_with_no_job_executable_calls_reports_skips(tmp_path: Path, caps
     script = _write(tmp_path, "manual.py", 'import arcpy\narcpy.analysis.Erase("a", "b", "c")\n')
     out = tmp_path / "run.json"
 
-    rc = main(["run", str(script), "--server", "http://example.test", "--output", str(out)])
+    rc = main(
+        [
+            "run",
+            str(script),
+            "--server",
+            "http://example.test",
+            "--output",
+            str(out),
+            "--yes",
+        ]
+    )
 
     assert rc == 0
     result = json.loads(out.read_text())

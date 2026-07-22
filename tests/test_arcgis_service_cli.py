@@ -1,47 +1,257 @@
 import json
+from pathlib import Path
 
 import pytest
 import responses
 from typer.testing import CliRunner
 
-from honua_migrate.services.arcgis import ArcGisClient, ArcGisMigrationError, arcgis_app
+from honua_migrate.services.arcgis import (
+    API_PREFIX,
+    ArcGisClient,
+    ArcGisMigrationError,
+    arcgis_app,
+)
 
 
 runner = CliRunner()
+HONUA_ENV = {"HONUA_URL": "https://honua.test", "HONUA_API_KEY": "key"}
+SOURCE_URL = "https://arcgis.test/rest/services/Parcels/FeatureServer"
+
+
+def _plan(path: Path, *extra: str):
+    return runner.invoke(
+        arcgis_app,
+        [
+            "plan",
+            SOURCE_URL,
+            "--layer-id",
+            "7",
+            "--table-name",
+            "parcels",
+            "--output",
+            str(path),
+            *extra,
+        ],
+    )
 
 
 @responses.activate
-def test_discover_is_read_only_and_redacts_credentials(tmp_path):
-    responses.add(responses.POST, "https://honua.test/api/v1/admin/import/geoservices/discover", json={"layers": []}, status=200)
+def test_discover_is_read_only_does_not_retry_and_redacts_credentials(tmp_path):
+    responses.add(
+        responses.POST,
+        f"https://honua.test{API_PREFIX}/discover",
+        json={"layers": []},
+        status=503,
+    )
     artifact = tmp_path / "discover.json"
-    result = runner.invoke(arcgis_app, ["discover", "https://arcgis.test/rest/services/X/FeatureServer", "--token-secret-ref", "env:SECRET", "--output", str(artifact)], env={"HONUA_URL": "https://honua.test", "HONUA_API_KEY": "key"})
-    assert result.exit_code == 0, result.output
-    assert responses.calls[0].request.method == "POST"
-    assert "SECRET" not in artifact.read_text()
-    assert json.loads(artifact.read_text())["artifactVersion"].endswith("/v1")
-
-
-def test_plan_is_local_and_apply_requires_acknowledgement(tmp_path):
-    plan = tmp_path / "plan.json"
-    result = runner.invoke(arcgis_app, ["plan", "https://arcgis.test/rest/services/X/FeatureServer", "--layer-id", "0", "--table-name", "parcels", "--output", str(plan)])
-    assert result.exit_code == 0, result.output
-    assert runner.invoke(arcgis_app, ["apply", str(plan)], env={"HONUA_URL": "https://honua.test", "HONUA_API_KEY": "key"}).exit_code != 0
+    result = runner.invoke(
+        arcgis_app,
+        [
+            "discover",
+            SOURCE_URL,
+            "--token-secret-ref",
+            "env:SOURCE_SECRET",
+            "--output",
+            str(artifact),
+        ],
+        env=HONUA_ENV,
+    )
+    assert result.exit_code != 0
+    assert len(responses.calls) == 1
+    assert "SOURCE_SECRET" not in result.output
 
 
 @responses.activate
-def test_start_is_not_retried_but_status_retries():
+def test_apply_injects_runtime_credential_and_round_trips_optional_fields(tmp_path):
+    plan = tmp_path / "plan.json"
+    plan_result = _plan(
+        plan,
+        "--target-schema",
+        "cadastre",
+        "--target-srid",
+        "3857",
+        "--overwrite-existing",
+        "--batch-size",
+        "250",
+        "--max-retries",
+        "5",
+        "--request-timeout-seconds",
+        "90",
+        "--no-auto-publish",
+        "--service-name",
+        "land-records",
+        "--where-clause",
+        "STATUS = 'active'",
+        "--output-fields",
+        "OBJECTID",
+        "--output-fields",
+        "SHAPE",
+    )
+    assert plan_result.exit_code == 0, plan_result.output
+    assert "SOURCE_SECRET" not in plan.read_text(encoding="utf-8")
+
+    responses.add(
+        responses.POST,
+        f"https://honua.test{API_PREFIX}/start",
+        json={
+            "jobId": "job-1",
+            "credentials": {"accessTokenSecretReference": "env:SOURCE_SECRET"},
+        },
+        status=202,
+    )
+    output = tmp_path / "apply.json"
+    apply_result = runner.invoke(
+        arcgis_app,
+        [
+            "apply",
+            str(plan),
+            "--yes",
+            "--token-secret-ref",
+            "env:SOURCE_SECRET",
+            "--output",
+            str(output),
+        ],
+        env=HONUA_ENV,
+    )
+    assert apply_result.exit_code == 0, apply_result.output
+
+    sent = json.loads(responses.calls[0].request.body)
+    assert sent == {
+        "serviceUrl": SOURCE_URL,
+        "layerId": 7,
+        "tableName": "parcels",
+        "targetSchema": "cadastre",
+        "targetSrid": 3857,
+        "overwriteExisting": True,
+        "batchSize": 250,
+        "maxRetries": 5,
+        "requestTimeoutSeconds": 90,
+        "autoPublish": False,
+        "serviceName": "land-records",
+        "whereClause": "STATUS = 'active'",
+        "outputFields": ["OBJECTID", "SHAPE"],
+        "credentials": {
+            "mode": "token",
+            "accessTokenSecretReference": "env:SOURCE_SECRET",
+        },
+    }
+    assert "SOURCE_SECRET" not in plan.read_text(encoding="utf-8")
+    assert "SOURCE_SECRET" not in output.read_text(encoding="utf-8")
+    assert "SOURCE_SECRET" not in apply_result.output
+
+
+def test_artifacts_require_force_to_overwrite(tmp_path):
+    plan = tmp_path / "plan.json"
+    first = _plan(plan)
+    assert first.exit_code == 0, first.output
+    original = plan.read_text(encoding="utf-8")
+
+    refused = _plan(plan, "--target-srid", "3857")
+    assert refused.exit_code != 0
+    assert "--force" in refused.output
+    assert plan.read_text(encoding="utf-8") == original
+
+    replaced = _plan(plan, "--target-srid", "3857", "--force")
+    assert replaced.exit_code == 0, replaced.output
+    assert json.loads(plan.read_text(encoding="utf-8"))["request"]["targetSrid"] == 3857
+
+
+def test_mutations_require_acknowledgement_before_files_env_or_ids(monkeypatch, tmp_path):
+    monkeypatch.delenv("HONUA_URL", raising=False)
+    monkeypatch.delenv("HONUA_API_KEY", raising=False)
+
+    apply_result = runner.invoke(arcgis_app, ["apply", str(tmp_path / "missing.json")])
+    assert apply_result.exit_code != 0
+    assert "Re-run with --yes" in apply_result.output
+    assert "Could not read plan" not in apply_result.output
+    assert "HONUA_URL" not in apply_result.output
+
+    cancel_result = runner.invoke(arcgis_app, ["cancel", "../unsafe"])
+    assert cancel_result.exit_code != 0
+    assert "Re-run with --yes" in cancel_result.output
+    assert "Job ID" not in cancel_result.output
+    assert "HONUA_URL" not in cancel_result.output
+
+
+@responses.activate
+def test_get_retries_but_mutations_do_not_retry():
     client = ArcGisClient("https://honua.test", "key", retries=1, sleeper=lambda _: None)
-    responses.add(responses.POST, "https://honua.test/api/v1/admin/import/geoservices/start", status=503, json={"message": "busy"})
+    responses.add(
+        responses.POST,
+        f"https://honua.test{API_PREFIX}/start",
+        status=503,
+        json={"message": "busy"},
+    )
     with pytest.raises(ArcGisMigrationError):
-        client.start({"serviceUrl": "https://arcgis.test", "layerId": 0, "tableName": "p"})
+        client.start({"serviceUrl": SOURCE_URL, "layerId": 0, "tableName": "p"})
     assert len(responses.calls) == 1
-    responses.add(responses.GET, "https://honua.test/api/v1/admin/import/geoservices/jobs/a1", status=503, json={})
-    responses.add(responses.GET, "https://honua.test/api/v1/admin/import/geoservices/jobs/a1", status=200, json={"status": "Queued"})
+
+    responses.add(
+        responses.POST,
+        f"https://honua.test{API_PREFIX}/jobs/a1/cancel",
+        status=503,
+        json={"message": "busy"},
+    )
+    with pytest.raises(ArcGisMigrationError):
+        client.cancel("a1")
+    assert len(responses.calls) == 2
+
+    responses.add(
+        responses.GET,
+        f"https://honua.test{API_PREFIX}/jobs/a1",
+        status=503,
+        json={},
+    )
+    responses.add(
+        responses.GET,
+        f"https://honua.test{API_PREFIX}/jobs/a1",
+        status=200,
+        json={"status": "Queued"},
+    )
     assert client.status("a1")["status"] == "Queued"
 
 
-def test_refuses_secret_urls_and_unsafe_job_ids():
+@responses.activate
+def test_server_error_body_is_never_exposed():
+    responses.add(
+        responses.GET,
+        f"https://honua.test{API_PREFIX}/jobs/a1",
+        status=400,
+        json={
+            "message": "request contained env:SOURCE_SECRET",
+            "details": {"password": "raw-password"},
+        },
+    )
+    result = runner.invoke(arcgis_app, ["status", "a1"], env=HONUA_ENV)
+    assert result.exit_code != 0
+    assert "HTTP 400" in result.output
+    assert "SOURCE_SECRET" not in result.output
+    assert "raw-password" not in result.output
+    assert "request contained" not in result.output
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://user:secret@honua.test",
+        "https://honua.test?token=secret",
+        "https://honua.test/#fragment",
+        "https://honua.test/%0aHeader:value",
+        "https://honua.test\\@evil.test",
+        "http:///missing-host",
+        "file:///tmp/socket",
+    ],
+)
+def test_refuses_malformed_or_unsafe_urls(url):
     with pytest.raises(ArcGisMigrationError):
-        ArcGisClient.from_options("https://user:secret@honua.test", "key", 30, 2)
-    with pytest.raises(ArcGisMigrationError):
-        ArcGisClient("https://honua.test", "key").status("../secrets")
+        ArcGisClient.from_options(url, "key", 30, 2)
+
+
+@pytest.mark.parametrize("job_id", ["../secrets", "a/b", "https://evil.test", "a?token=x", ""])
+def test_refuses_unsafe_job_ids_before_environment_resolution(monkeypatch, job_id):
+    monkeypatch.delenv("HONUA_URL", raising=False)
+    monkeypatch.delenv("HONUA_API_KEY", raising=False)
+    result = runner.invoke(arcgis_app, ["status", job_id])
+    assert result.exit_code != 0
+    assert "Job ID" in result.output or "Missing argument" in result.output
+    assert "HONUA_URL" not in result.output

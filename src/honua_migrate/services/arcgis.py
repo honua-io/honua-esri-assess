@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,14 +35,33 @@ class ArcGisMigrationError(RuntimeError):
 
 
 def _safe_url(value: str, *, allow_relative: bool = False) -> str:
+    lower_value = value.lower()
+    if (
+        not value
+        or any(char.isspace() or char == "\\" for char in value)
+        or any(encoded in lower_value for encoded in ("%00", "%0a", "%0d"))
+    ):
+        raise ArcGisMigrationError("URLs must not be blank or contain whitespace controls.")
     parsed = urlsplit(value)
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ArcGisMigrationError("URLs must not contain credentials, query strings, or fragments.")
     if allow_relative:
-        if parsed.scheme or parsed.netloc or not parsed.path.startswith("/"):
+        if (
+            parsed.scheme
+            or parsed.netloc
+            or not parsed.path.startswith("/")
+            or ".." in parsed.path.split("/")
+        ):
             raise ArcGisMigrationError("Server paths must be absolute paths.")
-    elif parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ArcGisMigrationError("HONUA_URL and service URLs must be absolute HTTP(S) URLs.")
+    else:
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise ArcGisMigrationError("URL port is invalid.") from exc
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or port == 0:
+            raise ArcGisMigrationError(
+                "HONUA_URL and service URLs must be absolute HTTP(S) URLs."
+            )
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
 
 
@@ -62,19 +83,40 @@ def _redact(value: Any) -> Any:
     return value
 
 
-def _write_json(path: Path, data: Mapping[str, Any]) -> None:
-    if path.exists():
-        raise ArcGisMigrationError(f"Refusing to overwrite existing artifact: {path}")
+def _write_json(path: Path, data: Mapping[str, Any], *, force: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.tmp")
+    temporary: Path | None = None
     try:
-        temporary.write_text(
-            json.dumps(_redact(data), indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
-        temporary.replace(path)
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(json.dumps(_redact(data), indent=2, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        if force:
+            os.replace(temporary, path)
+            temporary = None
+        else:
+            # Creating the hard link is atomic and fails if the destination exists.
+            os.link(temporary, path)
+            temporary.unlink()
+            temporary = None
+    except FileExistsError as exc:
+        raise ArcGisMigrationError(
+            f"Refusing to overwrite existing artifact: {path}; use --force."
+        ) from exc
     except OSError as exc:
-        temporary.unlink(missing_ok=True)
         raise ArcGisMigrationError(f"Could not write artifact: {exc}") from exc
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _read_artifact(path: Path) -> dict[str, Any]:
@@ -125,7 +167,8 @@ class ArcGisClient:
         retry: bool = False,
     ) -> dict[str, Any]:
         safe_path = _safe_url(path, allow_relative=True)
-        attempts = self.retries + 1 if retry else 1
+        # Retrying a POST could duplicate an import or repeat a cancellation.
+        attempts = self.retries + 1 if retry and method.upper() == "GET" else 1
         response: Any = None
         for attempt in range(attempts):
             try:
@@ -156,7 +199,7 @@ class ArcGisClient:
         return body if isinstance(body, dict) else {"result": body}
 
     def discover(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        return self.request("POST", f"{API_PREFIX}/discover", payload=request, retry=True)
+        return self.request("POST", f"{API_PREFIX}/discover", payload=request)
 
     def start(self, request: Mapping[str, Any]) -> dict[str, Any]:
         # Deliberately not retried: replaying a start could enqueue a duplicate import.
@@ -169,11 +212,11 @@ class ArcGisClient:
         return self.request("GET", f"{API_PREFIX}/jobs", retry=True)
 
     def cancel(self, job_id: str) -> dict[str, Any]:
-        return self.request("POST", f"{API_PREFIX}/jobs/{_job_id(job_id)}/cancel", retry=True)
+        return self.request("POST", f"{API_PREFIX}/jobs/{_job_id(job_id)}/cancel")
 
 
 def _job_id(job_id: str) -> str:
-    if not job_id or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for char in job_id):
+    if re.fullmatch(r"[A-Za-z0-9_-]+", job_id) is None:
         raise ArcGisMigrationError("Job ID may contain only letters, numbers, hyphens, and underscores.")
     return job_id
 
@@ -185,9 +228,9 @@ def _request(service_url: str, timeout_seconds: int, token_secret_ref: str | Non
     return request
 
 
-def _emit(data: Mapping[str, Any], output: Path | None) -> None:
+def _emit(data: Mapping[str, Any], output: Path | None, *, force: bool = False) -> None:
     if output:
-        _write_json(output, data)
+        _write_json(output, data, force=force)
     typer.echo(json.dumps(_redact(data), sort_keys=True))
 
 
@@ -195,6 +238,7 @@ def _emit(data: Mapping[str, Any], output: Path | None) -> None:
 def discover_command(
     service_url: str = typer.Argument(..., help="ArcGIS FeatureServer or MapServer root URL."),
     output: Path | None = typer.Option(None, "--output", help="Write a versioned discovery artifact."),
+    force: bool = typer.Option(False, "--force", help="Replace an existing output artifact."),
     honua_url: str | None = typer.Option(None, envvar="HONUA_URL"),
     api_key: str | None = typer.Option(None, envvar="HONUA_API_KEY", hide_input=True),
     timeout_seconds: int = typer.Option(30, min=1, max=600),
@@ -206,7 +250,7 @@ def discover_command(
         request = _request(service_url, timeout_seconds, token_secret_ref)
         client = ArcGisClient.from_options(honua_url, api_key, timeout_seconds, retries)
         artifact = {"artifactVersion": ARTIFACT_VERSION, "kind": "discovery", "request": request, "discovery": client.discover(request)}
-        _emit(artifact, output)
+        _emit(artifact, output, force=force)
     except ArcGisMigrationError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
@@ -217,6 +261,7 @@ def plan_command(
     layer_id: int = typer.Option(..., "--layer-id"),
     table_name: str = typer.Option(..., "--table-name"),
     output: Path = typer.Option(..., "--output", help="Path for the versioned plan artifact."),
+    force: bool = typer.Option(False, "--force", help="Replace an existing plan artifact."),
     target_schema: str | None = typer.Option(None),
     target_srid: int = typer.Option(4326, min=1),
     overwrite_existing: bool = typer.Option(False),
@@ -230,13 +275,13 @@ def plan_command(
 ) -> None:
     """Create a local, machine-readable apply plan without mutating either system."""
     try:
-        request = _request(service_url, request_timeout_seconds, None)
+        request: dict[str, Any] = {"serviceUrl": _safe_url(service_url)}
         request.update({"layerId": layer_id, "tableName": table_name, "targetSrid": target_srid, "overwriteExisting": overwrite_existing, "maxRetries": max_retries, "requestTimeoutSeconds": request_timeout_seconds, "autoPublish": auto_publish})
         for key, value in {"targetSchema": target_schema, "batchSize": batch_size, "serviceName": service_name, "whereClause": where_clause, "outputFields": output_fields}.items():
             if value is not None:
                 request[key] = value
         artifact = {"artifactVersion": ARTIFACT_VERSION, "kind": "plan", "request": request}
-        _emit(artifact, output)
+        _emit(artifact, output, force=force)
     except ArcGisMigrationError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
@@ -250,6 +295,7 @@ def _apply(
     timeout_seconds: float,
     retries: int,
     token_secret_ref: str | None,
+    force: bool,
 ) -> None:
     if not yes:
         raise typer.BadParameter("Apply mutates the Honua target. Re-run with --yes.")
@@ -261,7 +307,7 @@ def _apply(
         }
     response = ArcGisClient.from_options(honua_url, api_key, timeout_seconds, retries).start(request)
     artifact = {"artifactVersion": ARTIFACT_VERSION, "kind": "apply", "plan": str(plan), "response": response}
-    _emit(artifact, output)
+    _emit(artifact, output, force=force)
 
 
 @arcgis_app.command("apply")
@@ -269,6 +315,7 @@ def apply_command(
     plan: Path = typer.Argument(...),
     yes: bool = typer.Option(False, "--yes", help="Acknowledge target mutation."),
     output: Path | None = typer.Option(None, "--output"),
+    force: bool = typer.Option(False, "--force", help="Replace an existing output artifact."),
     honua_url: str | None = typer.Option(None, envvar="HONUA_URL"),
     api_key: str | None = typer.Option(None, envvar="HONUA_API_KEY", hide_input=True),
     timeout_seconds: float = typer.Option(30, min=1), retries: int = typer.Option(2, min=0, max=5),
@@ -278,28 +325,59 @@ def apply_command(
 ) -> None:
     """Queue an import from a previously reviewed plan."""
     try:
-        _apply(plan, output, yes, honua_url, api_key, timeout_seconds, retries, token_secret_ref)
+        _apply(
+            plan,
+            output,
+            yes,
+            honua_url,
+            api_key,
+            timeout_seconds,
+            retries,
+            token_secret_ref,
+            force,
+        )
     except ArcGisMigrationError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
 
-def _job_command(action: str, job_id: str | None, output: Path | None, honua_url: str | None, api_key: str | None, timeout_seconds: float, retries: int) -> None:
+def _job_command(
+    action: str,
+    job_id: str | None,
+    output: Path | None,
+    honua_url: str | None,
+    api_key: str | None,
+    timeout_seconds: float,
+    retries: int,
+    force: bool,
+) -> None:
+    validated_job_id = None if action == "list" else _job_id(job_id or "")
     client = ArcGisClient.from_options(honua_url, api_key, timeout_seconds, retries)
-    response = client.list() if action == "list" else getattr(client, action)(_job_id(job_id or ""))
-    _emit({"artifactVersion": ARTIFACT_VERSION, "kind": action, "response": response}, output)
+    response = (
+        client.list()
+        if action == "list"
+        else getattr(client, action)(validated_job_id)
+    )
+    _emit(
+        {"artifactVersion": ARTIFACT_VERSION, "kind": action, "response": response},
+        output,
+        force=force,
+    )
 
 
 @arcgis_app.command("status")
 def status_command(
     job_id: str = typer.Argument(...),
     output: Path | None = typer.Option(None, "--output"),
+    force: bool = typer.Option(False, "--force", help="Replace an existing output artifact."),
     honua_url: str | None = typer.Option(None, envvar="HONUA_URL"),
     api_key: str | None = typer.Option(None, envvar="HONUA_API_KEY", hide_input=True),
     timeout_seconds: float = typer.Option(30, min=1),
     retries: int = typer.Option(2, min=0, max=5),
 ) -> None:
     try:
-        _job_command("status", job_id, output, honua_url, api_key, timeout_seconds, retries)
+        _job_command(
+            "status", job_id, output, honua_url, api_key, timeout_seconds, retries, force
+        )
     except ArcGisMigrationError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
@@ -307,13 +385,16 @@ def status_command(
 @arcgis_app.command("list")
 def list_command(
     output: Path | None = typer.Option(None, "--output"),
+    force: bool = typer.Option(False, "--force", help="Replace an existing output artifact."),
     honua_url: str | None = typer.Option(None, envvar="HONUA_URL"),
     api_key: str | None = typer.Option(None, envvar="HONUA_API_KEY", hide_input=True),
     timeout_seconds: float = typer.Option(30, min=1),
     retries: int = typer.Option(2, min=0, max=5),
 ) -> None:
     try:
-        _job_command("list", None, output, honua_url, api_key, timeout_seconds, retries)
+        _job_command(
+            "list", None, output, honua_url, api_key, timeout_seconds, retries, force
+        )
     except ArcGisMigrationError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
@@ -323,6 +404,7 @@ def cancel_command(
     job_id: str = typer.Argument(...),
     yes: bool = typer.Option(False, "--yes", help="Acknowledge cancellation."),
     output: Path | None = typer.Option(None, "--output"),
+    force: bool = typer.Option(False, "--force", help="Replace an existing output artifact."),
     honua_url: str | None = typer.Option(None, envvar="HONUA_URL"),
     api_key: str | None = typer.Option(None, envvar="HONUA_API_KEY", hide_input=True),
     timeout_seconds: float = typer.Option(30, min=1),
@@ -331,6 +413,8 @@ def cancel_command(
     try:
         if not yes:
             raise ArcGisMigrationError("Cancel mutates target job state. Re-run with --yes.")
-        _job_command("cancel", job_id, output, honua_url, api_key, timeout_seconds, retries)
+        _job_command(
+            "cancel", job_id, output, honua_url, api_key, timeout_seconds, retries, force
+        )
     except ArcGisMigrationError as exc:
         raise typer.BadParameter(str(exc)) from exc

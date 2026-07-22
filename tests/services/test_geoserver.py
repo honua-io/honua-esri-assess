@@ -9,12 +9,12 @@ import requests
 from click import unstyle
 from typer.testing import CliRunner
 
+from honua_migrate import plan_digest
 from honua_migrate.services.geoserver import (
     HonuaMigrationClient,
     MigrationError,
     _classify_apply_plan,
     _load_completed_plan,
-    _plan_digest,
     geoserver_app,
     redact_artifact,
     resolve_secret_reference,
@@ -76,7 +76,7 @@ def _plan_payload(*, status: str = "completed") -> dict[str, Any]:
             }
         ],
     }
-    payload["plan_digest"] = _plan_digest(payload)
+    payload["plan_digest"] = plan_digest(payload)
     return payload
 
 
@@ -313,7 +313,7 @@ def test_plan_polls_to_completion_and_omits_credentials(
     unsigned = {
         key: value for key, value in artifact.items() if key != "plan_digest"
     }
-    assert artifact["plan_digest"] == _plan_digest(unsigned)
+    assert artifact["plan_digest"] == plan_digest(unsigned)
     assert started["importStyles"] is True
     assert started["overwriteExisting"] is True
     assert started["targetSrid"] == 4326
@@ -536,7 +536,7 @@ def test_apply_preserves_digest_bound_controls_and_adds_fresh_reference(
     unsigned = {
         key: value for key, value in payload.items() if key != "plan_digest"
     }
-    payload["plan_digest"] = _plan_digest(unsigned)
+    payload["plan_digest"] = plan_digest(unsigned)
     plan = tmp_path / "plan.json"
     _write_plan(plan, payload)
     started: dict[str, Any] = {}

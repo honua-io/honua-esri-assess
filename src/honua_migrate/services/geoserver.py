@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import hashlib
-import hmac
 import os
 import re
 import time
@@ -16,6 +14,8 @@ from urllib.parse import urlsplit
 import requests
 import typer
 
+from honua_migrate.contract_validation import validate_contract
+from honua_migrate.contracts import MigrationError, MigrationPlan
 from honua_esri_assess.diagnostics import redact
 from honua_esri_assess.output_io import (
     OutputExistsError,
@@ -44,10 +44,6 @@ _UNSUPPORTED_BEHAVIORS = {
     "log-warning": 1,
     "fail-import": 2,
 }
-
-
-class MigrationError(Exception):
-    """A safe, operator-facing migration failure."""
 
 
 def resolve_secret_reference(reference: str) -> str:
@@ -363,19 +359,6 @@ def _classify_apply_plan(value: Any) -> dict[str, list[Any]]:
     return grouped
 
 
-def _plan_digest(payload: Mapping[str, Any]) -> str:
-    """Return the shared-contract canonical SHA-256 plan digest."""
-    if _contains_credential_field(payload):
-        raise MigrationError("Plan identity cannot include credential fields.")
-    canonical = json.dumps(
-        payload,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return "sha256:" + hashlib.sha256(canonical).hexdigest()
-
-
 def _unsupported_behavior(value: str, *, label: str) -> int:
     try:
         return _UNSUPPORTED_BEHAVIORS[value]
@@ -508,17 +491,6 @@ def _plan_request_without_credentials(
     }
 
 
-def _contains_credential_field(value: Any) -> bool:
-    if isinstance(value, Mapping):
-        return any(
-            _SECRET_KEY.search(str(key)) or _contains_credential_field(item)
-            for key, item in value.items()
-        )
-    if isinstance(value, list):
-        return any(_contains_credential_field(item) for item in value)
-    return False
-
-
 def _load_completed_plan(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -526,10 +498,11 @@ def _load_completed_plan(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
         raise MigrationError(
             "Plan must be a completed GeoServer dry-run artifact."
         ) from exc
-    if not isinstance(payload, dict) or _contains_credential_field(payload):
+    if not isinstance(payload, dict):
         raise MigrationError(
             "Plan must be a completed GeoServer dry-run artifact."
         )
+    validate_contract("plan", payload)
     actions = payload.get("actions")
     action = actions[0] if isinstance(actions, list) and len(actions) == 1 else None
     request = action.get("request") if isinstance(action, dict) else None
@@ -550,11 +523,12 @@ def _load_completed_plan(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
         raise MigrationError(
             "Plan must be a completed GeoServer dry-run artifact."
         )
-    digest = payload.get("plan_digest")
-    unsigned = {key: value for key, value in payload.items() if key != "plan_digest"}
-    if not isinstance(digest, str) or not hmac.compare_digest(
-        digest, _plan_digest(unsigned)
-    ):
+    contract = MigrationPlan(
+        id=str(payload["id"]),
+        service=str(payload["service"]),
+        actions=tuple(payload["actions"]),
+    )
+    if not contract.verify(payload):
         raise MigrationError("Plan digest does not match its contents.")
     job_id = job.get("jobId")
     if not isinstance(job_id, str):
@@ -722,29 +696,26 @@ def plan_command(
         poll_interval=poll_interval,
     )
     plan_request = _plan_request_without_credentials(request)
-    artifact: dict[str, Any] = {
-        "contract_version": "v1",
-        "id": f"geoserver-plan-{job_id}",
-        "service": "geoserver",
-        "safety_mode": "plan",
-        "actions": [
-            {
-                "kind": "geoserver-import",
-                "request": plan_request,
-                "dry_run_job": {
-                    "jobId": job_id,
-                    "status": "completed",
-                    "completedAt": completed["completedAt"],
-                },
-                "result": _safe_completed_result(completed),
-            }
-        ],
+    action: dict[str, Any] = {
+        "kind": "geoserver-import",
+        "request": plan_request,
+        "dry_run_job": {
+            "jobId": job_id,
+            "status": "completed",
+            "completedAt": completed["completedAt"],
+        },
+        "result": _safe_completed_result(completed),
     }
-    safe_artifact = redact_artifact(artifact)
-    if not isinstance(safe_artifact, dict):
+    safe_action = redact_artifact(action)
+    if not isinstance(safe_action, dict):
         raise MigrationError("Could not produce a credential-free plan artifact.")
-    safe_artifact["plan_digest"] = _plan_digest(safe_artifact)
-    _emit(safe_artifact, output, force)
+    artifact = MigrationPlan(
+        id=f"geoserver-plan-{job_id}",
+        service="geoserver",
+        actions=(safe_action,),
+    ).to_dict()
+    validate_contract("plan", artifact)
+    _emit(artifact, output, force)
 
 
 @geoserver_app.command("apply")

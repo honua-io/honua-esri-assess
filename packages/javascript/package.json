@@ -1,8 +1,17 @@
 {
   "name": "@honua/honua-migrate",
-  "version": "0.1.0",
+  "version": "0.1.3-beta.0",
   "description": "ArcGIS-to-Honua migration scanner, AST codemod, content, reconciliation, and reporting engine.",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/honua-io/honua-migrate.git",
+    "directory": "packages/javascript"
+  },
+  "homepage": "https://github.com/honua-io/honua-migrate#readme",
+  "bugs": {
+    "url": "https://github.com/honua-io/honua-migrate/issues"
+  },
   "type": "module",
   "bin": { "honua-js-migrate": "./dist/migration/cli.js" },
   "exports": {

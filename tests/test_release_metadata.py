@@ -56,7 +56,12 @@ def test_release_please_manifest_matches_project_version() -> None:
         (REPO_ROOT / ".release-please-manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["."] == _pyproject()["project"]["version"]
-    assert manifest["packages/javascript"] == "0.0.0"
+    javascript_package = json.loads(
+        (REPO_ROOT / "packages" / "javascript" / "package.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert manifest["packages/javascript"] == javascript_package["version"]
     assert manifest["packages/maui"] == "0.0.0"
 
 
@@ -139,6 +144,13 @@ def test_runtime_release_tags_follow_checked_out_package_state(monkeypatch) -> N
     assert module.main(
         [f"javascript-v{javascript_version}", "--package", "javascript"]
     ) == (0 if javascript_present else 1)
+    if javascript_present:
+        assert (
+            module.main(
+                ["javascript-v0.1.2-beta.0", "--package", "javascript"]
+            )
+            == 1
+        )
 
     maui_present = any((REPO_ROOT / "packages/maui").rglob("*.csproj"))
     maui_version = module.maui_version() if maui_present else "0.1.0"

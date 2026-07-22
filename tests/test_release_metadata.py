@@ -71,7 +71,15 @@ def test_release_please_config_uses_component_tags() -> None:
     assert package["tag-separator"] == "-"
     assert package["include-component-in-tag"] is True
     assert package["bump-minor-pre-major"] is True
-    assert config["packages"]["packages/javascript"]["release-type"] == "simple"
+    javascript_release_type = (
+        "node"
+        if (REPO_ROOT / "packages/javascript/package.json").is_file()
+        else "simple"
+    )
+    assert (
+        config["packages"]["packages/javascript"]["release-type"]
+        == javascript_release_type
+    )
     assert config["packages"]["packages/javascript"]["component"] == "javascript"
     assert config["packages"]["packages/maui"]["release-type"] == "simple"
     assert config["packages"]["packages/maui"]["component"] == "maui"

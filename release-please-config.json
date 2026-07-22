@@ -23,7 +23,14 @@
       "component": "maui",
       "tag-separator": "-",
       "include-component-in-tag": true,
-      "bump-minor-pre-major": true
+      "bump-minor-pre-major": true,
+      "extra-files": [
+        {
+          "type": "xml",
+          "path": "packages/maui/cli/Honua.Migrate.Maui.Cli.csproj",
+          "xpath": "//Project/PropertyGroup/Version"
+        }
+      ]
     }
   }
 }

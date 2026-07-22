@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/honua-io/honua-sdk-js",
+    "ref": "origin/trunk",
+    "commit": "842ecf17c2effa86c0d4a931a71233ed713bae13",
+    "retrievedAt": "2026-07-22T17:04:02Z",
+    "license": "Apache-2.0",
+    "sourcePaths": [
+      "src/migration/scanner.ts", "src/migration/widget-scanner.ts",
+      "src/migration/codemod.ts", "src/migration/parity-matrix.ts",
+      "src/migration/runtime-matrix.ts", "src/migration/content.ts",
+      "src/migration/reconcile.ts", "src/migration/cli.ts"
+    ]
+  },
+  "extracted": ["scan", "widgets", "codemod", "matrix", "runtime-matrix", "content-webmap", "reconcile-plan"],
+  "publicSdkDependencies": [],
+  "blockedInternalDependencies": [
+    { "feature": "full MapLibre WebMap conversion", "source": "src/map/webmap-maplibre.ts", "requiredPublicExport": "@honua/sdk-js/map" },
+    { "feature": "portal content export/import", "source": "src/migration/content.ts", "requiredPublicExport": "@honua/sdk-js/webmap and target admin client" },
+    { "feature": "live layer reconciliation", "source": "src/migration/reconcile.ts", "requiredPublicExport": "service query client" },
+    { "feature": "migration demo/import jobs", "source": "src/migration/demo.ts", "requiredPublicExport": "target admin client" }
+  ],
+  "safety": { "default": "read-only", "codemodWrite": "requires --write", "networkOperations": "not included in this extraction" }
+}

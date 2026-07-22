@@ -1,0 +1,18 @@
+{
+  "name": "@honua/honua-migrate",
+  "version": "0.1.0",
+  "description": "Standalone JavaScript migration scanner, widget readiness reporter, and conservative ArcGIS codemod.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": { "honua-migrate": "./dist/cli.js" },
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist", "DEPENDENCY_PROVENANCE.json", "LICENSE"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
+  },
+  "engines": { "node": ">=20" },
+  "devDependencies": { "@types/node": "^24.3.1", "typescript": "^5.9.2", "vitest": "^4.0.16" }
+}

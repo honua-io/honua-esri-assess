@@ -152,7 +152,7 @@ describe("migration content workflow", () => {
     expect(reconcile.summary.webMapsFailed).toBe(0);
   });
 
-  it("redacts tokens from migration content error messages", async () => {
+  it("omits remote bodies from migration content error messages", async () => {
     const portalUrl = "https://org.maps.arcgis.com";
     const token = "super-secret-token";
     const fetchFn: typeof fetch = (async () =>
@@ -175,7 +175,7 @@ describe("migration content workflow", () => {
         token,
         fetchFn,
       }),
-    ).rejects.toThrow("[REDACTED]");
+    ).rejects.toThrow("ArcGIS request failed with HTTP status 500.");
 
     await expect(
       runContentScan({

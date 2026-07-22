@@ -11,7 +11,6 @@ const DEFAULT_PORTAL_PAGE_SIZE = 100;
 const DEFAULT_LAYER_QUERY_PAGE_SIZE = 2_000;
 const DEFAULT_IMPORT_TIMEOUT_MS = 10 * 60 * 1_000;
 const DEFAULT_IMPORT_POLL_INTERVAL_MS = 2_000;
-const REDACTED_SECRET = "[REDACTED]";
 
 const MANUAL_INTERVENTION_WARNING_CODES = new Set([
   "unsupported-renderer",
@@ -1141,15 +1140,12 @@ async function fetchJson(fetchFn: typeof fetch, url: string): Promise<unknown> {
   }
 
   if (!response.ok) {
-    throw new Error(
-      `HTTP ${response.status} for ${redactSensitiveUrl(url)}: ${redactSensitiveText(text).slice(0, 300)}`,
-    );
+    throw new Error(`ArcGIS request failed with HTTP status ${response.status}.`);
   }
 
   if (isRecord(body) && isRecord(body.error)) {
     const code = readOptionalNumber(body.error, "code");
-    const message = redactSensitiveText(readOptionalString(body.error, "message") ?? "ArcGIS error");
-    throw new Error(`ArcGIS error${code ? ` ${code}` : ""}: ${message}`);
+    throw new Error(`ArcGIS returned an error response${code ? ` with code ${code}` : ""}.`);
   }
 
   return body;
@@ -1175,19 +1171,6 @@ function normalizeBaseUrl(baseUrl: string): string {
   return trimTrailingSlashes(baseUrl);
 }
 
-function redactSensitiveUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    parsed.username = parsed.username ? REDACTED_SECRET : "";
-    parsed.password = parsed.password ? REDACTED_SECRET : "";
-    parsed.search = "";
-    parsed.hash = "";
-    return parsed.toString();
-  } catch {
-    return redactSensitiveText(url);
-  }
-}
-
 function sanitizeUrlForPersistence(url: string): string | undefined {
   try {
     const parsed = new URL(url);
@@ -1199,13 +1182,6 @@ function sanitizeUrlForPersistence(url: string): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function redactSensitiveText(value: string): string {
-  return value
-    .replace(/([?&](?:token|api[_-]?key|access[_-]?token|auth[_-]?token)=)[^&#\s]*/gi, `$1${REDACTED_SECRET}`)
-    .replace(/("(?:token|api[_-]?key|access[_-]?token|auth[_-]?token)"\s*:\s*")([^"]*)(")/gi, `$1${REDACTED_SECRET}$3`)
-    .replace(/((?:token|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[=:]\s*)([^,\s]+)/gi, `$1${REDACTED_SECRET}`);
 }
 
 function buildUrl(base: string, params: Record<string, string>): string {

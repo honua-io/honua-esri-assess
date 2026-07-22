@@ -28,7 +28,7 @@ describe("migration artifact safety", () => {
     });
 
     expect(sanitized).toEqual({
-      headers: ["Authorization: Bearer [REDACTED]"],
+      headers: ["Authorization: [REDACTED]"],
       nested: { note: "uses Bearer [REDACTED]; for authentication" },
     });
   });

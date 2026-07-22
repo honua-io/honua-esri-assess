@@ -87,6 +87,9 @@ describe("migration demo helpers", () => {
             currentPhase: "Done",
             featuresProcessed: 42,
             estimatedTotalFeatures: 42,
+            errorMessage: "password=completed-job-secret",
+            startedAt: "password=completed-start-secret",
+            completedAt: "2026-07-22T00:00:00Z\ntoken=completed-end-secret",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
@@ -110,6 +113,11 @@ describe("migration demo helpers", () => {
     expect(result.status).toBe("Completed");
     expect(result.pollCount).toBe(2);
     expect(result.featuresProcessed).toBe(42);
+    expect(result).not.toHaveProperty("errorMessage");
+    expect(result.startedAt).toBeUndefined();
+    expect(result.completedAt).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain("completed-start-secret");
+    expect(JSON.stringify(result)).not.toContain("completed-end-secret");
 
     const startRequest = requests.find((request) => request.url.endsWith("/start"));
     expect(startRequest?.method).toBe("POST");
@@ -152,7 +160,7 @@ describe("migration demo helpers", () => {
         timeoutMs: 5_000,
         fetchFn,
       }),
-    ).rejects.toThrow("Import job status URL must stay on http://127.0.0.1:5050");
+    ).rejects.toThrow("Import job status URL must stay on the configured admin origin.");
 
     expect(requests).toHaveLength(1);
     expect(requests[0]?.headers["x-api-key"]).toBe("demo-key");
@@ -194,7 +202,7 @@ describe("migration demo helpers", () => {
         timeoutMs: 5_000,
         fetchFn,
       }),
-    ).rejects.toThrow("Import job status URL must stay under /api/v1/admin/import/geoservices/");
+    ).rejects.toThrow("Import job status URL must stay under the geoservices import API path.");
 
     expect(requests).toHaveLength(1);
     expect(requests[0]?.headers["x-api-key"]).toBe("demo-key");
@@ -235,18 +243,21 @@ describe("migration demo helpers", () => {
         timeoutMs: 5_000,
         fetchFn,
       }),
-    ).rejects.toThrow("Import job status URL must stay under /api/v1/admin/import/geoservices/");
+    ).rejects.toThrow("Import job status URL must stay under the geoservices import API path.");
 
     expect(requests).toHaveLength(1);
     expect(requests[0]?.headers["x-api-key"]).toBe("demo-key");
   });
 
-  it("redacts API keys from migration demo error messages", async () => {
+  it("does not expose remote error bodies in migration demo errors", async () => {
     const apiKey = "demo-key-secret";
+    const password = "remote-password-value";
+    const bearer = "remote-bearer-value";
     const fetchFn: typeof fetch = (async () =>
       new Response(
         JSON.stringify({
-          error: `apiKey=${apiKey} is invalid`,
+          password,
+          authorization: `Bearer ${bearer}`,
         }),
         {
           status: 500,
@@ -263,7 +274,7 @@ describe("migration demo helpers", () => {
         tableName: "incidents",
         fetchFn,
       }),
-    ).rejects.toThrow("[REDACTED]");
+    ).rejects.toThrow("Import request failed with HTTP status 500.");
 
     await expect(
       runGeoservicesImportJob({
@@ -275,6 +286,59 @@ describe("migration demo helpers", () => {
         fetchFn,
       }),
     ).rejects.not.toThrow(apiKey);
+    await expect(
+      runGeoservicesImportJob({
+        adminBaseUrl: "http://127.0.0.1:5050",
+        adminApiKey: apiKey,
+        sourceServiceUrl: "https://arcgis.example/rest/services/incidents/FeatureServer",
+        layerId: 0,
+        tableName: "incidents",
+        fetchFn,
+      }),
+    ).rejects.not.toThrow(password);
+    await expect(
+      runGeoservicesImportJob({
+        adminBaseUrl: "http://127.0.0.1:5050",
+        adminApiKey: apiKey,
+        sourceServiceUrl: "https://arcgis.example/rest/services/incidents/FeatureServer",
+        layerId: 0,
+        tableName: "incidents",
+        fetchFn,
+      }),
+    ).rejects.not.toThrow(bearer);
+  });
+
+  it("rejects unsafe remote job identifiers before constructing a status URL", async () => {
+    const maliciousJobId = "job?token=job-secret\nterminal-injection";
+    const requests: string[] = [];
+    const fetchFn: typeof fetch = (async (input) => {
+      requests.push(String(input));
+      return new Response(JSON.stringify({ jobId: maliciousJobId }), {
+        status: 202,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    await expect(
+      runGeoservicesImportJob({
+        adminBaseUrl: "http://127.0.0.1:5050",
+        sourceServiceUrl: "https://arcgis.example/rest/services/incidents/FeatureServer",
+        layerId: 0,
+        tableName: "incidents",
+        fetchFn,
+      }),
+    ).rejects.toThrow("Import start response contained an invalid job identifier.");
+
+    await expect(
+      runGeoservicesImportJob({
+        adminBaseUrl: "http://127.0.0.1:5050",
+        sourceServiceUrl: "https://arcgis.example/rest/services/incidents/FeatureServer",
+        layerId: 0,
+        tableName: "incidents",
+        fetchFn,
+      }),
+    ).rejects.not.toThrow("job-secret");
+    expect(requests).toHaveLength(2);
   });
 
   it("runs migration demo codemod stage and writes fixture output", async () => {

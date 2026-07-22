@@ -12,6 +12,14 @@ let server: http.Server | undefined;
 let portalUrl = "";
 let failWebMapData = false;
 const requestMethods: string[] = [];
+const remoteErrorSecrets = [
+  "remote-password-value",
+  "remote-passwd-value",
+  "remote-secret-value",
+  "remote-authorization-value",
+  "remote-credential-value",
+  "remote-bearer-value",
+];
 
 const tempDirs: string[] = [];
 
@@ -75,7 +83,18 @@ beforeAll(async () => {
 
     if (url.pathname.endsWith("/sharing/rest/content/items/wm-1/data")) {
       if (failWebMapData) {
-        json(res, { error: { message: "injected export failure" } }, 500);
+        json(
+          res,
+          {
+            password: remoteErrorSecrets[0],
+            passwd: remoteErrorSecrets[1],
+            secret: remoteErrorSecrets[2],
+            authorization: remoteErrorSecrets[3],
+            credential: remoteErrorSecrets[4],
+            header: `Bearer ${remoteErrorSecrets[5]}`,
+          },
+          500,
+        );
         return;
       }
       json(res, {
@@ -303,6 +322,9 @@ describe("migration cli content", () => {
     expect(fs.readFileSync(sentinelPath, "utf8")).toBe("preserve-me\n");
     expect(fs.readFileSync(manifestPath, "utf8")).toBe("old-manifest\n");
     expect(fs.readdirSync(root).filter((entry) => entry.includes(".honua-"))).toEqual([]);
+    for (const secret of remoteErrorSecrets) {
+      expect(`${result.stdout}\n${result.stderr}`).not.toContain(secret);
+    }
   });
 
   it("runs local content reconciliation without acknowledgement or network access", async () => {

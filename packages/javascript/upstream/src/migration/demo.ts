@@ -24,9 +24,9 @@ const IMPORT_STATUS_BY_ENUM_VALUE = new Map<number, string>([
 ]);
 
 const TERMINAL_IMPORT_STATUSES = new Set(["Completed", "Failed", "Cancelled"]);
+const KNOWN_IMPORT_STATUSES = new Set(IMPORT_STATUS_BY_ENUM_VALUE.values());
 const DEFAULT_IMPORT_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_IMPORT_POLL_INTERVAL_MS = 2_000;
-const REDACTED_SECRET = "[REDACTED]";
 
 export interface ParsedGeoservicesServiceUrl {
   baseUrl: string;
@@ -205,7 +205,7 @@ export async function runGeoservicesImportJob(
     body: JSON.stringify(startPayload),
   });
   const startRecord = asRecord(startResponse, "Import start response");
-  const jobId = readRequiredString(startRecord, "jobId");
+  const jobId = readSafeJobId(startRecord);
   const statusUrl = resolveJobStatusUrl(importApiBase, readOptionalString(startRecord, "statusUrl"), jobId);
 
   const deadline = Date.now() + timeoutMs;
@@ -238,13 +238,10 @@ export async function runGeoservicesImportJob(
   }
 
   const status = normalizeImportStatus(latestProgress.status);
-  const currentPhase = readOptionalString(latestProgress, "currentPhase");
-  const errorMessage = readOptionalString(latestProgress, "errorMessage");
+  const currentPhase = readOptionalSafeDisplayString(latestProgress, "currentPhase");
 
   if (status !== "Completed") {
-    throw new Error(
-      `Import job ${jobId} ended with status ${status}${errorMessage ? `: ${redactSensitiveText(errorMessage)}` : ""}`,
-    );
+    throw new Error(`Import job ${jobId} ended with status ${status}.`);
   }
 
   return {
@@ -255,10 +252,9 @@ export async function runGeoservicesImportJob(
     currentPhase,
     featuresProcessed: readOptionalNumber(latestProgress, "featuresProcessed"),
     estimatedTotalFeatures: readOptionalNumber(latestProgress, "estimatedTotalFeatures"),
-    startedAt: readOptionalString(latestProgress, "startedAt"),
-    completedAt: readOptionalString(latestProgress, "completedAt"),
+    startedAt: readOptionalIsoTimestamp(latestProgress, "startedAt"),
+    completedAt: readOptionalIsoTimestamp(latestProgress, "completedAt"),
     durationMs: readOptionalNumber(latestProgress, "durationMs"),
-    errorMessage,
   };
 }
 
@@ -328,8 +324,7 @@ async function fetchJson(fetchFn: typeof fetch, url: string, init: RequestInit):
   }
 
   if (!response.ok) {
-    const preview = text.length > 0 ? text.slice(0, 300) : `${response.status} ${response.statusText}`;
-    throw new Error(`HTTP ${response.status} for ${redactSensitiveUrl(url)}: ${redactSensitiveText(preview)}`);
+    throw new Error(`Import request failed with HTTP status ${response.status}.`);
   }
 
   return body;
@@ -350,6 +345,28 @@ function readRequiredString(source: Record<string, unknown>, key: string): strin
   return value;
 }
 
+function readSafeJobId(source: Record<string, unknown>): string {
+  const jobId = readRequiredString(source, "jobId");
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(jobId)) {
+    throw new Error("Import start response contained an invalid job identifier.");
+  }
+  return jobId;
+}
+
+function readOptionalSafeDisplayString(source: Record<string, unknown>, key: string): string | undefined {
+  const value = readOptionalString(source, key);
+  return value && /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,127}$/.test(value) ? value : undefined;
+}
+
+function readOptionalIsoTimestamp(source: Record<string, unknown>, key: string): string | undefined {
+  const value = readOptionalString(source, key);
+  if (!value || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) {
+    return undefined;
+  }
+  const timestampMs = Date.parse(value);
+  return Number.isFinite(timestampMs) ? new Date(timestampMs).toISOString() : undefined;
+}
+
 function readOptionalString(source: Record<string, unknown>, key: string): string | undefined {
   const value = source[key];
   return typeof value === "string" && value.length > 0 ? value : undefined;
@@ -361,7 +378,7 @@ function readOptionalNumber(source: Record<string, unknown>, key: string): numbe
 }
 
 function normalizeImportStatus(statusValue: unknown): string {
-  if (typeof statusValue === "string" && statusValue.length > 0) {
+  if (typeof statusValue === "string" && KNOWN_IMPORT_STATUSES.has(statusValue)) {
     return statusValue;
   }
   if (typeof statusValue === "number" && Number.isFinite(statusValue)) {
@@ -389,26 +406,6 @@ function normalizeBaseUrl(baseUrl: string): string {
   return trimTrailingSlashes(baseUrl);
 }
 
-function redactSensitiveUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    parsed.username = parsed.username ? REDACTED_SECRET : "";
-    parsed.password = parsed.password ? REDACTED_SECRET : "";
-    parsed.search = "";
-    parsed.hash = "";
-    return parsed.toString();
-  } catch {
-    return redactSensitiveText(url);
-  }
-}
-
-function redactSensitiveText(value: string): string {
-  return value
-    .replace(/([?&](?:token|api[_-]?key|access[_-]?token|auth[_-]?token)=)[^&#\s]*/gi, `$1${REDACTED_SECRET}`)
-    .replace(/("(?:token|api[_-]?key|access[_-]?token|auth[_-]?token)"\s*:\s*")([^"]*)(")/gi, `$1${REDACTED_SECRET}$3`)
-    .replace(/((?:token|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[=:]\s*)([^,\s]+)/gi, `$1${REDACTED_SECRET}`);
-}
-
 function resolveJobStatusUrl(importApiBase: string, providedStatusUrl: string | undefined, jobId: string): string {
   const statusPath = providedStatusUrl && providedStatusUrl.length > 0 ? providedStatusUrl : `jobs/${jobId}`;
   const importBase = new URL(`${normalizeBaseUrl(importApiBase)}/`);
@@ -419,15 +416,11 @@ function resolveJobStatusUrl(importApiBase: string, providedStatusUrl: string | 
   }
 
   if (resolved.origin !== importBase.origin) {
-    throw new Error(
-      `Import job status URL must stay on ${importBase.origin}, received ${redactSensitiveUrl(resolved.toString())}`,
-    );
+    throw new Error("Import job status URL must stay on the configured admin origin.");
   }
 
   if (!isPathUnderBase(resolved.pathname, importBase.pathname)) {
-    throw new Error(
-      `Import job status URL must stay under ${importBase.pathname}, received ${redactSensitiveUrl(resolved.toString())}`,
-    );
+    throw new Error("Import job status URL must stay under the geoservices import API path.");
   }
 
   return resolved.toString();

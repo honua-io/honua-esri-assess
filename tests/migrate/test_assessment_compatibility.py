@@ -34,10 +34,10 @@ FIXED_TIME = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
 WARNING_FRAGMENT = "honua_esri_assess and honua-esri-assess are compatibility surfaces"
 
 SCHEMA_HASHES = {
-    "esri-footprint-v0.1.json": "beed99382401ddb93da4283246ae3f8ba8935f71502a017d121111c1d675ede3",
-    "esri-footprint-v0.2.json": "5bc1f17bbf002588bd8502dfc624ffc07866b88bcfb4a2f3261f5b666e84570e",
-    "esri-access-footprint-v0.1.json": "b8bc498eab29e3cb11e26ef3b14f26f425a2ce750a1928a83f8e3eda05d628fe",
-    "esri-access-footprint-v0.2.json": "7c01b9f1b9e34eeb094ac261985b8cdd46dd3444bbbe753595c07b0417a2e750",
+    "esri-footprint-v0.1.json": "a1cda2ba069ef17cedf2cdf86717975c3b124b1000596df3551f8b69e47364e2",
+    "esri-footprint-v0.2.json": "6d690e98eed70ddf1b1937d839c2c90a2ca143f0acc21b3f1fd907da7fe917de",
+    "esri-access-footprint-v0.1.json": "4708c22af3f1e71e3ba9c1a054e5af0556f886549bd2bd49e777923f84c056ec",
+    "esri-access-footprint-v0.2.json": "b542d56a7bd663d4de312dce61b3d8215b104888409517e34d815996832bf4bc",
 }
 
 
@@ -218,7 +218,10 @@ def test_schema_contract_bytes_are_locked(filename: str, digest: str) -> None:
     ).read_bytes()
 
     assert package_bytes == root_bytes
-    assert hashlib.sha256(root_bytes).hexdigest() == digest
+    # Git may materialize JSON as CRLF on Windows. Lock the repository's
+    # canonical LF content so this contract check is platform-independent.
+    canonical_bytes = root_bytes.replace(b"\r\n", b"\n")
+    assert hashlib.sha256(canonical_bytes).hexdigest() == digest
 
 
 def _subprocess_env() -> dict[str, str]:

@@ -99,6 +99,23 @@ def test_common_contract_instances_validate() -> None:
     validate_contract("reconciliation", reconciliation.to_dict())
 
 
+def test_run_v1_config_extension_is_backward_compatible_and_object_only() -> None:
+    plan = MigrationPlan(id="plan-1", service="python", actions=())
+    run = MigrationRun(
+        id="run-1",
+        plan_id="plan-1",
+        plan_digest=plan.to_dict()["plan_digest"],
+        service="python",
+        safety_mode=SafetyMode.READ_ONLY,
+    ).to_dict()
+    del run["config"]
+    validate_contract("run", run)
+
+    run["config"] = ["not", "an", "object"]
+    with pytest.raises(MigrationError):
+        validate_contract("run", run)
+
+
 @pytest.mark.parametrize(
     "payload",
     [

@@ -130,6 +130,7 @@ class MigrationRun:
     checkpoints: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     outcome: str = "pending"
     contract_version: str = CONTRACT_VERSION
+    config: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -138,6 +139,7 @@ class MigrationRun:
             "plan_digest": self.plan_digest,
             "service": self.service,
             "safety_mode": self.safety_mode.value,
+            "config": self.config,
             "job_ids": list(self.job_ids),
             "checkpoints": list(self.checkpoints),
             "outcome": self.outcome,

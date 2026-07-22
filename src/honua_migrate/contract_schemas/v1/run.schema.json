@@ -12,6 +12,7 @@
     "plan_digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
     "service": {"type": "string", "minLength": 1},
     "safety_mode": {"enum": ["read-only", "plan", "apply"]},
+    "config": {"$ref": "#/$defs/safeObject"},
     "job_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
     "checkpoints": {
       "type": "array",
@@ -23,5 +24,21 @@
       }
     },
     "outcome": {"enum": ["pending", "running", "succeeded", "partial", "failed", "cancelled"]}
+  },
+  "$defs": {
+    "safeObject": {
+      "type": "object",
+      "propertyNames": {
+        "not": {"pattern": "[Pp]assword|[Ss]ecret|[Tt]oken|[Aa]uthorization|[Cc]redential|[Aa]pi[_-]?[Kk]ey"}
+      },
+      "additionalProperties": {"$ref": "#/$defs/safeValue"}
+    },
+    "safeValue": {
+      "oneOf": [
+        {"type": ["string", "number", "integer", "boolean", "null"]},
+        {"type": "array", "items": {"$ref": "#/$defs/safeValue"}},
+        {"$ref": "#/$defs/safeObject"}
+      ]
+    }
   }
 }

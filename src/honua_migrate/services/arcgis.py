@@ -7,6 +7,8 @@ centralises SSRF protection in the Honua server endpoint.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -23,6 +25,7 @@ import typer
 ARTIFACT_VERSION = "honua.arcgis-service-migration/v1"
 API_PREFIX = "/api/v1/admin/import/geoservices"
 RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
+TERMINAL_JOB_STATUSES = {"completed", "failed", "cancelled", "canceled"}
 
 arcgis_app = typer.Typer(
     help="Discover, plan, and import ArcGIS FeatureServer or MapServer services.",
@@ -83,6 +86,37 @@ def _redact(value: Any) -> Any:
     return value
 
 
+def _plan_id(request: Mapping[str, Any]) -> str:
+    """Return the foundation-compatible identity for a canonical plan payload."""
+    try:
+        canonical = json.dumps(
+            request,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ArcGisMigrationError("Plan request is not canonical JSON.") from exc
+    return f"sha256:{hashlib.sha256(canonical).hexdigest()}"
+
+
+def _validate_secret_reference(reference: str | None) -> str | None:
+    if reference is None:
+        return None
+    environment_reference = re.fullmatch(r"env:[A-Za-z_][A-Za-z0-9_]*", reference)
+    provider_reference = re.fullmatch(
+        r"(?!env:)[A-Za-z][A-Za-z0-9_.-]*:[A-Za-z0-9][A-Za-z0-9_./@+:-]*",
+        reference,
+        flags=re.IGNORECASE,
+    )
+    if environment_reference is None and provider_reference is None:
+        raise ArcGisMigrationError(
+            "Credential must be a provider secret reference such as env:VARIABLE_NAME."
+        )
+    return reference
+
+
 def _write_json(path: Path, data: Mapping[str, Any], *, force: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
@@ -119,7 +153,7 @@ def _write_json(path: Path, data: Mapping[str, Any], *, force: bool = False) -> 
             temporary.unlink(missing_ok=True)
 
 
-def _read_artifact(path: Path) -> dict[str, Any]:
+def _read_artifact(path: Path) -> tuple[str, dict[str, Any]]:
     try:
         artifact = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -129,7 +163,17 @@ def _read_artifact(path: Path) -> dict[str, Any]:
     request = artifact.get("request")
     if not isinstance(request, dict):
         raise ArcGisMigrationError("Plan artifact has no valid request.")
-    return request
+    if "credentials" in request:
+        raise ArcGisMigrationError(
+            "Plan artifacts must not persist credentials or credential references."
+        )
+    stored_id = artifact.get("id")
+    if not isinstance(stored_id, str) or not stored_id.startswith("sha256:"):
+        raise ArcGisMigrationError("Plan artifact has no supported immutable plan ID.")
+    computed_id = _plan_id(request)
+    if not hmac.compare_digest(stored_id, computed_id):
+        raise ArcGisMigrationError("Plan artifact was modified after it was reviewed.")
+    return stored_id, request
 
 
 @dataclass
@@ -214,6 +258,40 @@ class ArcGisClient:
     def cancel(self, job_id: str) -> dict[str, Any]:
         return self.request("POST", f"{API_PREFIX}/jobs/{_job_id(job_id)}/cancel")
 
+    def wait_for_terminal(
+        self,
+        job_id: str,
+        *,
+        poll_interval_seconds: float,
+        max_wait_seconds: float,
+    ) -> dict[str, Any]:
+        """GET-poll an existing job without creating or mutating server state."""
+        validated_job_id = _job_id(job_id)
+        if poll_interval_seconds <= 0 or max_wait_seconds < 0:
+            raise ArcGisMigrationError("Poll interval must be positive and max wait non-negative.")
+        max_polls = max(1, int(max_wait_seconds // poll_interval_seconds) + 1)
+        latest: dict[str, Any] = {}
+        for poll_count in range(1, max_polls + 1):
+            latest = self.status(validated_job_id)
+            status = str(latest.get("status", "")).lower()
+            if status in TERMINAL_JOB_STATUSES:
+                return {
+                    "jobId": validated_job_id,
+                    "terminal": True,
+                    "timedOut": False,
+                    "pollCount": poll_count,
+                    "status": latest,
+                }
+            if poll_count < max_polls:
+                self.sleeper(poll_interval_seconds)
+        return {
+            "jobId": validated_job_id,
+            "terminal": False,
+            "timedOut": True,
+            "pollCount": max_polls,
+            "status": latest,
+        }
+
 
 def _job_id(job_id: str) -> str:
     if re.fullmatch(r"[A-Za-z0-9_-]+", job_id) is None:
@@ -224,7 +302,10 @@ def _job_id(job_id: str) -> str:
 def _request(service_url: str, timeout_seconds: int, token_secret_ref: str | None) -> dict[str, Any]:
     request: dict[str, Any] = {"serviceUrl": _safe_url(service_url), "timeoutSeconds": timeout_seconds}
     if token_secret_ref:
-        request["credentials"] = {"mode": "token", "accessTokenSecretReference": token_secret_ref}
+        request["credentials"] = {
+            "mode": "token",
+            "accessTokenSecretReference": _validate_secret_reference(token_secret_ref),
+        }
     return request
 
 
@@ -280,7 +361,12 @@ def plan_command(
         for key, value in {"targetSchema": target_schema, "batchSize": batch_size, "serviceName": service_name, "whereClause": where_clause, "outputFields": output_fields}.items():
             if value is not None:
                 request[key] = value
-        artifact = {"artifactVersion": ARTIFACT_VERSION, "kind": "plan", "request": request}
+        artifact = {
+            "artifactVersion": ARTIFACT_VERSION,
+            "kind": "plan",
+            "id": _plan_id(request),
+            "request": request,
+        }
         _emit(artifact, output, force=force)
     except ArcGisMigrationError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -299,14 +385,20 @@ def _apply(
 ) -> None:
     if not yes:
         raise typer.BadParameter("Apply mutates the Honua target. Re-run with --yes.")
-    request = _read_artifact(plan)
-    if token_secret_ref:
+    plan_id, request = _read_artifact(plan)
+    validated_secret_reference = _validate_secret_reference(token_secret_ref)
+    if validated_secret_reference:
         request["credentials"] = {
             "mode": "token",
-            "accessTokenSecretReference": token_secret_ref,
+            "accessTokenSecretReference": validated_secret_reference,
         }
     response = ArcGisClient.from_options(honua_url, api_key, timeout_seconds, retries).start(request)
-    artifact = {"artifactVersion": ARTIFACT_VERSION, "kind": "apply", "plan": str(plan), "response": response}
+    artifact = {
+        "artifactVersion": ARTIFACT_VERSION,
+        "kind": "apply",
+        "planId": plan_id,
+        "response": response,
+    }
     _emit(artifact, output, force=force)
 
 
@@ -394,6 +486,40 @@ def list_command(
     try:
         _job_command(
             "list", None, output, honua_url, api_key, timeout_seconds, retries, force
+        )
+    except ArcGisMigrationError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@arcgis_app.command("resume")
+def resume_command(
+    job_id: str = typer.Argument(..., help="Existing ArcGIS import job ID."),
+    output: Path | None = typer.Option(None, "--output"),
+    force: bool = typer.Option(False, "--force", help="Replace an existing output artifact."),
+    honua_url: str | None = typer.Option(None, envvar="HONUA_URL"),
+    api_key: str | None = typer.Option(None, envvar="HONUA_API_KEY", hide_input=True),
+    timeout_seconds: float = typer.Option(30, min=1),
+    retries: int = typer.Option(2, min=0, max=5),
+    poll_interval_seconds: float = typer.Option(2, "--poll-interval", min=0.1, max=300),
+    max_wait_seconds: float = typer.Option(300, "--max-wait", min=0, max=86400),
+) -> None:
+    """Wait for an existing job using bounded GET-only polling; never requeue it."""
+    try:
+        validated_job_id = _job_id(job_id)
+        client = ArcGisClient.from_options(honua_url, api_key, timeout_seconds, retries)
+        response = client.wait_for_terminal(
+            validated_job_id,
+            poll_interval_seconds=poll_interval_seconds,
+            max_wait_seconds=max_wait_seconds,
+        )
+        _emit(
+            {
+                "artifactVersion": ARTIFACT_VERSION,
+                "kind": "resume",
+                "response": response,
+            },
+            output,
+            force=force,
         )
     except ArcGisMigrationError as exc:
         raise typer.BadParameter(str(exc)) from exc

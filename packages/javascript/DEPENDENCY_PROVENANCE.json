@@ -57,10 +57,6 @@
   ],
   "blockedInternalDependencies": [
     {
-      "feature": "browser runtime proof for generated compatibility applications",
-      "reason": "runtime tests require the source SDK's unpublished workspace entries and are not package-engine tests"
-    },
-    {
       "feature": "workbench artifact regeneration security harness",
       "reason": "depends on source-repository scripts and prepared build ownership; imported workbench model is tested, generator migration remains #100"
     }
@@ -76,10 +72,9 @@
     "reason": "avoids collision with the canonical Python honua-migrate executable"
   },
   "validation": {
-    "vitestFiles": 25,
-    "vitestTests": 252,
+    "vitestFiles": 30,
+    "vitestTests": 263,
     "excludedSourceSdkSuites": [
-      "browser/runtime compatibility proofs",
       "workbench artifact generator security harness",
       "workbench Vite integration"
     ]

@@ -1,4 +1,6 @@
+import { createRequire } from "node:module";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 /** Resolve the package-local CLI built by the test pre-step. */
 export function getPreparedMigrationCliPath(): string {
@@ -6,5 +8,5 @@ export function getPreparedMigrationCliPath(): string {
 }
 
 export function getPreparedEsriCompatEntryPath(): string {
-  throw new Error("SDK runtime compatibility tests are outside this package boundary");
+  return pathToFileURL(createRequire(import.meta.url).resolve("@honua/sdk-js/esri-compat")).href;
 }

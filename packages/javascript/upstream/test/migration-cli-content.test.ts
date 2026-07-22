@@ -162,7 +162,15 @@ describe("migration cli content", () => {
     await ensureBuiltCliArtifacts();
     const outputDir = path.join(makeTempDir(), "export");
 
-    const result = await runCli(["content", "export", "--portal", portalUrl, "--output-dir", outputDir]);
+    const result = await runCli([
+      "content",
+      "export",
+      "--portal",
+      portalUrl,
+      "--output-dir",
+      outputDir,
+      "--acknowledge-mutations",
+    ]);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("contentExport");
@@ -178,6 +186,38 @@ describe("migration cli content", () => {
     expect(manifest.webMaps).toHaveLength(1);
     expect(manifest.hostedFeatureServices).toHaveLength(1);
     expect(manifest.hostedFeatureServices[0].layers).toHaveLength(1);
+  });
+
+  it("refuses mutation without acknowledgement before writing files", { timeout: 180_000 }, async () => {
+    await ensureBuiltCliArtifacts();
+    const outputDir = path.join(makeTempDir(), "unacknowledged-export");
+
+    const result = await runCli(["content", "export", "--portal", portalUrl, "--output-dir", outputDir]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("--acknowledge-mutations");
+    expect(fs.existsSync(outputDir)).toBe(false);
+  });
+
+  it("does not disclose credentials when refusing content import", { timeout: 180_000 }, async () => {
+    await ensureBuiltCliArtifacts();
+    const sourceDir = makeTempDir();
+    const secret = "never-print-this-admin-key";
+
+    const result = await runCli([
+      "content",
+      "import",
+      "--source",
+      sourceDir,
+      "--target",
+      "https://target.invalid",
+      "--admin-api-key",
+      secret,
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("--acknowledge-mutations");
+    expect(`${result.stdout}\n${result.stderr}`).not.toContain(secret);
   });
 });
 

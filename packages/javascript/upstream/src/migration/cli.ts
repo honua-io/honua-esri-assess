@@ -46,6 +46,7 @@ interface ParsedArgs {
   contentAction?: "scan" | "export" | "import" | "reconcile";
   codemodTarget: CodemodTarget;
   write: boolean;
+  acknowledgeMutations: boolean;
   annotateTodos: boolean;
   failOnManual: boolean;
   failOnUnhandled: boolean;
@@ -130,6 +131,16 @@ interface FixtureMetricsSummary {
   manualInterventionNumerator: number;
   manualInterventionDenominator: number;
   manualInterventionRatio: number;
+}
+
+function requireMutationAcknowledgement(args: ParsedArgs, operation: string): void {
+  if (args.acknowledgeMutations) {
+    return;
+  }
+
+  throw new Error(
+    `Refusing ${operation}: this command can modify files or remote systems. Review the operation, then rerun with --acknowledge-mutations.`,
+  );
 }
 
 interface FixtureMetricsGateOptions {
@@ -383,6 +394,7 @@ async function runContent(args: ParsedArgs): Promise<void> {
   }
 
   if (action === "export") {
+    requireMutationAcknowledgement(args, "content export");
     const portalUrl = args.contentPortalUrl ?? args.target;
     const outputDir = path.resolve(args.contentOutputDir ?? path.join(process.cwd(), "content-export"));
     const report = await runContentExport({
@@ -414,6 +426,7 @@ async function runContent(args: ParsedArgs): Promise<void> {
   }
 
   if (action === "import") {
+    requireMutationAcknowledgement(args, "content import");
     const sourceDir = path.resolve(args.contentSourceDir ?? args.target);
     const targetBaseUrl = args.targetBaseUrl ?? args.adminBaseUrl;
     if (!targetBaseUrl) {
@@ -440,6 +453,7 @@ async function runContent(args: ParsedArgs): Promise<void> {
     return;
   }
 
+  requireMutationAcknowledgement(args, "content reconcile");
   const sourceDir = path.resolve(args.contentSourceDir ?? args.target);
   const report = runContentReconcile({
     sourceDir,
@@ -916,6 +930,7 @@ function runCodemod(args: ParsedArgs): void {
 }
 
 async function runReconcile(args: ParsedArgs): Promise<void> {
+  requireMutationAcknowledgement(args, "reconcile");
   if (
     !args.sourceBaseUrl ||
     !args.sourceServiceId ||
@@ -954,6 +969,7 @@ async function runReconcile(args: ParsedArgs): Promise<void> {
 }
 
 async function runDemo(args: ParsedArgs): Promise<void> {
+  requireMutationAcknowledgement(args, "demo");
   const fixtureName = args.fixtureName ?? DEFAULT_DEMO_FIXTURE_NAME;
   const fixturesRoot = args.fixturesRoot ?? path.join(process.cwd(), "test", "fixtures");
   const outputDir = args.outputDir ?? path.join(process.cwd(), ".tmp", "migration-demo", fixtureName);
@@ -1139,6 +1155,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       command: "scan",
       target: process.cwd(),
       write: false,
+      acknowledgeMutations: false,
       annotateTodos: false,
       failOnManual: false,
       failOnUnhandled: false,
@@ -1188,6 +1205,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   let codemodTarget: CodemodTarget = "honua-compat";
   let codemodTargetExplicit = false;
   let write = false;
+  let acknowledgeMutations = false;
   let annotateTodos = false;
   let failOnManual = false;
   let failOnUnhandled = false;
@@ -1239,6 +1257,10 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     }
     if (token === "--write") {
       write = true;
+      continue;
+    }
+    if (token === "--acknowledge-mutations") {
+      acknowledgeMutations = true;
       continue;
     }
     if (token === "--json" && command === "widgets") {
@@ -1729,6 +1751,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       (command === "fixtures" || command === "demo" ? path.join(process.cwd(), "test", "fixtures") : process.cwd()),
     contentAction,
     write,
+    acknowledgeMutations,
     codemodTarget: resolvedCodemodTarget,
     annotateTodos,
     failOnManual,
@@ -1816,12 +1839,12 @@ function printUsage(): void {
       "  honua-js-migrate matrix [--report <file>]",
       "  honua-js-migrate runtime-matrix [--report <file>]",
       "  honua-js-migrate fixtures [<fixtures-root>] [--target <honua|honua-compat|honua-maplibre|esri-leaflet>] [--fixtures <name1,name2,...>] [--report <file>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
-      "  honua-js-migrate reconcile --source-base-url <url> --source-service-id <id> --target-base-url <url> --target-service-id <id> --layer-id <n> [--sample-size <n>] [--report <file>]",
-      "  honua-js-migrate demo [<fixture-name>] [--fixtures-root <dir>] [--output-dir <dir>] [--target <honua|honua-compat|honua-maplibre|esri-leaflet>] [--admin-base-url <url>] [--admin-api-key <key>] [--source-service-url <url>] [--layer-id <n>] [--table-name <name>] [--source-base-url <url>] [--source-service-id <id>] [--target-base-url <url>] [--target-service-id <id>] [--sample-size <n>] [--poll-interval-ms <n>] [--timeout-seconds <n>] [--skip-import] [--skip-reconcile] [--report <file>]",
+      "  honua-js-migrate reconcile --source-base-url <url> --source-service-id <id> --target-base-url <url> --target-service-id <id> --layer-id <n> --acknowledge-mutations [--sample-size <n>] [--report <file>]",
+      "  honua-js-migrate demo [<fixture-name>] --acknowledge-mutations [--fixtures-root <dir>] [--output-dir <dir>] [--target <honua|honua-compat|honua-maplibre|esri-leaflet>] [--admin-base-url <url>] [--admin-api-key <key>] [--source-service-url <url>] [--layer-id <n>] [--table-name <name>] [--source-base-url <url>] [--source-service-id <id>] [--target-base-url <url>] [--target-service-id <id>] [--sample-size <n>] [--poll-interval-ms <n>] [--timeout-seconds <n>] [--skip-import] [--skip-reconcile] [--report <file>]",
       "  honua-js-migrate content scan --portal <url> [--token <token>] [--report <file>]",
-      "  honua-js-migrate content export --portal <url> --output-dir <dir> [--token <token>] [--exclude-features] [--exclude-webmaps] [--exclude-hosted-layers] [--report <file>]",
-      "  honua-js-migrate content import --source <dir> --target <url> [--admin-api-key <key>] [--output-dir <dir>] [--table-prefix <prefix>] [--source-url-prefix <url>] [--target-url-prefix <url>] [--exclude-webmaps] [--exclude-hosted-layers] [--report <file>]",
-      "  honua-js-migrate content reconcile --source <dir> [--import-report <file>] [--output-dir <file>] [--report <file>]",
+      "  honua-js-migrate content export --portal <url> --output-dir <dir> --acknowledge-mutations [--token <token>] [--exclude-features] [--exclude-webmaps] [--exclude-hosted-layers] [--report <file>]",
+      "  honua-js-migrate content import --source <dir> --target <url> --acknowledge-mutations [--admin-api-key <key>] [--output-dir <dir>] [--table-prefix <prefix>] [--source-url-prefix <url>] [--target-url-prefix <url>] [--exclude-webmaps] [--exclude-hosted-layers] [--report <file>]",
+      "  honua-js-migrate content reconcile --source <dir> --acknowledge-mutations [--import-report <file>] [--output-dir <file>] [--report <file>]",
       "  honua-js-migrate content-webmap --input <webmap.json> [--output <file>] [--source-url-prefix <url>] [--target-url-prefix <url>] [--exclude-basemap] [--report <file>]",
       "  honua-js-migrate corpus-evidence [--corpus <dir>] --out <dir> [--target <honua|honua-compat|honua-maplibre|esri-leaflet>]",
       "",
@@ -1838,12 +1861,12 @@ function printUsage(): void {
       "  node dist/src/migration/cli.js fixtures --report real-sample-metrics.json",
       "  node dist/src/migration/cli.js fixtures --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0",
       "  node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3",
-      "  node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --report reconcile-report.json",
-      "  node dist/src/migration/cli.js demo --admin-base-url http://localhost:5000 --source-service-url https://arcgis.example/rest/services/incidents/FeatureServer/0 --layer-id 0 --table-name incidents --source-base-url https://arcgis.example --source-service-id incidents --target-base-url http://localhost:5000 --target-service-id incidents --report demo-report.json",
+      "  node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --acknowledge-mutations --report reconcile-report.json",
+      "  node dist/src/migration/cli.js demo --admin-base-url http://localhost:5000 --source-service-url https://arcgis.example/rest/services/incidents/FeatureServer/0 --layer-id 0 --table-name incidents --source-base-url https://arcgis.example --source-service-id incidents --target-base-url http://localhost:5000 --target-service-id incidents --acknowledge-mutations --report demo-report.json",
       "  node dist/src/migration/cli.js content scan --portal https://org.maps.arcgis.com --report ./content/scan.json",
-      "  node dist/src/migration/cli.js content export --portal https://org.maps.arcgis.com --output-dir ./export --report ./content/export.json",
-      "  node dist/src/migration/cli.js content import --source ./export --target https://honua.example.com --admin-api-key $HONUA_ADMIN_API_KEY --report ./content/import.json",
-      "  node dist/src/migration/cli.js content reconcile --source ./export --report ./content/reconcile.json",
+      "  node dist/src/migration/cli.js content export --portal https://org.maps.arcgis.com --output-dir ./export --acknowledge-mutations --report ./content/export.json",
+      "  node dist/src/migration/cli.js content import --source ./export --target https://honua.example.com --admin-api-key $HONUA_ADMIN_API_KEY --acknowledge-mutations --report ./content/import.json",
+      "  node dist/src/migration/cli.js content reconcile --source ./export --acknowledge-mutations --report ./content/reconcile.json",
       "  node dist/src/migration/cli.js content-webmap --input ./export/map.json --output ./export/map.honua.json --source-url-prefix https://org.maps.arcgis.com --target-url-prefix https://honua.example.com --report ./export/map.report.json",
       "  node dist/src/migration/cli.js corpus-evidence --corpus test/fixtures/esri-sample-corpus --out ./corpus-evidence",
       "",

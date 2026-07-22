@@ -7,14 +7,26 @@
     "retrievedAt": "2026-07-22T17:04:02Z",
     "license": "Apache-2.0",
     "sourcePaths": [
-      "src/migration/scanner.ts", "src/migration/widget-scanner.ts",
-      "src/migration/codemod.ts", "src/migration/parity-matrix.ts",
-      "src/migration/runtime-matrix.ts", "src/migration/content.ts",
-      "src/migration/reconcile.ts", "src/migration/cli.ts"
+      "src/migration/cli.ts",
+      "src/migration/codemod.ts",
+      "src/migration/content.ts",
+      "src/migration/demo-targets.ts",
+      "src/migration/demo.ts",
+      "src/migration/gating.ts",
+      "src/migration/parity-matrix.ts",
+      "src/migration/reconcile.ts",
+      "src/migration/report.ts",
+      "src/migration/runtime-matrix.ts",
+      "src/migration/sample-corpus-evidence.ts",
+      "src/migration/sample-corpus.ts",
+      "src/migration/scanner.ts",
+      "src/migration/widget-dispositions.ts",
+      "src/migration/widget-scanner.ts"
     ]
   },
   "historyImport": {
     "method": "git format-patch --root with path filters, applied by git am --directory=packages/javascript/upstream",
+    "commitProvenance": "each replayed commit records its original source SHA in an Upstream-Commit trailer",
     "engineCommits": 23,
     "engineSourceCommits": [
       "172d66be9b34b61eb62a121fad3d7af36e0d5a20",
@@ -64,7 +76,8 @@
   "safety": {
     "default": "read-only",
     "codemodWrite": "requires --write",
-    "networkOperations": "preserved from the Apache-2.0 source engine"
+    "mutationAcknowledgement": "content export/import/reconcile, reconcile, and demo require --acknowledge-mutations",
+    "networkOperations": "read-only scans and reports do not require mutation acknowledgement"
   },
   "executable": {
     "npmPackage": "@honua/honua-migrate",
@@ -73,10 +86,12 @@
   },
   "validation": {
     "vitestFiles": 30,
-    "vitestTests": 263,
+    "vitestTests": 267,
+    "excludedSourceSdkSuiteCount": 3,
     "excludedSourceSdkSuites": [
-      "workbench artifact generator security harness",
-      "workbench Vite integration"
+      "upstream/test/migration-workbench-artifacts.test.ts",
+      "upstream/test/migration-workbench-artifacts-security.test.ts",
+      "upstream/test/migration-workbench-vite.test.ts"
     ]
   }
 }

@@ -51,6 +51,7 @@ describe("migration cli demo", () => {
     const result = runCli(
       [
         "demo",
+        "--acknowledge-mutations",
         "--fixtures-root",
         path.join(getProjectRoot(), "test", "fixtures"),
         "--fixture",
@@ -87,5 +88,34 @@ describe("migration cli demo", () => {
     expect(report.reconciliation).toBeUndefined();
     expect(report.migration.readiness).toBe("ready");
     expect(fs.existsSync(path.join(report.workingAppDir, "src", "main.js"))).toBe(true);
+  });
+
+  it("refuses demo mutation without acknowledgement and does not disclose credentials", { timeout: 60_000 }, () => {
+    ensureBuiltCliArtifacts();
+    const root = makeTempDir();
+    const outputDir = path.join(root, "unacknowledged-output");
+    const secret = "never-print-this-demo-key";
+
+    const result = runCli(
+      [
+        "demo",
+        "--fixtures-root",
+        path.join(getProjectRoot(), "test", "fixtures"),
+        "--fixture",
+        "esri-demo-feature-table-relates-app",
+        "--output-dir",
+        outputDir,
+        "--admin-api-key",
+        secret,
+        "--skip-import",
+        "--skip-reconcile",
+      ],
+      getProjectRoot(),
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("--acknowledge-mutations");
+    expect(`${result.stdout}\n${result.stderr}`).not.toContain(secret);
+    expect(fs.existsSync(outputDir)).toBe(false);
   });
 });

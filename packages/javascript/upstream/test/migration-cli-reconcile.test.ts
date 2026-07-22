@@ -73,6 +73,7 @@ describe("migration cli reconcile", () => {
     ensureBuiltCliArtifacts();
     const result = await runCli([
       "reconcile",
+      "--acknowledge-mutations",
       "--source-base-url",
       `${baseUrl}/source`,
       "--source-service-id",
@@ -97,6 +98,7 @@ describe("migration cli reconcile", () => {
     const result = await runCli(
       [
         "reconcile",
+        "--acknowledge-mutations",
         "--source-base-url",
         `${baseUrl}/source`,
         "--source-service-id",
@@ -119,6 +121,27 @@ describe("migration cli reconcile", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("passed=yes");
+  });
+
+  it("refuses reconciliation without acknowledgement before network access", { timeout: 60_000 }, async () => {
+    ensureBuiltCliArtifacts();
+    const result = await runCli([
+      "reconcile",
+      "--source-base-url",
+      `${baseUrl}/source`,
+      "--source-service-id",
+      "parcels",
+      "--target-base-url",
+      `${baseUrl}/target`,
+      "--target-service-id",
+      "parcels",
+      "--layer-id",
+      "0",
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("--acknowledge-mutations");
+    expect(result.stdout).toBe("");
   });
 });
 

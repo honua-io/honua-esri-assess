@@ -17,7 +17,7 @@
     "test": "npm run build --silent && vitest run",
     "lint": "biome check upstream/src upstream/test"
   },
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=22" },
   "dependencies": {
     "@honua/sdk-esri-compat": "^0.1.2-beta.0",
     "@honua/sdk-js": "^0.1.2-beta.0",

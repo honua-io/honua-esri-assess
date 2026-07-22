@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 from pathlib import Path
 
 from honua_migrate.code.python._cli import main
@@ -198,9 +200,6 @@ def test_cli_gpservice_classifies_tasks(tmp_path: Path) -> None:
 def test_cli_run_executes_via_mock_transport(tmp_path: Path, monkeypatch) -> None:
     import httpx
 
-    import honua_sdk
-    from honua_sdk import HonuaClient
-
     script = _write(tmp_path, "wf.py", SCRIPT)
     out = tmp_path / "run.json"
 
@@ -208,11 +207,39 @@ def test_cli_run_executes_via_mock_transport(tmp_path: Path, monkeypatch) -> Non
         process_id = request.url.path.split("/")[-2]
         return httpx.Response(200, json={"processID": process_id, "status": "accepted"})
 
-    def fake_client(base_url, *args, **kwargs):
-        return HonuaClient(base_url, transport=httpx.MockTransport(handler))
+    class Processes:
+        def __init__(self, client):
+            self.client = client
+
+        def execute(self, process_id, payload):
+            response = self.client.post(
+                f"/ogc/processes/processes/{process_id}/execution",
+                json=payload,
+            )
+            response.raise_for_status()
+            return response.json()
+
+    class Client:
+        def __init__(self, base_url):
+            self.client = httpx.Client(
+                base_url=base_url,
+                transport=httpx.MockTransport(handler),
+            )
+
+        def __enter__(self):
+            self.client.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            self.client.__exit__(*args)
+
+        def ogc_processes(self):
+            return Processes(self.client)
 
     # The CLI imports HonuaClient lazily from the top-level package.
-    monkeypatch.setattr(honua_sdk, "HonuaClient", fake_client)
+    sdk_module = types.ModuleType("honua_sdk")
+    sdk_module.HonuaClient = Client
+    monkeypatch.setitem(sys.modules, "honua_sdk", sdk_module)
 
     rc = main(["run", str(script), "--server", "http://example.test", "--output", str(out)])
 

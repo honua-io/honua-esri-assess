@@ -36,10 +36,9 @@ arcpy.sa.Kriging("stations", "PredZ")
 
 
 def test_migration_is_reachable_from_top_level_package() -> None:
-    import honua_sdk
-    from honua_sdk import migration
+    from honua_migrate.code import python as migration
 
-    assert migration is honua_migrate.code.python
+    assert migration.__name__ == "honua_migrate.code.python"
     assert hasattr(migration, "scan_arcpy_source")
     assert hasattr(migration, "build_parity_evidence")
     assert hasattr(migration, "parse_pyt_source")

@@ -10,6 +10,7 @@ positional-argument resolution, expanded ``**kwargs`` capture, the parity
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -371,6 +372,10 @@ def test_module_main_entrypoint_runs(tmp_path: Path) -> None:
     result = subprocess.run(  # noqa: S603 -- sys.executable + literal args, trusted
         [sys.executable, "-m", "honua_migrate.code.python", "scan", str(script)],
         capture_output=True,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[3] / "src"),
+        },
         text=True,
         check=True,
     )

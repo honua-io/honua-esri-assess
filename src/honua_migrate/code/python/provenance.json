@@ -1,0 +1,18 @@
+{
+  "source": {
+    "repository": "https://github.com/honua-io/honua-sdk-python",
+    "commits": [
+      "78138322b235e9a31504c794db2bbde18d445a15",
+      "d7093e6a07983d450c3068e824e8dea5d289012d",
+      "6a518c1f703623283d7c08349917b67f343054f4",
+      "65fd37385c0dd1a10813865cc279b4694a633666",
+      "934dadad2b143dc8d66d3637c441b96cf3f1fc43",
+      "41d427088969350f731f89e296955cd83e5ea403",
+      "ed84a72e35e4349289392dd072d3e1a8dd43c1cb",
+      "21105376373b3c7171b5b5f7b14af67a9e0f0b1a"
+    ],
+    "path": "packages/honua-sdk/honua_sdk/migration",
+    "license": "Apache-2.0"
+  },
+  "successor": "honua_migrate.code.python"
+}

@@ -7,7 +7,6 @@ import httpx
 
 import pytest
 
-from honua_sdk import HonuaClient
 from honua_migrate.code.python import (
     ArcPyJobError,
     ArcPyJobTimeoutError,
@@ -17,6 +16,46 @@ from honua_migrate.code.python import (
     translate_arcpy_source,
 )
 from honua_migrate.code.python.arcpy import ArcPyProcessExecution, ArcPyProcessTranslation
+
+
+class _OgcProcessesClient:
+    def __init__(self, client: httpx.Client) -> None:
+        self._client = client
+
+    def execute(self, process_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self._client.post(
+            f"/ogc/processes/processes/{process_id}/execution",
+            json=payload,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def job(self, job_id: str) -> dict[str, Any]:
+        response = self._client.get(f"/ogc/processes/jobs/{job_id}")
+        response.raise_for_status()
+        return response.json()
+
+    def job_results(self, job_id: str) -> dict[str, Any]:
+        response = self._client.get(f"/ogc/processes/jobs/{job_id}/results")
+        response.raise_for_status()
+        return response.json()
+
+
+class HonuaClient:
+    """Test double for the public SDK protocol consumed by the runner."""
+
+    def __init__(self, base_url: str, *, transport: httpx.BaseTransport) -> None:
+        self._client = httpx.Client(base_url=base_url, transport=transport)
+
+    def __enter__(self) -> HonuaClient:
+        self._client.__enter__()
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self._client.__exit__(*args)
+
+    def ogc_processes(self) -> _OgcProcessesClient:
+        return _OgcProcessesClient(self._client)
 
 
 ARCPY_SOURCE = """

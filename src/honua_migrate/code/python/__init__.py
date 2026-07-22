@@ -1,4 +1,10 @@
-"""Migration helpers for moving GIS workflows onto Honua surfaces."""
+"""Migration helpers for moving GIS workflows onto Honua surfaces.
+
+Only recognized mappings to built-in Honua processes are translatable. Unknown
+tools and mappings without an executable built-in process remain manual-review
+items. This package deliberately exposes no custom-code, backend-selection, or
+local-execution path.
+"""
 
 from __future__ import annotations
 

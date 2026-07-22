@@ -20,7 +20,6 @@ import pytest
 
 from honua_migrate.code.python import (
     ArcPyCall,
-    ArcPyMigrationPlan,
     ArcPyProcessRunner,
     ArcPyProcessTranslation,
     ArcPyScanReport,

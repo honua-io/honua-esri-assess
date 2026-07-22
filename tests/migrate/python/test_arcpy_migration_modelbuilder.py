@@ -21,7 +21,6 @@ from honua_migrate.code.python import (
     EXECUTABLE_PROCESS_IDS,
     GpService,
     GpTask,
-    ModelBuilderModel,
     ModelBuilderToolbox,
     UnsupportedModelFormatError,
     UnsupportedToolboxError,

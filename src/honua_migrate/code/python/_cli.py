@@ -1,14 +1,11 @@
 """Command-line entrypoint for the ArcPy -> Honua GP migration codemod.
 
-Usage (either form works once the SDK is installed)::
+Secondary module entry point (the canonical CLI is
+``honua-migrate code python``)::
 
-    honua-migrate scan path/to/script.py
     python -m honua_migrate.code.python scan path/to/script.py
-    honua-migrate translate path/to/script.py --evidence out.json
-    honua-migrate run path/to/script.py --server https://example.test
-    honua-migrate pyt path/to/toolbox.pyt
-    honua-migrate atbx path/to/toolbox.atbx --evidence out.json
-    honua-migrate gpservice path/to/GPServer.json --url https://host/GPServer
+    python -m honua_migrate.code.python translate script.py --evidence out.json
+    python -m honua_migrate.code.python run script.py --server https://example.test
 
 The ``scan``, ``translate``, ``pyt``, ``atbx``, and ``gpservice`` commands work
 offline (no ArcGIS or network). The ``run`` command executes the translatable
@@ -23,6 +20,13 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+
+from honua_migrate.contracts import (
+    EXIT_BAD_ARGUMENTS,
+    EXIT_SUCCESS,
+    EXIT_UNAVAILABLE,
+    EXIT_VALIDATION_ERROR as EXIT_UNSUPPORTED_INPUT,
+)
 
 from .arcpy import (
     ArcPyProcessRunner,
@@ -62,15 +66,15 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     _emit(report.to_dict(), out=args.output)
     if report.syntax_error is not None:
         print(f"syntax error: {report.syntax_error}", file=sys.stderr)
-        return 2
-    return 0
+        return EXIT_BAD_ARGUMENTS
+    return EXIT_SUCCESS
 
 
 def _cmd_translate(args: argparse.Namespace) -> int:
     report = scan_arcpy_file(args.path)
     if report.syntax_error is not None:
         print(f"syntax error: {report.syntax_error}", file=sys.stderr)
-        return 2
+        return EXIT_BAD_ARGUMENTS
     plan = translate_arcpy_report(report)
     evidence = build_parity_evidence(plan)
     if args.evidence is not None:
@@ -86,13 +90,10 @@ def _cmd_translate(args: argparse.Namespace) -> int:
         f"{summary['unsupportedCalls']} unsupported",
         file=sys.stderr,
     )
-    return 0
+    return EXIT_SUCCESS
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
-    # Imported lazily so scan/translate/pyt work without httpx/network deps wired.
-    from honua_sdk import HonuaClient
-
     report = scan_arcpy_file(args.path)
     plan = translate_arcpy_report(report)
     # Only execute the steps the reconciled server can job-execute. Supported
@@ -102,7 +103,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if not runnable:
         print("no translatable ArcPy calls to execute", file=sys.stderr)
         _emit({"executions": [], "skipped": skipped}, out=args.output)
-        return 0
+        return EXIT_SUCCESS
 
     if args.dry_run:
         _emit(
@@ -114,7 +115,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
             },
             out=args.output,
         )
-        return 0
+        return EXIT_SUCCESS
+
+    try:
+        from honua_sdk import HonuaClient
+    except ImportError:
+        print(
+            "run requires the public honua-sdk package; install the python extra.",
+            file=sys.stderr,
+        )
+        return EXIT_UNAVAILABLE
 
     results: list[dict[str, Any]] = []
     with HonuaClient(args.server) as client:
@@ -130,7 +140,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 }
             )
     _emit({"server": args.server, "executions": results, "skipped": skipped}, out=args.output)
-    return 0
+    return EXIT_SUCCESS
 
 
 def _cmd_pyt(args: argparse.Namespace) -> int:
@@ -140,7 +150,7 @@ def _cmd_pyt(args: argparse.Namespace) -> int:
             parse_binary_toolbox(args.path)
         except UnsupportedToolboxError as exc:
             print(str(exc), file=sys.stderr)
-            return 3
+            return EXIT_UNSUPPORTED_INPUT
 
     toolbox = parse_pyt_file(args.path)
     if args.evidence is not None:
@@ -148,8 +158,8 @@ def _cmd_pyt(args: argparse.Namespace) -> int:
     _emit(toolbox.to_dict(), out=args.output)
     if toolbox.syntax_error is not None:
         print(f"syntax error: {toolbox.syntax_error}", file=sys.stderr)
-        return 2
-    return 0
+        return EXIT_BAD_ARGUMENTS
+    return EXIT_SUCCESS
 
 
 def _cmd_atbx(args: argparse.Namespace) -> int:
@@ -157,14 +167,14 @@ def _cmd_atbx(args: argparse.Namespace) -> int:
         toolbox = parse_atbx_toolbox(args.path)
     except UnsupportedModelFormatError as exc:
         print(str(exc), file=sys.stderr)
-        return 3
+        return EXIT_UNSUPPORTED_INPUT
     if args.evidence is not None:
         _emit(build_atbx_parity_evidence(toolbox), out=args.evidence)
     _emit(toolbox.to_dict(), out=args.output)
     if toolbox.parse_error is not None:
         print(f"parse error: {toolbox.parse_error}", file=sys.stderr)
-        return 2
-    return 0
+        return EXIT_BAD_ARGUMENTS
+    return EXIT_SUCCESS
 
 
 def _cmd_gpservice(args: argparse.Namespace) -> int:
@@ -173,15 +183,18 @@ def _cmd_gpservice(args: argparse.Namespace) -> int:
         service = parse_gp_service_definition(text, url=args.url)
     except (UnsupportedModelFormatError, json.JSONDecodeError) as exc:
         print(f"could not parse GP service definition: {exc}", file=sys.stderr)
-        return 2
+        return EXIT_BAD_ARGUMENTS
     if args.evidence is not None:
         _emit(build_gp_service_parity_evidence(service), out=args.evidence)
     _emit(service.to_dict(), out=args.output)
-    return 0
+    return EXIT_SUCCESS
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="honua-migrate", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(
+        prog="python -m honua_migrate.code.python",
+        description=__doc__.splitlines()[0],
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     scan = sub.add_parser("scan", help="Classify ArcPy calls in a Python script (offline).")

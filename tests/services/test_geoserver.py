@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 import requests
+from click import unstyle
 from typer.testing import CliRunner
 
 from honua_migrate.services.geoserver import (
@@ -146,8 +147,9 @@ def test_apply_acknowledgement_precedes_secret_resolution(tmp_path: Path) -> Non
         ],
     )
     assert result.exit_code == 2
-    assert "acknowledge-apply" in result.output
-    assert "not available" not in result.output
+    output = unstyle(result.output)
+    assert "acknowledge-apply" in output
+    assert "not available" not in output
 
 
 def test_cancel_acknowledgement_precedes_secret_resolution() -> None:
@@ -163,8 +165,9 @@ def test_cancel_acknowledgement_precedes_secret_resolution() -> None:
         ],
     )
     assert result.exit_code == 2
-    assert "acknowledge-cancel" in result.output
-    assert "not available" not in result.output
+    output = unstyle(result.output)
+    assert "acknowledge-cancel" in output
+    assert "not available" not in output
 
 
 def test_plan_polls_to_completion_and_omits_credentials(
@@ -325,7 +328,7 @@ def test_apply_requires_password_reference_at_apply_time(tmp_path: Path) -> None
         ],
     )
     assert result.exit_code == 2
-    assert "geoserver-password-ref" in result.output
+    assert "geoserver-password-ref" in unstyle(result.output)
 
 
 def test_artifact_refuses_overwrite_and_redacts_references(

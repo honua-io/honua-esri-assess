@@ -102,6 +102,7 @@ def test_common_contract_instances_validate() -> None:
         {"nested": {"accessTokenSecretReference": "env:TOKEN"}},
         {"url": "https://alice:secret@example.test/data"},
         {"url": "https://example.test/data?token=secret"},
+        {"url": "https://example.test/data?f=json"},
         {"message": "Authorization: Bearer raw-token"},
     ],
 )

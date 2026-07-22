@@ -19,10 +19,10 @@ or filesystem mutation and bind each run to both `plan_id` and `plan_digest`.
 
 All artifacts are credential-free. Field names associated with passwords,
 tokens, API keys, authorization, credentials, or secret references are invalid,
-including inside engine-owned evidence. URL userinfo, bearer values, and
-sensitive authentication query parameters are also invalid. Credential values
-and secret references are supplied again at execution time and are never copied
-into plans, runs, results, diagnostics, or reconciliation evidence.
+including inside engine-owned evidence. URL userinfo, bearer values, and URL
+query strings are also invalid. Credential values and secret references are
+supplied again at execution time and are never copied into plans, runs, results,
+diagnostics, or reconciliation evidence.
 
 The stable exit-code families are: success (`0`), internal (`1`), input (`2`),
 validation (`3`), unavailable (`4`), partial (`10`), remote (`20`), and safety

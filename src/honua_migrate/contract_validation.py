@@ -6,7 +6,7 @@ import json
 import re
 from importlib import resources
 from typing import Any, Mapping
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import urlsplit
 
 import jsonschema
 
@@ -18,10 +18,6 @@ SCHEMA_NAMES = frozenset(
 
 _SENSITIVE_KEY = re.compile(
     r"(?:password|passwd|secret|token|authorization|api[_-]?key|credential)",
-    re.IGNORECASE,
-)
-_SENSITIVE_QUERY_KEY = re.compile(
-    r"^(?:password|passwd|secret|token|access_token|api[_-]?key|key)$",
     re.IGNORECASE,
 )
 _BEARER_VALUE = re.compile(r"\bbearer\s+\S+", re.IGNORECASE)
@@ -70,9 +66,9 @@ def assert_artifact_safe(value: Any, *, path: str = "$") -> None:
             f"Artifact contains URL userinfo at {path}.",
             exit_code=EXIT_VALIDATION_ERROR,
         )
-    if any(_SENSITIVE_QUERY_KEY.match(key) for key, _ in parse_qsl(parsed.query)):
+    if parsed.query:
         raise MigrationError(
-            f"Artifact contains an unredacted credential query at {path}.",
+            f"Artifact contains a URL query string at {path}.",
             exit_code=EXIT_VALIDATION_ERROR,
         )
 

@@ -37,7 +37,8 @@ def test_build_backend_and_hatch_targets_are_configured() -> None:
     assert pyproject["build-system"]["build-backend"] == "hatchling.build"
     assert pyproject["tool"]["hatch"]["build"]["reproducible"] is True
     assert pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"] == [
-        "src/honua_esri_assess"
+        "src/honua_esri_assess",
+        "src/honua_migrate",
     ]
 
 

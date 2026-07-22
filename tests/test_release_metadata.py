@@ -115,7 +115,7 @@ def test_publish_tag_validator_rejects_untagged_non_dry_run(
     assert module.main(["--allow-untagged"]) == 0
 
 
-def test_runtime_release_tag_prefixes_reject_missing_packages(monkeypatch) -> None:
+def test_runtime_release_tags_follow_checked_out_package_state(monkeypatch) -> None:
     spec = importlib.util.spec_from_file_location(
         "validate_runtime_publish_tag",
         REPO_ROOT / "scripts" / "validate_publish_tag.py",
@@ -126,6 +126,15 @@ def test_runtime_release_tag_prefixes_reject_missing_packages(monkeypatch) -> No
     spec.loader.exec_module(module)
 
     monkeypatch.chdir(REPO_ROOT)
-    assert module.main(["javascript-v0.1.0", "--package", "javascript"]) == 1
-    assert module.main(["maui-v0.1.0", "--package", "maui"]) == 1
+    javascript_present = (REPO_ROOT / "packages/javascript/package.json").is_file()
+    javascript_version = module.javascript_version() if javascript_present else "0.1.0"
+    assert module.main(
+        [f"javascript-v{javascript_version}", "--package", "javascript"]
+    ) == (0 if javascript_present else 1)
+
+    maui_present = any((REPO_ROOT / "packages/maui").rglob("*.csproj"))
+    maui_version = module.maui_version() if maui_present else "0.1.0"
+    assert module.main([f"maui-v{maui_version}", "--package", "maui"]) == (
+        0 if maui_present else 1
+    )
     assert module.main(["--allow-untagged", "--package", "javascript"]) == 0

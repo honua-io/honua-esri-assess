@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 from typer.testing import CliRunner
 
 from honua_migrate.app import cli_app
@@ -40,3 +43,15 @@ def test_plan_contract_is_json_compatible_and_versioned() -> None:
         "contract_version": "v1",
         "safety_mode": "plan",
     }
+
+
+def test_python_module_entry_point_displays_help() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "honua_migrate", "--help"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "Honua migration planning" in result.stdout

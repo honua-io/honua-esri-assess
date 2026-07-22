@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { type WebMapMapLibreManualGap, webmapJsonToMapLibreStyle } from "@honua/sdk-js/map";
-import type { WebMapJson } from "@honua/sdk-js/webmap";
+import { type WebMapMapLibreManualGap, webmapJsonToMapLibreStyle } from "@honua/sdk/map";
+import type { WebMapJson } from "@honua/sdk/webmap";
 import ts from "typescript";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);

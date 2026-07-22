@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { parseWebMap } from "@honua/sdk-js/webmap";
-import type { WebMapJson } from "@honua/sdk-js/webmap";
+import { parseWebMap } from "@honua/sdk/webmap";
+import type { WebMapJson } from "@honua/sdk/webmap";
 import { stringifyArtifact } from "./artifact-safety.js";
 import { type GeoservicesImportJobReport, runGeoservicesImportJob } from "./demo.js";
 import { trimChar, trimTrailingSlashes } from "./path-utils.js";

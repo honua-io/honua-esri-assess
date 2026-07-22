@@ -8,5 +8,5 @@ export function getPreparedMigrationCliPath(): string {
 }
 
 export function getPreparedEsriCompatEntryPath(): string {
-  return pathToFileURL(createRequire(import.meta.url).resolve("@honua/sdk-js/esri-compat")).href;
+  return pathToFileURL(createRequire(import.meta.url).resolve("@honua/sdk-esri-compat")).href;
 }

@@ -62,9 +62,8 @@
     "demo", "corpus-evidence", "sample-corpus"
   ],
   "publicSdkDependencies": [
-    "@honua/sdk-js/map",
-    "@honua/sdk-js/webmap",
-    "@honua/sdk-js/migration",
+    "@honua/sdk/map",
+    "@honua/sdk/webmap",
     "@honua/sdk-esri-compat"
   ],
   "blockedInternalDependencies": [

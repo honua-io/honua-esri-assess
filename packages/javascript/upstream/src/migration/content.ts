@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { trimChar, trimTrailingSlashes } from "../core/path-utils.js";
-import { parseWebMap } from "../webmap/parse.js";
-import type { WebMapJson } from "../webmap/types.js";
+import { parseWebMap } from "@honua/sdk-js/webmap";
+import type { WebMapJson } from "@honua/sdk-js/webmap";
 import { type GeoservicesImportJobReport, runGeoservicesImportJob } from "./demo.js";
+import { trimChar, trimTrailingSlashes } from "./path-utils.js";
 
 const DEFAULT_PORTAL_PAGE_SIZE = 100;
 const DEFAULT_LAYER_QUERY_PAGE_SIZE = 2_000;

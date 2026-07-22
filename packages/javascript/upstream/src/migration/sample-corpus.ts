@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { trimTrailingCharsIn } from "../core/path-utils.js";
+import { trimTrailingCharsIn } from "./path-utils.js";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);

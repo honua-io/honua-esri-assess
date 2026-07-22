@@ -1,18 +1,31 @@
 {
   "name": "@honua/honua-migrate",
   "version": "0.1.0",
-  "description": "Standalone JavaScript migration scanner, widget readiness reporter, and conservative ArcGIS codemod.",
+  "description": "ArcGIS-to-Honua migration scanner, AST codemod, content, reconciliation, and reporting engine.",
   "license": "Apache-2.0",
   "type": "module",
-  "bin": { "honua-migrate": "./dist/cli.js" },
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "bin": { "honua-js-migrate": "./dist/migration/cli.js" },
+  "exports": {
+    ".": { "types": "./dist/migration-entry.d.ts", "default": "./dist/migration-entry.js" },
+    "./cli": "./dist/migration/cli.js"
+  },
   "files": ["dist", "DEPENDENCY_PROVENANCE.json", "LICENSE"],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean --silent && tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "lint": "tsc --noEmit"
+    "test": "npm run build --silent && vitest run",
+    "lint": "biome check upstream/src upstream/test"
   },
   "engines": { "node": ">=20" },
-  "devDependencies": { "@types/node": "^24.3.1", "typescript": "^5.9.2", "vitest": "^4.0.16" }
+  "dependencies": {
+    "@honua/sdk-esri-compat": "^0.1.2-beta.0",
+    "@honua/sdk-js": "^0.1.2-beta.0",
+    "typescript": "^5.9.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@types/node": "^24.3.1",
+    "vitest": "^4.0.16"
+  }
 }

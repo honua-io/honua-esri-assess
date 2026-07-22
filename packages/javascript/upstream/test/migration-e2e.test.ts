@@ -144,9 +144,6 @@ function resolveTscBin(): string {
 }
 
 function writeMigratedTsConfig(workingCopy: string): void {
-  const compatEntry = path.join(repoRoot(), "src", "esri-compat-entry.ts");
-  // Use a path relative to the working copy so the tsconfig stays portable.
-  const compatEntryRelative = path.relative(workingCopy, compatEntry).split(path.sep).join("/");
   const tsconfig = {
     compilerOptions: {
       target: "ES2022",
@@ -158,10 +155,7 @@ function writeMigratedTsConfig(workingCopy: string): void {
       allowSyntheticDefaultImports: true,
       esModuleInterop: true,
       verbatimModuleSyntax: false,
-      baseUrl: ".",
-      paths: {
-        "@honua/sdk-esri-compat": [compatEntryRelative],
-      },
+      baseUrl: path.relative(workingCopy, path.resolve("node_modules")).split(path.sep).join("/"),
       types: [],
     },
     include: ["src/**/*.ts"],

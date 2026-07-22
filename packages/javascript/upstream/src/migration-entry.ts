@@ -45,7 +45,7 @@ export {
   MIGRATION_PARITY_EVIDENCE_ARTIFACT_VERSION,
   MIGRATION_SOURCE_INVENTORY_ARTIFACT_KIND,
   MIGRATION_SOURCE_INVENTORY_ARTIFACT_VERSION,
-} from "./core/types.js";
+} from "@honua/sdk-js/migration";
 export type {
   MigrationCompatibilityAssessment,
   MigrationCutoverReadinessItem,
@@ -75,7 +75,7 @@ export type {
   MigrationSourceIdentity,
   MigrationSourceInventoryArtifact,
   MigrationSpatialReferenceInfo,
-} from "./core/types.js";
+} from "@honua/sdk-js/migration";
 export { runEsriCompatCodemod } from "./migration/codemod.js";
 export type {
   CodemodConstructorKind,

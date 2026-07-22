@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { trimTrailingSlashes } from "../core/path-utils.js";
 import { type CodemodTarget, runEsriCompatCodemod } from "./codemod.js";
+import { trimTrailingSlashes } from "./path-utils.js";
 import {
   type LayerReconciliationOptions,
   type LayerReconciliationReport,

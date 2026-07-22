@@ -1,4 +1,4 @@
-import { encodeServiceIdPath, trimTrailingSlashes } from "../core/path-utils.js";
+import { encodeServiceIdPath, trimTrailingSlashes } from "./path-utils.js";
 
 export interface LayerReconciliationOptions {
   sourceBaseUrl: string;

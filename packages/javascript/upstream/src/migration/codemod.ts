@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
+import { type WebMapMapLibreManualGap, webmapJsonToMapLibreStyle } from "@honua/sdk-js/map";
+import type { WebMapJson } from "@honua/sdk-js/webmap";
 import ts from "typescript";
-import { type WebMapMapLibreManualGap, webmapJsonToMapLibreStyle } from "../map/webmap-maplibre.js";
-import type { WebMapJson } from "../webmap/types.js";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);

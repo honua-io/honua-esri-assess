@@ -19,7 +19,7 @@ import {
   scanWidgetUsage,
 } from "../src/migration/widget-scanner.js";
 
-const FIXTURE_ROOT = path.join(process.cwd(), "test", "fixtures", "esri-widget-cliff-app");
+const FIXTURE_ROOT = path.join(import.meta.dirname, "fixtures", "esri-widget-cliff-app");
 
 const tempDirs: string[] = [];
 

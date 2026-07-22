@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.honua.io/migrate/v1/diagnostic.schema.json",
+  "title": "Honua migration diagnostic v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "code", "message", "severity"],
+  "properties": {
+    "contract_version": {"const": "v1"},
+    "code": {"type": "string", "pattern": "^[a-z][a-z0-9.-]*$"},
+    "message": {"type": "string", "minLength": 1},
+    "severity": {"enum": ["info", "warning", "error"]},
+    "scope": {"type": ["string", "null"]}
+  }
+}

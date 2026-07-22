@@ -39,9 +39,10 @@ def test_plan_contract_is_json_compatible_and_versioned() -> None:
     assert plan.to_dict() == {
         "id": "plan-1",
         "service": "arcgis",
-        "actions": ({"kind": "copy"},),
+        "actions": [{"kind": "copy"}],
         "contract_version": "v1",
         "safety_mode": "plan",
+        "plan_digest": "sha256:0c81fdd5035b503ed17aadabc25d25a34b013dd0eb1d6d872754ab957dde5fb5",
     }
 
 

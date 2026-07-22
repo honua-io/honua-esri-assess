@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.honua.io/migrate/v1/run.schema.json",
+  "title": "Honua migration run v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "id", "plan_id", "plan_digest", "service", "safety_mode", "job_ids", "checkpoints", "outcome"],
+  "properties": {
+    "contract_version": {"const": "v1"},
+    "id": {"type": "string", "minLength": 1},
+    "plan_id": {"type": "string", "minLength": 1},
+    "plan_digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "service": {"type": "string", "minLength": 1},
+    "safety_mode": {"enum": ["read-only", "plan", "apply"]},
+    "job_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "checkpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "not": {"pattern": "[Pp]assword|[Ss]ecret|[Tt]oken|[Aa]uthorization|[Cc]redential|[Aa]pi[_-]?[Kk]ey"}
+        }
+      }
+    },
+    "outcome": {"enum": ["pending", "running", "succeeded", "partial", "failed", "cancelled"]}
+  }
+}

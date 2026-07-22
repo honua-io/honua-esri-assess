@@ -39,6 +39,7 @@ Repository = "https://github.com/honua-io/honua-esri-assess"
 
 [project.scripts]
 honua-esri-assess = "honua_esri_assess.cli:main"
+honua-migrate = "honua_migrate.cli:main"
 
 [project.optional-dependencies]
 filegdb = [
@@ -69,7 +70,7 @@ reproducible = true
 # is redundant and, under hatchling >=1.27, a hard "second file at the same
 # path" error. The repo-root copy remains the canonical human-readable source
 # and is shipped in the sdist below; test_schema_packaging keeps the two in sync.
-packages = ["src/honua_esri_assess"]
+packages = ["src/honua_esri_assess", "src/honua_migrate"]
 
 [tool.hatch.build.targets.sdist]
 include = [

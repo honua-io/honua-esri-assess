@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>honua-migrate-maui</AssemblyName>
+    <RootNamespace>Honua.Migrate.Maui.Cli</RootNamespace>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>honua-migrate-maui</ToolCommandName>
+    <PackageId>Honua.Migrate.Maui.Tool</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Honua</Authors>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/honua-io/honua-migrate</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>honua;arcgis;maui;migration;codemod</PackageTags>
+    <Description>Roslyn source codemod for migrating ArcGIS Maps SDK for .NET MAUI source to Honua.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\Honua.Migrate.Maui.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\src\README.md" Pack="true" PackagePath="\" Link="README.md" />
+    <None Include="..\PROVENANCE.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

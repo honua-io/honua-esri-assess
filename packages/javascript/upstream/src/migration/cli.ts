@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseWebMap } from "@honua/sdk-js/webmap";
 import type { WebMapJson } from "@honua/sdk-js/webmap";
+import { stringifyArtifact } from "./artifact-safety.js";
 import { type CodemodMetricsByKind, type CodemodTarget, runEsriCompatCodemod } from "./codemod.js";
 import {
   type ContentImportReport,
@@ -15,6 +16,13 @@ import {
 import { MIGRATION_DEMO_PRIMARY_TARGET } from "./demo-targets.js";
 import { parseGeoservicesServiceUrl, runMigrationDemo } from "./demo.js";
 import { evaluateMigrationGates } from "./gating.js";
+import {
+  commitStagedOutputDirectory,
+  createStagedOutputDirectory,
+  discardStagedOutputDirectory,
+  preflightOutputPlan,
+  writeOutputFilesAtomically,
+} from "./output-writer.js";
 import { getJsParityMatrix, summarizeJsParityMatrix } from "./parity-matrix.js";
 import { runLayerReconciliation, summarizeLayerReconciliation } from "./reconcile.js";
 import { buildJsMigrationReport } from "./report.js";
@@ -46,6 +54,7 @@ interface ParsedArgs {
   contentAction?: "scan" | "export" | "import" | "reconcile";
   codemodTarget: CodemodTarget;
   write: boolean;
+  force: boolean;
   acknowledgeMutations: boolean;
   annotateTodos: boolean;
   failOnManual: boolean;
@@ -143,6 +152,70 @@ function requireMutationAcknowledgement(args: ParsedArgs, operation: string): vo
   );
 }
 
+function assertSafeNetworkUrl(value: string, optionName: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${optionName} must be a valid HTTP(S) URL.`);
+  }
+
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    parsed.username.length > 0 ||
+    parsed.password.length > 0 ||
+    parsed.search.length > 0 ||
+    parsed.hash.length > 0
+  ) {
+    throw new Error(`${optionName} must be an HTTP(S) URL without credentials, query strings, or fragments.`);
+  }
+}
+
+function assertOptionalSafeNetworkUrl(value: string | undefined, optionName: string): void {
+  if (value) {
+    assertSafeNetworkUrl(value, optionName);
+  }
+}
+
+function jsonOutput(pathValue: string, value: unknown): { path: string; contents: string } {
+  return { path: pathValue, contents: stringifyArtifact(value) };
+}
+
+function printArtifact(value: unknown): void {
+  process.stdout.write(stringifyArtifact(value));
+}
+
+function remapLocalOutputPaths<T>(value: T, fromDirectory: string, toDirectory: string): T {
+  if (typeof value === "string") {
+    if (value === fromDirectory) {
+      return toDirectory as T;
+    }
+    if (value.startsWith(`${fromDirectory}${path.sep}`)) {
+      return path.join(toDirectory, value.slice(fromDirectory.length + 1)) as T;
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => remapLocalOutputPaths(entry, fromDirectory, toDirectory)) as T;
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, remapLocalOutputPaths(entry, fromDirectory, toDirectory)]),
+    ) as T;
+  }
+  return value;
+}
+
+function assertOutputFileOutsideDirectory(filePath: string | undefined, directoryPath: string): void {
+  if (!filePath) {
+    return;
+  }
+  const relative = path.relative(directoryPath, filePath);
+  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+    throw new Error("A separate report output cannot be placed inside a generated output directory.");
+  }
+}
+
 interface FixtureMetricsGateOptions {
   failOnManual: boolean;
   failOnUnhandled: boolean;
@@ -180,7 +253,7 @@ if (!parsed) {
   process.exitCode = 1;
 } else {
   if (parsed.command === "scan") {
-    runScan(parsed.target, parsed.reportPath);
+    runScan(parsed);
   } else if (parsed.command === "widgets") {
     runWidgets(parsed);
   } else if (parsed.command === "content") {
@@ -189,9 +262,9 @@ if (!parsed) {
       process.exitCode = 1;
     });
   } else if (parsed.command === "matrix") {
-    runMatrix(parsed.reportPath);
+    runMatrix(parsed);
   } else if (parsed.command === "runtime-matrix") {
-    runRuntimeMatrix(parsed.reportPath);
+    runRuntimeMatrix(parsed);
   } else if (parsed.command === "content-webmap") {
     runContentWebMap(parsed);
   } else if (parsed.command === "fixtures") {
@@ -218,7 +291,9 @@ if (!parsed) {
   }
 }
 
-function runMatrix(reportPath?: string): void {
+function runMatrix(args: ParsedArgs): void {
+  const outputPlan = preflightOutputPlan({ files: args.reportPath ? [args.reportPath] : [], force: args.force });
+  const reportPath = outputPlan.files[0];
   const matrix = getJsParityMatrix();
   const summary = summarizeJsParityMatrix(matrix);
   process.stdout.write(
@@ -236,16 +311,17 @@ function runMatrix(reportPath?: string): void {
     ].join(" "),
   );
   process.stdout.write("\n");
-  process.stdout.write(`${JSON.stringify({ summary, matrix }, null, 2)}\n`);
+  printArtifact({ summary, matrix });
 
   if (reportPath) {
-    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-    fs.writeFileSync(reportPath, `${JSON.stringify({ summary, matrix }, null, 2)}\n`, "utf8");
+    writeOutputFilesAtomically([jsonOutput(reportPath, { summary, matrix })], args.force);
     process.stdout.write(`reportWritten=${reportPath}\n`);
   }
 }
 
-function runRuntimeMatrix(reportPath?: string): void {
+function runRuntimeMatrix(args: ParsedArgs): void {
+  const outputPlan = preflightOutputPlan({ files: args.reportPath ? [args.reportPath] : [], force: args.force });
+  const reportPath = outputPlan.files[0];
   const matrix = getJsRuntimeParityMatrix();
   const summary = summarizeJsRuntimeParity(matrix);
   process.stdout.write(
@@ -263,23 +339,23 @@ function runRuntimeMatrix(reportPath?: string): void {
     ].join(" "),
   );
   process.stdout.write("\n");
-  process.stdout.write(`${JSON.stringify({ summary, matrix }, null, 2)}\n`);
+  printArtifact({ summary, matrix });
 
   if (reportPath) {
-    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-    fs.writeFileSync(reportPath, `${JSON.stringify({ summary, matrix }, null, 2)}\n`, "utf8");
+    writeOutputFilesAtomically([jsonOutput(reportPath, { summary, matrix })], args.force);
     process.stdout.write(`reportWritten=${reportPath}\n`);
   }
 }
 
 function runCorpusEvidence(args: ParsedArgs): void {
-  const corpusRoot = path.resolve(
-    args.corpusPath ?? path.join(process.cwd(), "test", "fixtures", "esri-sample-corpus"),
-  );
   if (!args.corpusOutputDir) {
     throw new Error("corpus-evidence requires --out <dir>");
   }
-  const outputDir = path.resolve(args.corpusOutputDir);
+  const initialPlan = preflightOutputPlan({ directories: [args.corpusOutputDir], force: args.force });
+  const outputDir = initialPlan.directories[0];
+  const corpusRoot = path.resolve(
+    args.corpusPath ?? path.join(process.cwd(), "test", "fixtures", "esri-sample-corpus"),
+  );
 
   const manifestPath = path.join(corpusRoot, "manifest.json");
   if (!fs.existsSync(manifestPath)) {
@@ -291,15 +367,23 @@ function runCorpusEvidence(args: ParsedArgs): void {
     codemodTarget: args.codemodTarget,
   });
 
-  const samplesDir = path.join(outputDir, "samples");
-  fs.mkdirSync(samplesDir, { recursive: true });
-  for (const sample of evidence.samples) {
-    const samplePath = path.join(samplesDir, `${sample.sampleId}.json`);
-    fs.writeFileSync(samplePath, `${JSON.stringify(sample, null, 2)}\n`, "utf8");
+  let stagedOutputDir: string | undefined;
+  try {
+    stagedOutputDir = createStagedOutputDirectory(outputDir, args.force);
+    const stagedSamplesDir = path.join(stagedOutputDir, "samples");
+    const outputs = evidence.samples.map((sample) =>
+      jsonOutput(path.join(stagedSamplesDir, `${sample.sampleId}.json`), sample),
+    );
+    outputs.push(jsonOutput(path.join(stagedOutputDir, "corpus-evidence.json"), evidence));
+    writeOutputFilesAtomically(outputs);
+    commitStagedOutputDirectory(stagedOutputDir, outputDir, args.force);
+    stagedOutputDir = undefined;
+  } finally {
+    discardStagedOutputDirectory(stagedOutputDir);
   }
 
+  const samplesDir = path.join(outputDir, "samples");
   const aggregatePath = path.join(outputDir, "corpus-evidence.json");
-  fs.writeFileSync(aggregatePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
 
   process.stdout.write(
     [
@@ -317,35 +401,37 @@ function runCorpusEvidence(args: ParsedArgs): void {
   process.stdout.write(`samplesDir=${samplesDir}\n`);
 }
 
-function runScan(target: string, reportPath?: string): void {
-  const report = scanArcGisUsage(target);
+function runScan(args: ParsedArgs): void {
+  const outputPlan = preflightOutputPlan({ files: args.reportPath ? [args.reportPath] : [], force: args.force });
+  const reportPath = outputPlan.files[0];
+  const report = scanArcGisUsage(args.target);
   const summary = summarizeArcGisScan(report);
 
   process.stdout.write(`${summary}\n`);
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  printArtifact(report);
 
   if (reportPath) {
-    fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    writeOutputFilesAtomically([jsonOutput(reportPath, report)], args.force);
     process.stdout.write(`reportWritten=${reportPath}\n`);
   }
 }
 
 function runWidgets(args: ParsedArgs): void {
+  const outputPlan = preflightOutputPlan({ files: args.reportPath ? [args.reportPath] : [], force: args.force });
+  const reportPath = outputPlan.files[0];
   const scan = scanWidgetUsage(args.target);
   const report = buildWidgetReadinessReport(scan);
 
   if (args.widgetOutput === "json") {
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    printArtifact(report);
   } else if (args.widgetOutput === "markdown") {
     process.stdout.write(formatWidgetReadinessMarkdown(report));
   } else {
     process.stdout.write(`${formatWidgetReadinessTable(report)}\n`);
   }
 
-  if (args.reportPath) {
-    const reportPath = path.resolve(args.reportPath);
-    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-    fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  if (reportPath) {
+    writeOutputFilesAtomically([jsonOutput(reportPath, report)], args.force);
     process.stdout.write(`reportWritten=${reportPath}\n`);
   }
 
@@ -369,7 +455,10 @@ async function runContent(args: ParsedArgs): Promise<void> {
   }
 
   if (action === "scan") {
+    const outputPlan = preflightOutputPlan({ files: args.reportPath ? [args.reportPath] : [], force: args.force });
+    const reportPath = outputPlan.files[0];
     const portalUrl = args.contentPortalUrl ?? args.target;
+    assertSafeNetworkUrl(portalUrl, "--portal");
     const report = await runContentScan({
       portalUrl,
       token: args.contentToken,
@@ -383,11 +472,9 @@ async function runContent(args: ParsedArgs): Promise<void> {
       ].join(" "),
     );
     process.stdout.write("\n");
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-    if (args.reportPath) {
-      const reportPath = path.resolve(args.reportPath);
-      fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-      fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    printArtifact(report);
+    if (reportPath) {
+      writeOutputFilesAtomically([jsonOutput(reportPath, report)], args.force);
       process.stdout.write(`reportWritten=${reportPath}\n`);
     }
     return;
@@ -396,15 +483,33 @@ async function runContent(args: ParsedArgs): Promise<void> {
   if (action === "export") {
     requireMutationAcknowledgement(args, "content export");
     const portalUrl = args.contentPortalUrl ?? args.target;
-    const outputDir = path.resolve(args.contentOutputDir ?? path.join(process.cwd(), "content-export"));
-    const report = await runContentExport({
-      portalUrl,
-      token: args.contentToken,
-      outputDir,
-      includeFeatures: args.contentIncludeFeatures,
-      includeWebMaps: args.contentIncludeWebMaps,
-      includeHostedLayers: args.contentIncludeHostedLayers,
+    assertSafeNetworkUrl(portalUrl, "--portal");
+    const outputPlan = preflightOutputPlan({
+      files: args.reportPath ? [args.reportPath] : [],
+      directories: [args.contentOutputDir ?? path.join(process.cwd(), "content-export")],
+      force: args.force,
     });
+    const outputDir = outputPlan.directories[0];
+    const reportPath = outputPlan.files[0];
+    assertOutputFileOutsideDirectory(reportPath, outputDir);
+    let stagedOutputDir: string | undefined;
+    let report: Awaited<ReturnType<typeof runContentExport>>;
+    try {
+      stagedOutputDir = createStagedOutputDirectory(outputDir, args.force);
+      const stagedReport = await runContentExport({
+        portalUrl,
+        token: args.contentToken,
+        outputDir: stagedOutputDir,
+        includeFeatures: args.contentIncludeFeatures,
+        includeWebMaps: args.contentIncludeWebMaps,
+        includeHostedLayers: args.contentIncludeHostedLayers,
+      });
+      report = remapLocalOutputPaths(stagedReport, stagedOutputDir, outputDir);
+      commitStagedOutputDirectory(stagedOutputDir, outputDir, args.force);
+      stagedOutputDir = undefined;
+    } finally {
+      discardStagedOutputDirectory(stagedOutputDir);
+    }
     process.stdout.write(
       [
         "contentExport",
@@ -415,11 +520,9 @@ async function runContent(args: ParsedArgs): Promise<void> {
       ].join(" "),
     );
     process.stdout.write("\n");
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-    if (args.reportPath) {
-      const reportPath = path.resolve(args.reportPath);
-      fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-      fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    printArtifact(report);
+    if (reportPath) {
+      writeOutputFilesAtomically([jsonOutput(reportPath, report)], args.force);
       process.stdout.write(`reportWritten=${reportPath}\n`);
     }
     return;
@@ -432,34 +535,68 @@ async function runContent(args: ParsedArgs): Promise<void> {
     if (!targetBaseUrl) {
       throw new Error("content import requires --target <url> or --admin-base-url <url>");
     }
-
-    const report = await runContentImport({
-      sourceDir,
-      outputDir: args.contentOutputDir,
-      targetBaseUrl,
-      adminApiKey: args.adminApiKey,
-      includeWebMaps: args.contentIncludeWebMaps,
-      includeHostedLayers: args.contentIncludeHostedLayers,
-      sourceUrlPrefix: args.contentSourceUrlPrefix,
-      targetUrlPrefix: args.contentTargetUrlPrefix,
-      tablePrefix: args.contentTablePrefix,
-      pollIntervalMs:
-        typeof args.pollIntervalMs === "number" ? Math.max(1, Math.trunc(args.pollIntervalMs)) : undefined,
-      timeoutMs:
-        typeof args.timeoutSeconds === "number" ? Math.max(1, Math.trunc(args.timeoutSeconds * 1_000)) : undefined,
+    assertSafeNetworkUrl(targetBaseUrl, "--target");
+    assertOptionalSafeNetworkUrl(args.contentSourceUrlPrefix, "--source-url-prefix");
+    assertOptionalSafeNetworkUrl(args.contentTargetUrlPrefix, "--target-url-prefix");
+    const outputPlan = preflightOutputPlan({
+      files: args.reportPath ? [args.reportPath] : [],
+      directories: [args.contentOutputDir ?? path.join(sourceDir, "content-import")],
+      force: args.force,
     });
+    const outputDir = outputPlan.directories[0];
+    const reportPath = outputPlan.files[0];
+    assertOutputFileOutsideDirectory(reportPath, outputDir);
+    let stagedOutputDir: string | undefined;
+    let report: ContentImportReport;
+    try {
+      stagedOutputDir = createStagedOutputDirectory(outputDir, args.force);
+      const stagedReport = await runContentImport({
+        sourceDir,
+        outputDir: stagedOutputDir,
+        targetBaseUrl,
+        adminApiKey: args.adminApiKey,
+        includeWebMaps: args.contentIncludeWebMaps,
+        includeHostedLayers: args.contentIncludeHostedLayers,
+        sourceUrlPrefix: args.contentSourceUrlPrefix,
+        targetUrlPrefix: args.contentTargetUrlPrefix,
+        tablePrefix: args.contentTablePrefix,
+        pollIntervalMs:
+          typeof args.pollIntervalMs === "number" ? Math.max(1, Math.trunc(args.pollIntervalMs)) : undefined,
+        timeoutMs:
+          typeof args.timeoutSeconds === "number" ? Math.max(1, Math.trunc(args.timeoutSeconds * 1_000)) : undefined,
+      });
+      report = remapLocalOutputPaths(stagedReport, stagedOutputDir, outputDir);
+      commitStagedOutputDirectory(stagedOutputDir, outputDir, args.force);
+      stagedOutputDir = undefined;
+    } finally {
+      discardStagedOutputDirectory(stagedOutputDir);
+    }
 
-    writeContentImportOutput(report, args.reportPath);
+    writeContentImportOutput(report, reportPath, args.force);
     return;
   }
 
-  requireMutationAcknowledgement(args, "content reconcile");
   const sourceDir = path.resolve(args.contentSourceDir ?? args.target);
+  const reconcileOutputPath = args.contentOutputDir ?? path.join(sourceDir, "content-reconcile-report.json");
+  const reportPathMatchesPrimary =
+    args.reportPath !== undefined && path.resolve(args.reportPath) === path.resolve(reconcileOutputPath);
+  const outputPlan = preflightOutputPlan({
+    files: [reconcileOutputPath, ...(args.reportPath && !reportPathMatchesPrimary ? [args.reportPath] : [])],
+    force: args.force,
+  });
+  const [reconciledReportPath, additionalReportPath] = outputPlan.files;
+  const reportPath = reportPathMatchesPrimary ? reconciledReportPath : additionalReportPath;
   const report = runContentReconcile({
     sourceDir,
     importReportPath: args.contentImportReportPath,
-    outputPath: args.contentOutputDir,
+    outputPath: reconciledReportPath,
+    writeReport: false,
   });
+  const outputs = [jsonOutput(reconciledReportPath, report)];
+  if (additionalReportPath) {
+    outputs.push(jsonOutput(additionalReportPath, report));
+  }
+  writeOutputFilesAtomically(outputs, args.force);
   process.stdout.write(
     [
       "contentReconcile",
@@ -472,16 +609,17 @@ async function runContent(args: ParsedArgs): Promise<void> {
     ].join(" "),
   );
   process.stdout.write("\n");
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-  if (args.reportPath) {
-    const reportPath = path.resolve(args.reportPath);
-    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-    fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  printArtifact(report);
+  if (reportPath) {
     process.stdout.write(`reportWritten=${reportPath}\n`);
   }
 }
 
-function writeContentImportOutput(report: ContentImportReport, reportPathOverride: string | undefined): void {
+function writeContentImportOutput(
+  report: ContentImportReport,
+  reportPathOverride: string | undefined,
+  force: boolean,
+): void {
   process.stdout.write(
     [
       "contentImport",
@@ -494,18 +632,26 @@ function writeContentImportOutput(report: ContentImportReport, reportPathOverrid
     ].join(" "),
   );
   process.stdout.write("\n");
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  printArtifact(report);
 
   if (reportPathOverride) {
-    const reportPath = path.resolve(reportPathOverride);
-    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-    fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-    process.stdout.write(`reportWritten=${reportPath}\n`);
+    writeOutputFilesAtomically([jsonOutput(reportPathOverride, report)], force);
+    process.stdout.write(`reportWritten=${reportPathOverride}\n`);
   }
 }
 
 function runContentWebMap(args: ParsedArgs): void {
   const inputPath = path.resolve(args.contentInputPath ?? args.target);
+  const requestedOutputPath =
+    args.contentOutputPath ??
+    path.join(path.dirname(inputPath), `${path.basename(inputPath, path.extname(inputPath))}.honua.json`);
+  const outputPlan = preflightOutputPlan({
+    files: [requestedOutputPath, ...(args.reportPath ? [args.reportPath] : [])],
+    force: args.force,
+  });
+  const [outputPath, reportPath] = outputPlan.files;
+  assertOptionalSafeNetworkUrl(args.contentSourceUrlPrefix, "--source-url-prefix");
+  assertOptionalSafeNetworkUrl(args.contentTargetUrlPrefix, "--target-url-prefix");
   if (!fs.existsSync(inputPath)) {
     throw new Error(`WebMap input file does not exist: ${inputPath}`);
   }
@@ -519,12 +665,6 @@ function runContentWebMap(args: ParsedArgs): void {
   );
   const result = parseWebMap(webMap, { includeBasemap: args.contentIncludeBasemap });
 
-  const outputPath = path.resolve(
-    args.contentOutputPath ??
-      path.join(path.dirname(inputPath), `${path.basename(inputPath, path.extname(inputPath))}.honua.json`),
-  );
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-
   const outputDocument = {
     generatedAt: new Date().toISOString(),
     inputPath,
@@ -534,9 +674,12 @@ function runContentWebMap(args: ParsedArgs): void {
     targetUrlPrefix: args.contentTargetUrlPrefix,
     result,
   };
-  fs.writeFileSync(outputPath, `${JSON.stringify(outputDocument, null, 2)}\n`, "utf8");
-
   const report = buildContentWebMapReport(inputPath, outputPath, rewrittenUrlCount, result);
+  const outputs = [jsonOutput(outputPath, outputDocument)];
+  if (reportPath) {
+    outputs.push(jsonOutput(reportPath, report));
+  }
+  writeOutputFilesAtomically(outputs, args.force);
   process.stdout.write(
     [
       "contentWebMap",
@@ -548,13 +691,10 @@ function runContentWebMap(args: ParsedArgs): void {
     ].join(" "),
   );
   process.stdout.write("\n");
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  printArtifact(report);
   process.stdout.write(`outputWritten=${outputPath}\n`);
 
-  if (args.reportPath) {
-    const reportPath = path.resolve(args.reportPath);
-    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-    fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  if (reportPath) {
     process.stdout.write(`reportWritten=${reportPath}\n`);
   }
 }
@@ -644,6 +784,8 @@ const MANUAL_INTERVENTION_WARNING_CODES = new Set([
 ]);
 
 function runFixtures(args: ParsedArgs): void {
+  const outputPlan = preflightOutputPlan({ files: args.reportPath ? [args.reportPath] : [], force: args.force });
+  const reportPath = outputPlan.files[0];
   const fixturesRoot = args.target;
   const fixtureNames =
     args.fixtureNames && args.fixtureNames.length > 0 ? [...args.fixtureNames] : [...DEFAULT_REAL_SAMPLE_FIXTURE_NAMES];
@@ -678,12 +820,11 @@ function runFixtures(args: ParsedArgs): void {
       process.stdout.write(`- ${failure}\n`);
     }
   }
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  printArtifact(report);
 
-  if (args.reportPath) {
-    fs.mkdirSync(path.dirname(args.reportPath), { recursive: true });
-    fs.writeFileSync(args.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-    process.stdout.write(`reportWritten=${args.reportPath}\n`);
+  if (reportPath) {
+    writeOutputFilesAtomically([jsonOutput(reportPath, report)], args.force);
+    process.stdout.write(`reportWritten=${reportPath}\n`);
   }
 
   if (!report.gates.passed) {
@@ -847,6 +988,8 @@ function evaluateFixtureMetricsGates(
 }
 
 function runCodemod(args: ParsedArgs): void {
+  const outputPlan = preflightOutputPlan({ files: args.reportPath ? [args.reportPath] : [], force: args.force });
+  const reportPath = outputPlan.files[0];
   const scanReport = scanArcGisUsage(args.target);
   const codemodResult = runEsriCompatCodemod({
     rootDir: args.target,
@@ -906,11 +1049,11 @@ function runCodemod(args: ParsedArgs): void {
     }
   }
 
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  printArtifact(report);
 
-  if (args.reportPath) {
-    fs.writeFileSync(args.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-    process.stdout.write(`reportWritten=${args.reportPath}\n`);
+  if (reportPath) {
+    writeOutputFilesAtomically([jsonOutput(reportPath, report)], args.force);
+    process.stdout.write(`reportWritten=${reportPath}\n`);
   }
 
   const gateEvaluation = evaluateMigrationGates(report, {
@@ -930,7 +1073,8 @@ function runCodemod(args: ParsedArgs): void {
 }
 
 async function runReconcile(args: ParsedArgs): Promise<void> {
-  requireMutationAcknowledgement(args, "reconcile");
+  const outputPlan = preflightOutputPlan({ files: args.reportPath ? [args.reportPath] : [], force: args.force });
+  const reportPath = outputPlan.files[0];
   if (
     !args.sourceBaseUrl ||
     !args.sourceServiceId ||
@@ -942,6 +1086,8 @@ async function runReconcile(args: ParsedArgs): Promise<void> {
     process.exitCode = 1;
     return;
   }
+  assertSafeNetworkUrl(args.sourceBaseUrl, "--source-base-url");
+  assertSafeNetworkUrl(args.targetBaseUrl, "--target-base-url");
 
   const report = await runLayerReconciliation({
     sourceBaseUrl: args.sourceBaseUrl,
@@ -956,11 +1102,11 @@ async function runReconcile(args: ParsedArgs): Promise<void> {
   process.stdout.write(
     `checks=${report.checks.map((check) => `${check.check}:${check.passed ? "pass" : "fail"}`).join(",")}\n`,
   );
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  printArtifact(report);
 
-  if (args.reportPath) {
-    fs.writeFileSync(args.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-    process.stdout.write(`reportWritten=${args.reportPath}\n`);
+  if (reportPath) {
+    writeOutputFilesAtomically([jsonOutput(reportPath, report)], args.force);
+    process.stdout.write(`reportWritten=${reportPath}\n`);
   }
 
   if (!report.passed) {
@@ -973,10 +1119,23 @@ async function runDemo(args: ParsedArgs): Promise<void> {
   const fixtureName = args.fixtureName ?? DEFAULT_DEMO_FIXTURE_NAME;
   const fixturesRoot = args.fixturesRoot ?? path.join(process.cwd(), "test", "fixtures");
   const outputDir = args.outputDir ?? path.join(process.cwd(), ".tmp", "migration-demo", fixtureName);
+  const finalWorkingAppDir = path.join(path.resolve(outputDir), fixtureName);
+  const outputPlan = preflightOutputPlan({
+    files: args.reportPath ? [args.reportPath] : [],
+    directories: [finalWorkingAppDir],
+    force: args.force,
+  });
+  const reportPath = outputPlan.files[0];
+  const workingAppDir = outputPlan.directories[0];
+  assertOutputFileOutsideDirectory(reportPath, workingAppDir);
   const sourceUrlDetails =
     typeof args.sourceServiceUrl === "string" ? parseGeoservicesServiceUrl(args.sourceServiceUrl) : undefined;
   const resolvedLayerId = args.layerId ?? sourceUrlDetails?.layerId;
   const adminApiKey = args.adminApiKey ?? process.env.HONUA_ADMIN_API_KEY;
+  assertOptionalSafeNetworkUrl(args.adminBaseUrl, "--admin-base-url");
+  assertOptionalSafeNetworkUrl(args.sourceServiceUrl, "--source-service-url");
+  assertOptionalSafeNetworkUrl(args.sourceBaseUrl, "--source-base-url");
+  assertOptionalSafeNetworkUrl(args.targetBaseUrl, "--target-base-url");
 
   if (!args.skipImport) {
     if (!args.adminBaseUrl || !args.sourceServiceUrl || resolvedLayerId === undefined || !args.tableName) {
@@ -1014,52 +1173,63 @@ async function runDemo(args: ParsedArgs): Promise<void> {
     }
   }
 
-  const report = await runMigrationDemo({
-    fixtureName,
-    fixturesRoot,
-    outputDir,
-    codemodTarget: args.codemodTarget,
-    compatImportPath: args.compatImportPath,
-    annotateTodos: args.annotateTodos,
-    skipImport: args.skipImport,
-    skipReconciliation: args.skipReconcile,
-    importOptions:
-      args.skipImport ||
-      !args.adminBaseUrl ||
-      !args.sourceServiceUrl ||
-      resolvedLayerId === undefined ||
-      !args.tableName
-        ? undefined
-        : {
-            adminBaseUrl: args.adminBaseUrl,
-            adminApiKey,
-            sourceServiceUrl: args.sourceServiceUrl,
-            layerId: resolvedLayerId,
-            tableName: args.tableName,
-            pollIntervalMs: args.pollIntervalMs,
-            timeoutMs:
-              typeof args.timeoutSeconds === "number"
-                ? Math.max(1, Math.trunc(args.timeoutSeconds * 1_000))
-                : undefined,
-            autoPublish: true,
-          },
-    reconciliationOptions:
-      args.skipReconcile ||
-      !sourceBaseUrl ||
-      !sourceServiceId ||
-      !targetBaseUrl ||
-      !targetServiceId ||
-      resolvedLayerId === undefined
-        ? undefined
-        : {
-            sourceBaseUrl,
-            sourceServiceId,
-            targetBaseUrl,
-            targetServiceId,
-            layerId: resolvedLayerId,
-            sampleSize: args.sampleSize,
-          },
-  });
+  let stagedWorkingAppDir: string | undefined;
+  let report: Awaited<ReturnType<typeof runMigrationDemo>>;
+  try {
+    stagedWorkingAppDir = createStagedOutputDirectory(workingAppDir, args.force);
+    const stagedReport = await runMigrationDemo({
+      fixtureName,
+      fixturesRoot,
+      outputDir,
+      workingAppDir: stagedWorkingAppDir,
+      codemodTarget: args.codemodTarget,
+      compatImportPath: args.compatImportPath,
+      annotateTodos: args.annotateTodos,
+      skipImport: args.skipImport,
+      skipReconciliation: args.skipReconcile,
+      importOptions:
+        args.skipImport ||
+        !args.adminBaseUrl ||
+        !args.sourceServiceUrl ||
+        resolvedLayerId === undefined ||
+        !args.tableName
+          ? undefined
+          : {
+              adminBaseUrl: args.adminBaseUrl,
+              adminApiKey,
+              sourceServiceUrl: args.sourceServiceUrl,
+              layerId: resolvedLayerId,
+              tableName: args.tableName,
+              pollIntervalMs: args.pollIntervalMs,
+              timeoutMs:
+                typeof args.timeoutSeconds === "number"
+                  ? Math.max(1, Math.trunc(args.timeoutSeconds * 1_000))
+                  : undefined,
+              autoPublish: true,
+            },
+      reconciliationOptions:
+        args.skipReconcile ||
+        !sourceBaseUrl ||
+        !sourceServiceId ||
+        !targetBaseUrl ||
+        !targetServiceId ||
+        resolvedLayerId === undefined
+          ? undefined
+          : {
+              sourceBaseUrl,
+              sourceServiceId,
+              targetBaseUrl,
+              targetServiceId,
+              layerId: resolvedLayerId,
+              sampleSize: args.sampleSize,
+            },
+    });
+    report = remapLocalOutputPaths(stagedReport, stagedWorkingAppDir, workingAppDir);
+    commitStagedOutputDirectory(stagedWorkingAppDir, workingAppDir, args.force);
+    stagedWorkingAppDir = undefined;
+  } finally {
+    discardStagedOutputDirectory(stagedWorkingAppDir);
+  }
 
   if (report.import) {
     process.stdout.write(
@@ -1136,12 +1306,11 @@ async function runDemo(args: ParsedArgs): Promise<void> {
   process.stdout.write(
     `demoPassed=${report.passed ? "yes" : "no"} elapsedMs=${report.elapsedMs} outputDir=${report.workingAppDir}\n`,
   );
-  process.stdout.write(`${JSON.stringify(stdoutSummary, null, 2)}\n`);
+  printArtifact(stdoutSummary);
 
-  if (args.reportPath) {
-    fs.mkdirSync(path.dirname(args.reportPath), { recursive: true });
-    fs.writeFileSync(args.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-    process.stdout.write(`reportWritten=${args.reportPath}\n`);
+  if (reportPath) {
+    writeOutputFilesAtomically([jsonOutput(reportPath, report)], args.force);
+    process.stdout.write(`reportWritten=${reportPath}\n`);
   }
 
   if (!report.passed) {
@@ -1155,6 +1324,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       command: "scan",
       target: process.cwd(),
       write: false,
+      force: false,
       acknowledgeMutations: false,
       annotateTodos: false,
       failOnManual: false,
@@ -1205,6 +1375,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   let codemodTarget: CodemodTarget = "honua-compat";
   let codemodTargetExplicit = false;
   let write = false;
+  let force = false;
   let acknowledgeMutations = false;
   let annotateTodos = false;
   let failOnManual = false;
@@ -1257,6 +1428,10 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     }
     if (token === "--write") {
       write = true;
+      continue;
+    }
+    if (token === "--force") {
+      force = true;
       continue;
     }
     if (token === "--acknowledge-mutations") {
@@ -1751,6 +1926,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       (command === "fixtures" || command === "demo" ? path.join(process.cwd(), "test", "fixtures") : process.cwd()),
     contentAction,
     write,
+    force,
     acknowledgeMutations,
     codemodTarget: resolvedCodemodTarget,
     annotateTodos,
@@ -1833,18 +2009,19 @@ function printUsage(): void {
   process.stdout.write(
     [
       "Usage:",
+      "  Add --force to replace existing CLI-owned reports, artifacts, or output trees.",
       "  honua-js-migrate [scan] <path> [--report <file>]",
       "  honua-js-migrate widgets <path> [--json | --markdown] [--gate <pct>] [--report <file>]",
       "  honua-js-migrate codemod <path> [--target <honua|honua-compat|honua-maplibre|esri-leaflet>] [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-js-migrate matrix [--report <file>]",
       "  honua-js-migrate runtime-matrix [--report <file>]",
       "  honua-js-migrate fixtures [<fixtures-root>] [--target <honua|honua-compat|honua-maplibre|esri-leaflet>] [--fixtures <name1,name2,...>] [--report <file>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
-      "  honua-js-migrate reconcile --source-base-url <url> --source-service-id <id> --target-base-url <url> --target-service-id <id> --layer-id <n> --acknowledge-mutations [--sample-size <n>] [--report <file>]",
+      "  honua-js-migrate reconcile --source-base-url <url> --source-service-id <id> --target-base-url <url> --target-service-id <id> --layer-id <n> [--sample-size <n>] [--report <file>]",
       "  honua-js-migrate demo [<fixture-name>] --acknowledge-mutations [--fixtures-root <dir>] [--output-dir <dir>] [--target <honua|honua-compat|honua-maplibre|esri-leaflet>] [--admin-base-url <url>] [--admin-api-key <key>] [--source-service-url <url>] [--layer-id <n>] [--table-name <name>] [--source-base-url <url>] [--source-service-id <id>] [--target-base-url <url>] [--target-service-id <id>] [--sample-size <n>] [--poll-interval-ms <n>] [--timeout-seconds <n>] [--skip-import] [--skip-reconcile] [--report <file>]",
       "  honua-js-migrate content scan --portal <url> [--token <token>] [--report <file>]",
       "  honua-js-migrate content export --portal <url> --output-dir <dir> --acknowledge-mutations [--token <token>] [--exclude-features] [--exclude-webmaps] [--exclude-hosted-layers] [--report <file>]",
       "  honua-js-migrate content import --source <dir> --target <url> --acknowledge-mutations [--admin-api-key <key>] [--output-dir <dir>] [--table-prefix <prefix>] [--source-url-prefix <url>] [--target-url-prefix <url>] [--exclude-webmaps] [--exclude-hosted-layers] [--report <file>]",
-      "  honua-js-migrate content reconcile --source <dir> --acknowledge-mutations [--import-report <file>] [--output-dir <file>] [--report <file>]",
+      "  honua-js-migrate content reconcile --source <dir> [--import-report <file>] [--output-dir <file>] [--report <file>]",
       "  honua-js-migrate content-webmap --input <webmap.json> [--output <file>] [--source-url-prefix <url>] [--target-url-prefix <url>] [--exclude-basemap] [--report <file>]",
       "  honua-js-migrate corpus-evidence [--corpus <dir>] --out <dir> [--target <honua|honua-compat|honua-maplibre|esri-leaflet>]",
       "",
@@ -1861,12 +2038,12 @@ function printUsage(): void {
       "  node dist/src/migration/cli.js fixtures --report real-sample-metrics.json",
       "  node dist/src/migration/cli.js fixtures --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0",
       "  node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3",
-      "  node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --acknowledge-mutations --report reconcile-report.json",
+      "  node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --report reconcile-report.json",
       "  node dist/src/migration/cli.js demo --admin-base-url http://localhost:5000 --source-service-url https://arcgis.example/rest/services/incidents/FeatureServer/0 --layer-id 0 --table-name incidents --source-base-url https://arcgis.example --source-service-id incidents --target-base-url http://localhost:5000 --target-service-id incidents --acknowledge-mutations --report demo-report.json",
       "  node dist/src/migration/cli.js content scan --portal https://org.maps.arcgis.com --report ./content/scan.json",
       "  node dist/src/migration/cli.js content export --portal https://org.maps.arcgis.com --output-dir ./export --acknowledge-mutations --report ./content/export.json",
       "  node dist/src/migration/cli.js content import --source ./export --target https://honua.example.com --admin-api-key $HONUA_ADMIN_API_KEY --acknowledge-mutations --report ./content/import.json",
-      "  node dist/src/migration/cli.js content reconcile --source ./export --acknowledge-mutations --report ./content/reconcile.json",
+      "  node dist/src/migration/cli.js content reconcile --source ./export --report ./content/reconcile.json",
       "  node dist/src/migration/cli.js content-webmap --input ./export/map.json --output ./export/map.honua.json --source-url-prefix https://org.maps.arcgis.com --target-url-prefix https://honua.example.com --report ./export/map.report.json",
       "  node dist/src/migration/cli.js corpus-evidence --corpus test/fixtures/esri-sample-corpus --out ./corpus-evidence",
       "",

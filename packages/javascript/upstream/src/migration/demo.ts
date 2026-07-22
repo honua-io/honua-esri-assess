@@ -72,6 +72,7 @@ export interface MigrationDemoOptions {
   fixtureName: string;
   fixturesRoot: string;
   outputDir: string;
+  workingAppDir?: string;
   codemodTarget?: CodemodTarget;
   compatImportPath?: string;
   annotateTodos?: boolean;
@@ -99,7 +100,7 @@ export async function runMigrationDemo(options: MigrationDemoOptions): Promise<M
   const fixtureRootDir = path.resolve(options.fixturesRoot);
   const fixtureDir = path.join(fixtureRootDir, options.fixtureName);
   const outputDir = path.resolve(options.outputDir);
-  const workingAppDir = path.join(outputDir, options.fixtureName);
+  const workingAppDir = path.resolve(options.workingAppDir ?? path.join(outputDir, options.fixtureName));
 
   if (!fs.existsSync(fixtureDir)) {
     throw new Error(`Fixture directory does not exist: ${fixtureDir}`);
@@ -391,11 +392,10 @@ function normalizeBaseUrl(baseUrl: string): string {
 function redactSensitiveUrl(url: string): string {
   try {
     const parsed = new URL(url);
-    for (const key of Array.from(parsed.searchParams.keys())) {
-      if (isSensitiveKey(key)) {
-        parsed.searchParams.set(key, REDACTED_SECRET);
-      }
-    }
+    parsed.username = parsed.username ? REDACTED_SECRET : "";
+    parsed.password = parsed.password ? REDACTED_SECRET : "";
+    parsed.search = "";
+    parsed.hash = "";
     return parsed.toString();
   } catch {
     return redactSensitiveText(url);
@@ -409,14 +409,14 @@ function redactSensitiveText(value: string): string {
     .replace(/((?:token|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[=:]\s*)([^,\s]+)/gi, `$1${REDACTED_SECRET}`);
 }
 
-function isSensitiveKey(key: string): boolean {
-  return /token|api[_-]?key|access[_-]?token|auth[_-]?token/i.test(key);
-}
-
 function resolveJobStatusUrl(importApiBase: string, providedStatusUrl: string | undefined, jobId: string): string {
   const statusPath = providedStatusUrl && providedStatusUrl.length > 0 ? providedStatusUrl : `jobs/${jobId}`;
   const importBase = new URL(`${normalizeBaseUrl(importApiBase)}/`);
   const resolved = new URL(statusPath, importBase);
+
+  if (resolved.username || resolved.password || resolved.search || resolved.hash) {
+    throw new Error("Import job status URL cannot contain credentials, a query string, or a fragment.");
+  }
 
   if (resolved.origin !== importBase.origin) {
     throw new Error(

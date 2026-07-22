@@ -76,8 +76,10 @@
   "safety": {
     "default": "read-only",
     "codemodWrite": "requires --write",
-    "mutationAcknowledgement": "content export/import/reconcile, reconcile, and demo require --acknowledge-mutations",
-    "networkOperations": "read-only scans and reports do not require mutation acknowledgement"
+    "mutationAcknowledgement": "content export/import and demo require --acknowledge-mutations",
+    "outputSafety": "CLI reports and artifact trees are atomic, no-clobber by default, and require --force to replace",
+    "networkOperations": "read-only scans, reports, and reconciliation do not require mutation acknowledgement",
+    "localSafetyModules": ["artifact-safety.ts", "output-writer.ts"]
   },
   "executable": {
     "npmPackage": "@honua/honua-migrate",
@@ -85,8 +87,8 @@
     "reason": "avoids collision with the canonical Python honua-migrate executable"
   },
   "validation": {
-    "vitestFiles": 30,
-    "vitestTests": 267,
+    "vitestFiles": 32,
+    "vitestTests": 278,
     "excludedSourceSdkSuiteCount": 3,
     "excludedSourceSdkSuites": [
       "upstream/test/migration-workbench-artifacts.test.ts",

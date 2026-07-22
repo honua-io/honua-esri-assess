@@ -4,12 +4,14 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { getProjectRoot, withCliLockAsync } from "./migration-cli-lock.js";
 import { getPreparedMigrationCliPath } from "./prepared-sdk-artifacts.js";
 
 let server: http.Server | undefined;
 let portalUrl = "";
+let failWebMapData = false;
+const requestMethods: string[] = [];
 
 const tempDirs: string[] = [];
 
@@ -30,6 +32,7 @@ beforeAll(async () => {
       res.end();
       return;
     }
+    requestMethods.push(req.method ?? "UNKNOWN");
 
     const url = new URL(req.url, "http://localhost");
 
@@ -71,6 +74,10 @@ beforeAll(async () => {
     }
 
     if (url.pathname.endsWith("/sharing/rest/content/items/wm-1/data")) {
+      if (failWebMapData) {
+        json(res, { error: { message: "injected export failure" } }, 500);
+        return;
+      }
       json(res, {
         operationalLayers: [
           {
@@ -133,6 +140,11 @@ beforeAll(async () => {
     throw new Error("Failed to start migration content mock server");
   }
   portalUrl = `http://127.0.0.1:${address.port}`;
+});
+
+beforeEach(() => {
+  failWebMapData = false;
+  requestMethods.length = 0;
 });
 
 afterAll(async () => {
@@ -218,6 +230,118 @@ describe("migration cli content", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("--acknowledge-mutations");
     expect(`${result.stdout}\n${result.stderr}`).not.toContain(secret);
+  });
+
+  it("detects an export collision before network access", { timeout: 180_000 }, async () => {
+    await ensureBuiltCliArtifacts();
+    const outputDir = path.join(makeTempDir(), "existing-export");
+    fs.mkdirSync(outputDir, { recursive: true });
+    const sentinelPath = path.join(outputDir, "sentinel.txt");
+    fs.writeFileSync(sentinelPath, "preserve-me\n", "utf8");
+
+    const result = await runCli([
+      "content",
+      "export",
+      "--portal",
+      portalUrl,
+      "--output-dir",
+      outputDir,
+      "--acknowledge-mutations",
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("--force");
+    expect(requestMethods).toEqual([]);
+    expect(fs.readFileSync(sentinelPath, "utf8")).toBe("preserve-me\n");
+  });
+
+  it("replaces an export tree only with force", { timeout: 180_000 }, async () => {
+    await ensureBuiltCliArtifacts();
+    const outputDir = path.join(makeTempDir(), "forced-export");
+    fs.mkdirSync(outputDir, { recursive: true });
+    fs.writeFileSync(path.join(outputDir, "sentinel.txt"), "old\n", "utf8");
+
+    const result = await runCli([
+      "content",
+      "export",
+      "--portal",
+      portalUrl,
+      "--output-dir",
+      outputDir,
+      "--acknowledge-mutations",
+      "--force",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(path.join(outputDir, "sentinel.txt"))).toBe(false);
+    expect(fs.existsSync(path.join(outputDir, "content-export-manifest.json"))).toBe(true);
+  });
+
+  it("preserves an existing export tree when a forced export fails", { timeout: 180_000 }, async () => {
+    await ensureBuiltCliArtifacts();
+    const root = makeTempDir();
+    const outputDir = path.join(root, "failed-export");
+    fs.mkdirSync(outputDir, { recursive: true });
+    const sentinelPath = path.join(outputDir, "sentinel.txt");
+    const manifestPath = path.join(outputDir, "content-export-manifest.json");
+    fs.writeFileSync(sentinelPath, "preserve-me\n", "utf8");
+    fs.writeFileSync(manifestPath, "old-manifest\n", "utf8");
+    failWebMapData = true;
+
+    const result = await runCli([
+      "content",
+      "export",
+      "--portal",
+      portalUrl,
+      "--output-dir",
+      outputDir,
+      "--acknowledge-mutations",
+      "--force",
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(fs.readFileSync(sentinelPath, "utf8")).toBe("preserve-me\n");
+    expect(fs.readFileSync(manifestPath, "utf8")).toBe("old-manifest\n");
+    expect(fs.readdirSync(root).filter((entry) => entry.includes(".honua-"))).toEqual([]);
+  });
+
+  it("runs local content reconciliation without acknowledgement or network access", async () => {
+    await ensureBuiltCliArtifacts();
+    const sourceDir = makeTempDir();
+    fs.writeFileSync(
+      path.join(sourceDir, "content-export-manifest.json"),
+      `${JSON.stringify({ webMaps: [], hostedFeatureServices: [] })}\n`,
+      "utf8",
+    );
+    const importDir = path.join(sourceDir, "content-import");
+    fs.mkdirSync(importDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(importDir, "content-import-report.json"),
+      `${JSON.stringify({ importedHostedLayers: [], importedWebMaps: [] })}\n`,
+      "utf8",
+    );
+
+    const result = await runCli(["content", "reconcile", "--source", sourceDir]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("contentReconcile");
+    expect(requestMethods).toEqual([]);
+    expect(fs.existsSync(path.join(sourceDir, "content-reconcile-report.json"))).toBe(true);
+  });
+
+  it("rejects URL queries and fragments without echoing their values", { timeout: 180_000 }, async () => {
+    await ensureBuiltCliArtifacts();
+    const querySecret = "innocent-key-secret-value";
+    const fragmentSecret = "fragment-secret-value";
+
+    const queryResult = await runCli(["content", "scan", "--portal", `${portalUrl}?context=${querySecret}`]);
+    const fragmentResult = await runCli(["content", "scan", "--portal", `${portalUrl}#${fragmentSecret}`]);
+
+    expect(queryResult.status).toBe(1);
+    expect(fragmentResult.status).toBe(1);
+    expect(`${queryResult.stdout}\n${queryResult.stderr}`).not.toContain(querySecret);
+    expect(`${fragmentResult.stdout}\n${fragmentResult.stderr}`).not.toContain(fragmentSecret);
+    expect(requestMethods).toEqual([]);
   });
 });
 

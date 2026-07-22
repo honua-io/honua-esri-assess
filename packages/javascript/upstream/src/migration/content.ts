@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { parseWebMap } from "@honua/sdk-js/webmap";
 import type { WebMapJson } from "@honua/sdk-js/webmap";
+import { stringifyArtifact } from "./artifact-safety.js";
 import { type GeoservicesImportJobReport, runGeoservicesImportJob } from "./demo.js";
 import { trimChar, trimTrailingSlashes } from "./path-utils.js";
 
@@ -170,6 +171,7 @@ export interface ContentReconcileOptions {
   sourceDir: string;
   importReportPath?: string;
   outputPath?: string;
+  writeReport?: boolean;
 }
 
 export interface ContentReconcileReport {
@@ -214,7 +216,7 @@ export async function runContentScan(options: ContentScanOptions): Promise<Conte
 
   return {
     generatedAt: new Date().toISOString(),
-    portalUrl: normalizeBaseUrl(options.portalUrl),
+    portalUrl: sanitizeUrlForPersistence(options.portalUrl) ?? "",
     webMaps: webMaps.map(toContentPortalItemSummary),
     hostedFeatureServices: hostedServices
       .filter((item) => typeof item.url === "string" && item.url.includes("FeatureServer"))
@@ -243,7 +245,7 @@ export async function runContentExport(options: ContentExportOptions): Promise<C
       const data = await fetchPortalItemData(scan.portalUrl, itemId, options.token, fetchFn);
       const fileName = `${safeFileName(item.title || itemId)}-${itemId}.webmap.json`;
       const absolutePath = path.join(webMapsDir, fileName);
-      fs.writeFileSync(absolutePath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+      fs.writeFileSync(absolutePath, stringifyArtifact(data), "utf8");
       exportedWebMaps.push({
         itemId,
         title: item.title,
@@ -270,7 +272,7 @@ export async function runContentExport(options: ContentExportOptions): Promise<C
         "Hosted service metadata",
       );
       const serviceMetadataPath = path.join(serviceDir, "service-metadata.json");
-      fs.writeFileSync(serviceMetadataPath, `${JSON.stringify(serviceMetadata, null, 2)}\n`, "utf8");
+      fs.writeFileSync(serviceMetadataPath, stringifyArtifact(serviceMetadata), "utf8");
 
       const layers = asArray(serviceMetadata.layers);
       const exportedLayers: ExportedHostedLayerEntry[] = [];
@@ -282,7 +284,7 @@ export async function runContentExport(options: ContentExportOptions): Promise<C
 
         const layerMetadata = await fetchArcGisJson(fetchFn, layerUrl, options.token);
         const layerMetadataPath = path.join(serviceDir, `layer-${layerId}.metadata.json`);
-        fs.writeFileSync(layerMetadataPath, `${JSON.stringify(layerMetadata, null, 2)}\n`, "utf8");
+        fs.writeFileSync(layerMetadataPath, stringifyArtifact(layerMetadata), "utf8");
 
         let featureCount: number | undefined;
         let featureSetPath: string | undefined;
@@ -299,13 +301,13 @@ export async function runContentExport(options: ContentExportOptions): Promise<C
 
           featureCount = featureSet.features.length;
           const featureSetFilePath = path.join(serviceDir, `layer-${layerId}.features.esri.json`);
-          fs.writeFileSync(featureSetFilePath, `${JSON.stringify(featureSet, null, 2)}\n`, "utf8");
+          fs.writeFileSync(featureSetFilePath, stringifyArtifact(featureSet), "utf8");
           featureSetPath = path.relative(outputDir, featureSetFilePath);
 
           const geoJson = convertEsriFeatureSetToGeoJson(featureSet);
           if (geoJson) {
             const geoJsonFilePath = path.join(serviceDir, `layer-${layerId}.features.geojson`);
-            fs.writeFileSync(geoJsonFilePath, `${JSON.stringify(geoJson, null, 2)}\n`, "utf8");
+            fs.writeFileSync(geoJsonFilePath, stringifyArtifact(geoJson), "utf8");
             geoJsonPath = path.relative(outputDir, geoJsonFilePath);
           }
         }
@@ -338,7 +340,7 @@ export async function runContentExport(options: ContentExportOptions): Promise<C
   };
 
   const manifestPath = path.join(outputDir, "content-export-manifest.json");
-  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  fs.writeFileSync(manifestPath, stringifyArtifact(manifest), "utf8");
 
   return {
     generatedAt: new Date().toISOString(),
@@ -441,16 +443,12 @@ export async function runContentImport(options: ContentImportOptions): Promise<C
         );
         fs.writeFileSync(
           outputPath,
-          `${JSON.stringify(
-            {
-              generatedAt: new Date().toISOString(),
-              sourcePath: webMap.webMapPath,
-              rewrittenUrlCount,
-              result: parsed,
-            },
-            null,
-            2,
-          )}\n`,
+          stringifyArtifact({
+            generatedAt: new Date().toISOString(),
+            sourcePath: webMap.webMapPath,
+            rewrittenUrlCount,
+            result: parsed,
+          }),
           "utf8",
         );
 
@@ -478,7 +476,7 @@ export async function runContentImport(options: ContentImportOptions): Promise<C
     generatedAt: new Date().toISOString(),
     sourceDir,
     outputDir,
-    targetBaseUrl: normalizeBaseUrl(options.targetBaseUrl),
+    targetBaseUrl: sanitizeUrlForPersistence(options.targetBaseUrl) ?? "",
     manifestPath,
     importedHostedLayers,
     importedWebMaps,
@@ -492,7 +490,7 @@ export async function runContentImport(options: ContentImportOptions): Promise<C
     reportPath: path.join(outputDir, "content-import-report.json"),
   };
 
-  fs.writeFileSync(report.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  fs.writeFileSync(report.reportPath, stringifyArtifact(report), "utf8");
   return report;
 }
 
@@ -610,8 +608,10 @@ export function runContentReconcile(options: ContentReconcileOptions): ContentRe
     reportPath,
   };
 
-  fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-  fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  if (options.writeReport !== false) {
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(reportPath, stringifyArtifact(report), "utf8");
+  }
   return report;
 }
 
@@ -694,7 +694,7 @@ function toContentPortalItemSummary(item: PortalSearchItem): ContentPortalItemSu
     title: item.title,
     type: item.type,
     owner: item.owner,
-    url: item.url,
+    url: item.url ? sanitizeUrlForPersistence(item.url) : undefined,
   };
 }
 
@@ -1178,14 +1178,26 @@ function normalizeBaseUrl(baseUrl: string): string {
 function redactSensitiveUrl(url: string): string {
   try {
     const parsed = new URL(url);
-    for (const key of Array.from(parsed.searchParams.keys())) {
-      if (isSensitiveKey(key)) {
-        parsed.searchParams.set(key, REDACTED_SECRET);
-      }
-    }
+    parsed.username = parsed.username ? REDACTED_SECRET : "";
+    parsed.password = parsed.password ? REDACTED_SECRET : "";
+    parsed.search = "";
+    parsed.hash = "";
     return parsed.toString();
   } catch {
     return redactSensitiveText(url);
+  }
+}
+
+function sanitizeUrlForPersistence(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    return trimTrailingSlashes(parsed.toString());
+  } catch {
+    return undefined;
   }
 }
 
@@ -1194,10 +1206,6 @@ function redactSensitiveText(value: string): string {
     .replace(/([?&](?:token|api[_-]?key|access[_-]?token|auth[_-]?token)=)[^&#\s]*/gi, `$1${REDACTED_SECRET}`)
     .replace(/("(?:token|api[_-]?key|access[_-]?token|auth[_-]?token)"\s*:\s*")([^"]*)(")/gi, `$1${REDACTED_SECRET}$3`)
     .replace(/((?:token|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[=:]\s*)([^,\s]+)/gi, `$1${REDACTED_SECRET}`);
-}
-
-function isSensitiveKey(key: string): boolean {
-  return /token|api[_-]?key|access[_-]?token|auth[_-]?token/i.test(key);
 }
 
 function buildUrl(base: string, params: Record<string, string>): string {

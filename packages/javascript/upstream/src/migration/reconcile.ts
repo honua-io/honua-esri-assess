@@ -93,9 +93,9 @@ export async function runLayerReconciliation(options: LayerReconciliationOptions
   ];
 
   return {
-    sourceBaseUrl: normalizeBaseUrl(options.sourceBaseUrl),
+    sourceBaseUrl: sanitizeUrlForReport(options.sourceBaseUrl),
     sourceServiceId: options.sourceServiceId,
-    targetBaseUrl: normalizeBaseUrl(options.targetBaseUrl),
+    targetBaseUrl: sanitizeUrlForReport(options.targetBaseUrl),
     targetServiceId: options.targetServiceId,
     layerId: options.layerId,
     sampleSize,
@@ -178,7 +178,7 @@ async function fetchJson(fetchFn: typeof fetch, url: string): Promise<QueryFeatu
   });
   const text = await response.text();
   if (!response.ok) {
-    throw new Error(`Reconciliation query failed (${response.status}): ${text.slice(0, 200)}`);
+    throw new Error(`Reconciliation query failed (${response.status}).`);
   }
 
   if (!text) {
@@ -202,6 +202,19 @@ function buildQueryUrl(baseUrl: string, serviceId: string, layerId: number, para
 
 function normalizeBaseUrl(baseUrl: string): string {
   return trimTrailingSlashes(baseUrl);
+}
+
+function sanitizeUrlForReport(baseUrl: string): string {
+  try {
+    const parsed = new URL(baseUrl);
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    return trimTrailingSlashes(parsed.toString());
+  } catch {
+    return "";
+  }
 }
 
 function computeGeometryValidityRatio(features: readonly unknown[]): number {

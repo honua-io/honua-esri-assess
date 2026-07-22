@@ -1,0 +1,154 @@
+name: Publish MAUI dotnet tool
+
+on:
+  push:
+    tags:
+      - "maui-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build, audit, pack, and smoke-install without publishing."
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      present: ${{ steps.package.outputs.present }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - id: package
+        run: python scripts/runtime_package.py detect maui >> "$GITHUB_OUTPUT"
+
+  validate-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Validate release tag
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run == false }}
+        run: python scripts/validate_publish_tag.py "${GITHUB_REF_NAME}" --package maui
+      - name: Allow untagged dry run
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+        run: python scripts/validate_publish_tag.py --allow-untagged --package maui
+
+  build:
+    runs-on: ubuntu-latest
+    needs:
+      - detect
+      - validate-tag
+    if: needs.detect.outputs.present == 'true'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+      - id: tool
+        run: python scripts/runtime_package.py dotnet-tool-metadata >> "$GITHUB_OUTPUT"
+      - name: Restore with NuGet audit
+        run: |
+          while IFS= read -r project; do
+            dotnet restore "$project" \
+              -p:NuGetAudit=true \
+              -p:NuGetAuditMode=all \
+              -p:NuGetAuditLevel=moderate \
+              -p:WarningsAsErrors=NU1901%3BNU1902%3BNU1903%3BNU1904
+          done < <(find packages/maui -name '*.csproj' -type f -print | sort)
+      - name: Build
+        run: |
+          while IFS= read -r project; do
+            dotnet build "$project" --configuration Release --no-restore \
+              -p:ContinuousIntegrationBuild=true -p:Deterministic=true
+          done < <(find packages/maui -name '*.csproj' -type f -print | sort)
+      - name: Test
+        run: |
+          mapfile -t test_projects < <(find packages/maui -iname '*test*.csproj' -type f -print | sort)
+          test "${#test_projects[@]}" -gt 0
+          for project in "${test_projects[@]}"; do
+            dotnet test "$project" --configuration Release --no-restore --no-build
+          done
+      - name: Format
+        run: |
+          while IFS= read -r project; do
+            dotnet format "$project" --verify-no-changes --no-restore
+          done < <(find packages/maui -name '*.csproj' -type f -print | sort)
+      - run: python scripts/check_runtime_licenses.py maui
+      - name: Pack deterministic tool
+        run: >-
+          dotnet pack "${{ steps.tool.outputs.project }}" --configuration Release
+          --no-restore --output "$RUNNER_TEMP/maui-dist"
+          -p:ContinuousIntegrationBuild=true -p:Deterministic=true
+          -p:RepositoryCommit=${{ github.sha }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: maui-dist-${{ github.sha }}
+          path: ${{ runner.temp }}/maui-dist/*.nupkg
+          if-no-files-found: error
+          retention-days: 14
+
+  smoke-install:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/download-artifact@v8
+        with:
+          name: maui-dist-${{ github.sha }}
+          path: ${{ runner.temp }}/maui-dist
+      - id: tool
+        run: python scripts/runtime_package.py dotnet-tool-metadata >> "$GITHUB_OUTPUT"
+      - name: Install and invoke packaged tool
+        run: |
+          dotnet tool install "${{ steps.tool.outputs.package_id }}" \
+            --tool-path "$RUNNER_TEMP/maui-smoke" \
+            --add-source "$RUNNER_TEMP/maui-dist" \
+            --version "${{ steps.tool.outputs.version }}"
+          "$RUNNER_TEMP/maui-smoke/${{ steps.tool.outputs.command }}" --help
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: smoke-install
+    if: startsWith(github.ref, 'refs/tags/maui-v')
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: maui-dist-${{ github.sha }}
+          path: dist
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/*.nupkg
+      - name: Exchange OIDC identity for a temporary NuGet API key
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Publish dotnet tool package
+        run: >-
+          dotnet nuget push "dist/*.nupkg"
+          --source https://api.nuget.org/v3/index.json
+          --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}"

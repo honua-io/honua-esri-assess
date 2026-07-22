@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
 import os
 import re
 import time
@@ -24,13 +26,24 @@ from honua_esri_assess.redaction import sanitize_handoff_url
 
 geoserver_app = typer.Typer(help="Migrate GeoServer catalogs through Honua jobs.")
 
-_PLAN_SCHEMA = "honua-migrate/geoserver-plan/v1"
+_INVENTORY_SCHEMA = "honua-migrate/geoserver-inventory/v1"
 _SECRET_KEY = re.compile(r"(?i)(password|secret|token|api[_-]?key|authorization)")
 _LOCAL_REFERENCE = re.compile(r"^env:([A-Za-z_][A-Za-z0-9_]*)$")
 _SERVER_REFERENCE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:[^\s]+$")
 _JOB_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 _ACTIVE_STATUSES = frozenset({"queued", "processing"})
 _TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
+_PLAN_CLASSIFICATIONS = (
+    "applied",
+    "already-applied",
+    "manual-review",
+    "unsupported",
+)
+_UNSUPPORTED_BEHAVIORS = {
+    "skip": 0,
+    "log-warning": 1,
+    "fail-import": 2,
+}
 
 
 class MigrationError(Exception):
@@ -235,6 +248,28 @@ class HonuaMigrationClient:
         wait_timeout: float,
         poll_interval: float,
     ) -> dict[str, Any]:
+        job = self.wait_for_terminal(
+            job_id,
+            wait_timeout=wait_timeout,
+            poll_interval=poll_interval,
+        )
+        status = str(job.get("status", "")).lower()
+        if status != "completed":
+            raise MigrationError(
+                f"GeoServer dry-run job ended with {status} status."
+            )
+        _validate_completed_job(job, expected_job_id=job_id)
+        return job
+
+    def wait_for_terminal(
+        self,
+        job_id: str,
+        *,
+        wait_timeout: float,
+        poll_interval: float,
+    ) -> dict[str, Any]:
+        """Bounded GET-only wait for an existing job's terminal state."""
+        validate_job_id(job_id)
         if wait_timeout <= 0 or poll_interval < 0:
             raise MigrationError(
                 "Wait timeout must be positive and poll interval cannot be negative."
@@ -242,22 +277,17 @@ class HonuaMigrationClient:
         deadline = time.monotonic() + wait_timeout
         while True:
             job = self.status(job_id)
+            if job.get("jobId") != job_id:
+                raise MigrationError("GeoServer job identity changed while waiting.")
             status = str(job.get("status", "")).lower()
-            if status == "completed":
-                _validate_completed_job(job, expected_job_id=job_id)
-                return job
             if status in _TERMINAL_STATUSES:
-                raise MigrationError(
-                    f"GeoServer dry-run job ended with {status} status."
-                )
+                return job
             if status not in _ACTIVE_STATUSES:
                 raise MigrationError(
-                    "GeoServer dry-run job returned an unknown status."
+                    "GeoServer job returned an unknown status."
                 )
             if time.monotonic() >= deadline:
-                raise MigrationError(
-                    "Timed out waiting for the GeoServer dry-run job."
-                )
+                raise MigrationError("Timed out waiting for the GeoServer job.")
             time.sleep(poll_interval)
 
 
@@ -295,6 +325,7 @@ def _validate_completed_job(
 def _safe_completed_result(job: Mapping[str, Any]) -> dict[str, Any]:
     progress = job["progress"]
     assert isinstance(progress, Mapping)
+    apply_plan = progress.get("applyPlan")
     return {
         "geoServerUrl": validate_url(
             str(job["geoServerUrl"]), label="GeoServer result URL"
@@ -303,7 +334,89 @@ def _safe_completed_result(job: Mapping[str, Any]) -> dict[str, Any]:
         "estimatedTotalResources": progress.get("estimatedTotalResources"),
         "failedResources": progress.get("failedResources"),
         "resourceBreakdown": progress.get("resourceBreakdown"),
-        "applyPlan": progress.get("applyPlan"),
+        "applyPlan": apply_plan,
+        "classifications": _classify_apply_plan(apply_plan),
+    }
+
+
+def _classify_apply_plan(value: Any) -> dict[str, list[Any]]:
+    """Group only classifications explicitly present in server plan evidence."""
+    grouped: dict[str, list[Any]] = {
+        classification: [] for classification in _PLAN_CLASSIFICATIONS
+    }
+    if not isinstance(value, Mapping):
+        return grouped
+    steps = value.get("steps")
+    if isinstance(steps, list):
+        for step in steps:
+            if not isinstance(step, Mapping):
+                continue
+            classification = step.get("outcome", step.get("disposition"))
+            if classification in grouped:
+                grouped[str(classification)].append(dict(step))
+    manual_items = value.get("manualReviewItems")
+    if isinstance(manual_items, list):
+        grouped["manual-review"].extend(manual_items)
+    unsupported_items = value.get("unsupportedItems")
+    if isinstance(unsupported_items, list):
+        grouped["unsupported"].extend(unsupported_items)
+    return grouped
+
+
+def _plan_digest(payload: Mapping[str, Any]) -> str:
+    """Return the shared-contract canonical SHA-256 plan digest."""
+    if _contains_credential_field(payload):
+        raise MigrationError("Plan identity cannot include credential fields.")
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(canonical).hexdigest()
+
+
+def _unsupported_behavior(value: str, *, label: str) -> int:
+    try:
+        return _UNSUPPORTED_BEHAVIORS[value]
+    except KeyError as exc:
+        allowed = ", ".join(_UNSUPPORTED_BEHAVIORS)
+        raise MigrationError(f"{label} must be one of: {allowed}.") from exc
+
+
+def _workspace_mappings(values: list[str] | None) -> dict[str, str] | None:
+    if not values:
+        return None
+    mappings: dict[str, str] = {}
+    for value in values:
+        source, separator, target = value.partition("=")
+        if not separator or not source.strip() or not target.strip():
+            raise MigrationError(
+                "Workspace mappings must use SOURCE=TARGET syntax."
+            )
+        source = source.strip()
+        if source in mappings:
+            raise MigrationError("Workspace mappings cannot repeat a source.")
+        mappings[source] = target.strip()
+    return mappings
+
+
+def _inventory_artifact(
+    source_url: str, discovery: Mapping[str, Any]
+) -> dict[str, Any]:
+    compatibility = discovery.get("migrationCompatibility")
+    if compatibility is None:
+        compatibility = discovery.get("compatibility")
+    return {
+        "schemaVersion": _INVENTORY_SCHEMA,
+        "kind": "geoserver-inventory",
+        "source": {
+            "geoServerRestUrl": validate_url(
+                source_url, label="GeoServer URL"
+            )
+        },
+        "inventory": dict(discovery),
+        "compatibility": compatibility,
     }
 
 
@@ -318,7 +431,43 @@ def _build_start_request(
     workspaces: list[str] | None = None,
     datastores: list[str] | None = None,
     layers: list[str] | None = None,
+    import_styles: bool = False,
+    overwrite_existing: bool = False,
+    target_srid: int | None = None,
+    auto_publish_layers: bool = True,
+    batch_size: int = 10,
+    unsupported_datastore_behavior: str = "log-warning",
+    unsupported_layer_behavior: str = "log-warning",
+    unsupported_style_behavior: str = "log-warning",
+    continue_on_resource_failure: bool = True,
+    workspace_mappings: list[str] | None = None,
+    default_workspace_name: str = "geoserver-import",
 ) -> dict[str, Any]:
+    if target_srid is not None and target_srid <= 0:
+        raise MigrationError("Target SRID must be positive.")
+    if batch_size <= 0:
+        raise MigrationError("Batch size must be positive.")
+    if not default_workspace_name.strip():
+        raise MigrationError("Default workspace name cannot be empty.")
+    import_options: dict[str, Any] = {
+        "unsupportedDataStoreBehavior": _unsupported_behavior(
+            unsupported_datastore_behavior,
+            label="Unsupported datastore behavior",
+        ),
+        "unsupportedLayerBehavior": _unsupported_behavior(
+            unsupported_layer_behavior,
+            label="Unsupported layer behavior",
+        ),
+        "unsupportedStyleBehavior": _unsupported_behavior(
+            unsupported_style_behavior,
+            label="Unsupported style behavior",
+        ),
+        "continueOnResourceFailure": continue_on_resource_failure,
+        "defaultWorkspaceName": default_workspace_name.strip(),
+    }
+    mappings = _workspace_mappings(workspace_mappings)
+    if mappings:
+        import_options["workspaceNameMappings"] = mappings
     body: dict[str, Any] = {
         "geoServerRestUrl": validate_url(
             geoserver_url, label="GeoServer URL"
@@ -330,7 +479,14 @@ def _build_start_request(
         "applyMode": not dry_run,
         "requestTimeoutSeconds": int(timeout),
         "maxRetries": retries,
+        "importStyles": import_styles,
+        "overwriteExisting": overwrite_existing,
+        "autoPublishLayers": auto_publish_layers,
+        "batchSize": batch_size,
+        "importOptions": import_options,
     }
+    if target_srid is not None:
+        body["targetSrid"] = target_srid
     if username:
         body["username"] = username
     if workspaces:
@@ -374,28 +530,43 @@ def _load_completed_plan(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
         raise MigrationError(
             "Plan must be a completed GeoServer dry-run artifact."
         )
-    request = payload.get("request")
-    job = payload.get("dryRunJob")
+    actions = payload.get("actions")
+    action = actions[0] if isinstance(actions, list) and len(actions) == 1 else None
+    request = action.get("request") if isinstance(action, dict) else None
+    job = action.get("dry_run_job") if isinstance(action, dict) else None
     if (
-        payload.get("schemaVersion") != _PLAN_SCHEMA
-        or payload.get("kind") != "geoserver-plan"
+        payload.get("contract_version") != "v1"
+        or payload.get("service") != "geoserver"
+        or payload.get("safety_mode") != "plan"
+        or not isinstance(payload.get("id"), str)
+        or not payload["id"]
+        or not isinstance(action, dict)
         or not isinstance(request, dict)
         or not isinstance(job, dict)
+        or action.get("kind") != "geoserver-import"
         or request.get("dryRun") is not True
         or request.get("applyMode") is not False
     ):
         raise MigrationError(
             "Plan must be a completed GeoServer dry-run artifact."
         )
+    digest = payload.get("plan_digest")
+    unsigned = {key: value for key, value in payload.items() if key != "plan_digest"}
+    if not isinstance(digest, str) or not hmac.compare_digest(
+        digest, _plan_digest(unsigned)
+    ):
+        raise MigrationError("Plan digest does not match its contents.")
     job_id = job.get("jobId")
     if not isinstance(job_id, str):
         raise MigrationError("Plan does not contain a valid dry-run job identity.")
     validate_job_id(job_id)
+    if payload["id"] != f"geoserver-plan-{job_id}":
+        raise MigrationError("Plan identity does not match its dry-run job.")
     if (
         str(job.get("status", "")).lower() != "completed"
         or not isinstance(job.get("completedAt"), str)
         or not job["completedAt"]
-        or not isinstance(payload.get("result"), dict)
+        or not isinstance(action.get("result"), dict)
     ):
         raise MigrationError("Plan does not contain completed dry-run evidence.")
     return request, job
@@ -444,13 +615,13 @@ def scan_command(
 ) -> None:
     """Discover a GeoServer catalog; this source operation is read-only."""
     _preflight_output(output, force=force)
-    result = _client(honua_url, honua_api_key_ref, timeout, retries).scan(
+    discovery = _client(honua_url, honua_api_key_ref, timeout, retries).scan(
         geoserver_url,
         username,
         geoserver_password_ref,
         include_styles=include_styles,
     )
-    _emit(result, output, force)
+    _emit(_inventory_artifact(geoserver_url, discovery), output, force)
 
 
 @geoserver_app.command("plan")
@@ -471,6 +642,39 @@ def plan_command(
         list[str] | None, typer.Option("--datastore")
     ] = None,
     layer: Annotated[list[str] | None, typer.Option("--layer")] = None,
+    import_styles: Annotated[
+        bool, typer.Option("--import-styles/--no-import-styles")
+    ] = False,
+    overwrite_existing: Annotated[
+        bool,
+        typer.Option("--overwrite-existing/--no-overwrite-existing"),
+    ] = False,
+    target_srid: Annotated[int | None, typer.Option("--target-srid")] = None,
+    auto_publish_layers: Annotated[
+        bool, typer.Option("--auto-publish/--no-auto-publish")
+    ] = True,
+    batch_size: Annotated[int, typer.Option("--batch-size")] = 10,
+    unsupported_datastore_behavior: Annotated[
+        str, typer.Option("--unsupported-datastore")
+    ] = "log-warning",
+    unsupported_layer_behavior: Annotated[
+        str, typer.Option("--unsupported-layer")
+    ] = "log-warning",
+    unsupported_style_behavior: Annotated[
+        str, typer.Option("--unsupported-style")
+    ] = "log-warning",
+    continue_on_resource_failure: Annotated[
+        bool,
+        typer.Option(
+            "--continue-on-resource-failure/--stop-on-resource-failure"
+        ),
+    ] = True,
+    workspace_mapping: Annotated[
+        list[str] | None, typer.Option("--workspace-map")
+    ] = None,
+    default_workspace_name: Annotated[
+        str, typer.Option("--default-workspace")
+    ] = "geoserver-import",
     output: Annotated[Path | None, typer.Option("--output")] = None,
     force: Annotated[bool, typer.Option("--force")] = False,
     timeout: Annotated[float, typer.Option("--timeout")] = 120,
@@ -494,6 +698,17 @@ def plan_command(
         workspaces=workspace,
         datastores=datastore,
         layers=layer,
+        import_styles=import_styles,
+        overwrite_existing=overwrite_existing,
+        target_srid=target_srid,
+        auto_publish_layers=auto_publish_layers,
+        batch_size=batch_size,
+        unsupported_datastore_behavior=unsupported_datastore_behavior,
+        unsupported_layer_behavior=unsupported_layer_behavior,
+        unsupported_style_behavior=unsupported_style_behavior,
+        continue_on_resource_failure=continue_on_resource_failure,
+        workspace_mappings=workspace_mapping,
+        default_workspace_name=default_workspace_name,
     )
     client = _client(honua_url, honua_api_key_ref, timeout, retries)
     queued = client.start(request)
@@ -506,18 +721,30 @@ def plan_command(
         wait_timeout=wait_timeout,
         poll_interval=poll_interval,
     )
-    artifact = {
-        "schemaVersion": _PLAN_SCHEMA,
-        "kind": "geoserver-plan",
-        "request": _plan_request_without_credentials(request),
-        "dryRunJob": {
-            "jobId": job_id,
-            "status": "completed",
-            "completedAt": completed["completedAt"],
-        },
-        "result": _safe_completed_result(completed),
+    plan_request = _plan_request_without_credentials(request)
+    artifact: dict[str, Any] = {
+        "contract_version": "v1",
+        "id": f"geoserver-plan-{job_id}",
+        "service": "geoserver",
+        "safety_mode": "plan",
+        "actions": [
+            {
+                "kind": "geoserver-import",
+                "request": plan_request,
+                "dry_run_job": {
+                    "jobId": job_id,
+                    "status": "completed",
+                    "completedAt": completed["completedAt"],
+                },
+                "result": _safe_completed_result(completed),
+            }
+        ],
     }
-    _emit(artifact, output, force)
+    safe_artifact = redact_artifact(artifact)
+    if not isinstance(safe_artifact, dict):
+        raise MigrationError("Could not produce a credential-free plan artifact.")
+    safe_artifact["plan_digest"] = _plan_digest(safe_artifact)
+    _emit(safe_artifact, output, force)
 
 
 @geoserver_app.command("apply")
@@ -613,6 +840,35 @@ def status_command(
         timeout,
         retries,
     )
+
+
+@geoserver_app.command("resume")
+def resume_command(
+    honua_url: Annotated[str, typer.Option("--honua-url")],
+    honua_api_key_ref: Annotated[
+        str, typer.Option("--honua-api-key-ref")
+    ],
+    job_id: Annotated[str, typer.Argument()],
+    output: Annotated[Path | None, typer.Option("--output")] = None,
+    force: Annotated[bool, typer.Option("--force")] = False,
+    timeout: Annotated[float, typer.Option("--timeout")] = 120,
+    retries: Annotated[int, typer.Option("--retries")] = 3,
+    wait_timeout: Annotated[
+        float, typer.Option("--wait-timeout")
+    ] = 600,
+    poll_interval: Annotated[
+        float, typer.Option("--poll-interval")
+    ] = 1,
+) -> None:
+    """Resume monitoring an existing job until a bounded terminal state."""
+    _preflight_output(output, force=force)
+    client = _client(honua_url, honua_api_key_ref, timeout, retries)
+    job = client.wait_for_terminal(
+        job_id,
+        wait_timeout=wait_timeout,
+        poll_interval=poll_interval,
+    )
+    _emit(job, output, force)
 
 
 @geoserver_app.command("list")

@@ -8,7 +8,6 @@ centralises SSRF protection in the Honua server endpoint.
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 import os
 import re
@@ -22,6 +21,10 @@ from urllib.parse import urlsplit, urlunsplit
 import requests
 import typer
 
+from honua_migrate.contract_validation import assert_artifact_safe, validate_contract
+from honua_migrate.contracts import MigrationError, MigrationPlan
+from honua_esri_assess.redaction import sanitize_handoff_url
+
 ARTIFACT_VERSION = "honua.arcgis-service-migration/v1"
 API_PREFIX = "/api/v1/admin/import/geoservices"
 RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
@@ -33,7 +36,7 @@ arcgis_app = typer.Typer(
 )
 
 
-class ArcGisMigrationError(RuntimeError):
+class ArcGisMigrationError(MigrationError):
     """An actionable, secret-safe error returned by the migration client."""
 
 
@@ -78,12 +81,27 @@ def _get_env(name: str) -> str:
 def _redact(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {
-            str(key): ("[REDACTED]" if str(key).lower() in {"credentials", "accesstoken", "password", "x-api-key", "authorization"} else _redact(item))
+            str(key): _redact(item)
             for key, item in value.items()
+            if re.search(
+                r"password|secret|token|authorization|credential|api[_-]?key|x-api-key",
+                str(key),
+                flags=re.IGNORECASE,
+            )
+            is None
         }
     if isinstance(value, list):
         return [_redact(item) for item in value]
+    if isinstance(value, str) and value.lower().startswith(("http://", "https://")):
+        return sanitize_handoff_url(value)
     return value
+
+
+def _validate_shared_contract(name: str, data: Mapping[str, Any]) -> None:
+    try:
+        validate_contract(name, data)
+    except MigrationError as exc:
+        raise ArcGisMigrationError(str(exc)) from exc
 
 
 def _plan_id(request: Mapping[str, Any]) -> str:
@@ -144,34 +162,51 @@ def _write_json(path: Path, data: Mapping[str, Any], *, force: bool = False) -> 
             temporary = None
     except FileExistsError as exc:
         raise ArcGisMigrationError(
-            f"Refusing to overwrite existing artifact: {path}; use --force."
+            "Refusing to overwrite an existing artifact; use --force."
         ) from exc
     except OSError as exc:
-        raise ArcGisMigrationError(f"Could not write artifact: {exc}") from exc
+        raise ArcGisMigrationError("Could not write the requested artifact.") from exc
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+def _preflight_output(path: Path | None, *, force: bool) -> None:
+    if path is not None and path.exists() and not force:
+        raise ArcGisMigrationError(
+            "Refusing to overwrite an existing artifact; use --force."
+        )
 
 
 def _read_artifact(path: Path) -> tuple[str, dict[str, Any]]:
     try:
         artifact = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ArcGisMigrationError(f"Could not read plan artifact: {exc}") from exc
-    if artifact.get("artifactVersion") != ARTIFACT_VERSION or artifact.get("kind") != "plan":
+        raise ArcGisMigrationError("Could not read the requested plan artifact.") from exc
+    if not isinstance(artifact, dict):
         raise ArcGisMigrationError("Plan artifact is not a supported ArcGIS migration plan.")
-    request = artifact.get("request")
-    if not isinstance(request, dict):
-        raise ArcGisMigrationError("Plan artifact has no valid request.")
-    if "credentials" in request:
-        raise ArcGisMigrationError(
-            "Plan artifacts must not persist credentials or credential references."
-        )
     stored_id = artifact.get("id")
-    if not isinstance(stored_id, str) or not stored_id.startswith("sha256:"):
+    if not isinstance(stored_id, str) or not stored_id.startswith("arcgis-plan-"):
         raise ArcGisMigrationError("Plan artifact has no supported immutable plan ID.")
-    computed_id = _plan_id(request)
-    if not hmac.compare_digest(stored_id, computed_id):
+    _validate_shared_contract("plan", artifact)
+    actions = artifact.get("actions")
+    action = actions[0] if isinstance(actions, list) and len(actions) == 1 else None
+    request = action.get("request") if isinstance(action, dict) else None
+    if (
+        artifact.get("service") != "arcgis"
+        or artifact.get("safety_mode") != "plan"
+        or not isinstance(actions, list)
+        or not isinstance(action, dict)
+        or action.get("kind") != "arcgis-service-import"
+        or not isinstance(request, dict)
+    ):
+        raise ArcGisMigrationError("Plan artifact has no valid request.")
+    contract = MigrationPlan(
+        id=stored_id,
+        service="arcgis",
+        actions=tuple(actions),
+    )
+    if not contract.verify(artifact):
         raise ArcGisMigrationError("Plan artifact was modified after it was reviewed.")
     return stored_id, request
 
@@ -310,9 +345,14 @@ def _request(service_url: str, timeout_seconds: int, token_secret_ref: str | Non
 
 
 def _emit(data: Mapping[str, Any], output: Path | None, *, force: bool = False) -> None:
+    safe_data = _redact(data)
+    try:
+        assert_artifact_safe(safe_data)
+    except MigrationError as exc:
+        raise ArcGisMigrationError(str(exc)) from exc
     if output:
-        _write_json(output, data, force=force)
-    typer.echo(json.dumps(_redact(data), sort_keys=True))
+        _write_json(output, safe_data, force=force)
+    typer.echo(json.dumps(safe_data, sort_keys=True))
 
 
 @arcgis_app.command("discover")
@@ -328,6 +368,7 @@ def discover_command(
 ) -> None:
     """Read-only discovery; source credentials are never placed in the artifact."""
     try:
+        _preflight_output(output, force=force)
         request = _request(service_url, timeout_seconds, token_secret_ref)
         client = ArcGisClient.from_options(honua_url, api_key, timeout_seconds, retries)
         artifact = {"artifactVersion": ARTIFACT_VERSION, "kind": "discovery", "request": request, "discovery": client.discover(request)}
@@ -361,12 +402,12 @@ def plan_command(
         for key, value in {"targetSchema": target_schema, "batchSize": batch_size, "serviceName": service_name, "whereClause": where_clause, "outputFields": output_fields}.items():
             if value is not None:
                 request[key] = value
-        artifact = {
-            "artifactVersion": ARTIFACT_VERSION,
-            "kind": "plan",
-            "id": _plan_id(request),
-            "request": request,
-        }
+        artifact = MigrationPlan(
+            id=f"arcgis-plan-{_plan_id(request).removeprefix('sha256:')}",
+            service="arcgis",
+            actions=({"kind": "arcgis-service-import", "request": request},),
+        ).to_dict()
+        _validate_shared_contract("plan", artifact)
         _emit(artifact, output, force=force)
     except ArcGisMigrationError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -385,6 +426,7 @@ def _apply(
 ) -> None:
     if not yes:
         raise typer.BadParameter("Apply mutates the Honua target. Re-run with --yes.")
+    _preflight_output(output, force=force)
     plan_id, request = _read_artifact(plan)
     validated_secret_reference = _validate_secret_reference(token_secret_ref)
     if validated_secret_reference:
@@ -442,6 +484,7 @@ def _job_command(
     retries: int,
     force: bool,
 ) -> None:
+    _preflight_output(output, force=force)
     validated_job_id = None if action == "list" else _job_id(job_id or "")
     client = ArcGisClient.from_options(honua_url, api_key, timeout_seconds, retries)
     response = (

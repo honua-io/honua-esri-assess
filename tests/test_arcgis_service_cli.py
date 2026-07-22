@@ -1,4 +1,3 @@
-import hashlib
 import json
 from pathlib import Path
 
@@ -98,14 +97,12 @@ def test_apply_injects_runtime_credential_and_round_trips_optional_fields(tmp_pa
     )
     assert plan_result.exit_code == 0, plan_result.output
     plan_artifact = json.loads(plan.read_text(encoding="utf-8"))
-    canonical_request = json.dumps(
-        plan_artifact["request"],
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    expected_plan_id = f"sha256:{hashlib.sha256(canonical_request).hexdigest()}"
-    assert plan_artifact["id"] == expected_plan_id
+    expected_plan_id = plan_artifact["id"]
+    assert expected_plan_id.startswith("arcgis-plan-")
+    assert plan_artifact["contract_version"] == "v1"
+    assert plan_artifact["service"] == "arcgis"
+    assert plan_artifact["safety_mode"] == "plan"
+    assert plan_artifact["actions"][0]["kind"] == "arcgis-service-import"
     assert "SOURCE_SECRET" not in plan.read_text(encoding="utf-8")
 
     responses.add(
@@ -155,7 +152,27 @@ def test_apply_injects_runtime_credential_and_round_trips_optional_fields(tmp_pa
     assert "SOURCE_SECRET" not in plan.read_text(encoding="utf-8")
     assert "SOURCE_SECRET" not in output.read_text(encoding="utf-8")
     assert "SOURCE_SECRET" not in _plain(apply_result)
-    assert json.loads(output.read_text(encoding="utf-8"))["planId"] == expected_plan_id
+    output_artifact = json.loads(output.read_text(encoding="utf-8"))
+    assert output_artifact["planId"] == expected_plan_id
+    assert "credentials" not in output_artifact["response"]
+
+
+@responses.activate
+def test_apply_refuses_existing_output_before_network(tmp_path):
+    plan = tmp_path / "plan.json"
+    assert _plan(plan).exit_code == 0
+    output = tmp_path / "apply.json"
+    output.write_text("keep", encoding="utf-8")
+
+    result = _invoke(
+        ["apply", str(plan), "--yes", "--output", str(output)],
+        env=HONUA_ENV,
+    )
+
+    assert result.exit_code != 0
+    assert "--force" in _plain(result)
+    assert output.read_text(encoding="utf-8") == "keep"
+    assert not responses.calls
 
 
 @responses.activate
@@ -163,7 +180,7 @@ def test_apply_rejects_tampered_and_legacy_plans_before_network(tmp_path):
     tampered = tmp_path / "tampered.json"
     assert _plan(tampered).exit_code == 0
     artifact = json.loads(tampered.read_text(encoding="utf-8"))
-    artifact["request"]["tableName"] = "unreviewed_table"
+    artifact["actions"][0]["request"]["tableName"] = "unreviewed_table"
     tampered.write_text(json.dumps(artifact), encoding="utf-8")
 
     result = _invoke(["apply", str(tampered), "--yes"], env=HONUA_ENV)
@@ -213,7 +230,8 @@ def test_artifacts_require_force_to_overwrite(tmp_path):
 
     replaced = _plan(plan, "--target-srid", "3857", "--force")
     assert replaced.exit_code == 0, replaced.output
-    assert json.loads(plan.read_text(encoding="utf-8"))["request"]["targetSrid"] == 3857
+    artifact = json.loads(plan.read_text(encoding="utf-8"))
+    assert artifact["actions"][0]["request"]["targetSrid"] == 3857
 
 
 def test_mutations_require_acknowledgement_before_files_env_or_ids(monkeypatch, tmp_path):

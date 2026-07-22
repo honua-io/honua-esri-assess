@@ -259,6 +259,35 @@ public sealed class MauiCodemodTests : IDisposable
     }
 
     [Fact]
+    public void Write_Does_Not_Follow_Symbolic_Links_Outside_The_Project()
+    {
+        var project = WriteProject();
+        var outside = WriteProject(("Outside.cs", string.Join("\n",
+            "using Esri.ArcGISRuntime.Mapping;",
+            "public class Outside { public object M() => new FeatureLayer(); }")));
+        var outsideFile = Path.Combine(outside, "Outside.cs");
+        var original = File.ReadAllText(outsideFile);
+
+        try
+        {
+            Directory.CreateSymbolicLink(Path.Combine(project, "linked-directory"), outside);
+            File.CreateSymbolicLink(Path.Combine(project, "Linked.cs"), outsideFile);
+        }
+        catch (Exception exception) when (
+            exception is UnauthorizedAccessException or IOException or PlatformNotSupportedException)
+        {
+            // Windows requires Developer Mode or an elevated process to create symlinks.
+            return;
+        }
+
+        var result = RunWrite(project);
+
+        Assert.Equal(0, result.FilesScanned);
+        Assert.Equal(original, File.ReadAllText(outsideFile));
+        Assert.DoesNotContain("HonuaFeatureLayer", File.ReadAllText(outsideFile));
+    }
+
+    [Fact]
     public void Preserves_Constructor_Arguments()
     {
         var dir = WriteProject(("File.cs", string.Join("\n",

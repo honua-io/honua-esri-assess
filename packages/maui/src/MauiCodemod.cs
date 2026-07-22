@@ -67,7 +67,7 @@ public static class MauiCodemod
 
             if (fileResult.Changed && options.Write)
             {
-                File.WriteAllText(file, fileResult.TransformedSource);
+                WriteFileAtomically(file, fileResult.TransformedSource);
             }
 
             if (fileResult.Changed || fileResult.ManualTodos.Count > 0)
@@ -198,12 +198,12 @@ public static class MauiCodemod
     {
         if (File.Exists(rootDir))
         {
-            return rootDir.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+            return rootDir.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) && !IsReparsePoint(rootDir)
                 ? new List<string> { rootDir }
                 : new List<string>();
         }
 
-        if (!Directory.Exists(rootDir))
+        if (!Directory.Exists(rootDir) || IsReparsePoint(rootDir))
         {
             return new List<string>();
         }
@@ -219,7 +219,8 @@ public static class MauiCodemod
         foreach (var file in Directory.EnumerateFiles(dir, "*.cs"))
         {
             // Skip Roslyn-style generated files defensively.
-            if (file.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase) ||
+            if (IsReparsePoint(file) ||
+                file.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase) ||
                 file.EndsWith(".g.i.cs", StringComparison.OrdinalIgnoreCase) ||
                 file.EndsWith(".designer.cs", StringComparison.OrdinalIgnoreCase))
             {
@@ -232,12 +233,50 @@ public static class MauiCodemod
         foreach (var sub in Directory.EnumerateDirectories(dir))
         {
             var name = Path.GetFileName(sub);
-            if (SkipDirs.Contains(name))
+            if (SkipDirs.Contains(name) || IsReparsePoint(sub))
             {
                 continue;
             }
 
             CollectRecursive(sub, results);
+        }
+    }
+
+    private static bool IsReparsePoint(string path) =>
+        (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+
+    private static void WriteFileAtomically(string file, string contents)
+    {
+        var directory = Path.GetDirectoryName(file)
+            ?? throw new InvalidOperationException("A migration source file must have a parent directory.");
+        var temporary = Path.Combine(
+            directory,
+            $".{Path.GetFileName(file)}.honua-{Guid.NewGuid():N}.tmp");
+
+        try
+        {
+            using (var stream = new FileStream(
+                temporary,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                FileOptions.WriteThrough))
+            using (var writer = new StreamWriter(stream))
+            {
+                writer.Write(contents);
+                writer.Flush();
+                stream.Flush(flushToDisk: true);
+            }
+
+            File.Move(temporary, file, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary))
+            {
+                File.Delete(temporary);
+            }
         }
     }
 

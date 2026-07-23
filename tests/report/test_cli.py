@@ -205,7 +205,9 @@ raise SystemExit(cli.main(["report", "--input", sys.argv[2], "--strict"]))
 
     assert result.returncode == 3
     assert result.stdout == ""
-    assert result.stderr.startswith("error: [report.schema.invalid]")
+    # Legacy-package use emits its transition warning on stderr before the
+    # command's typed diagnostic; stdout remains reserved for artifacts.
+    assert "error: [report.schema.invalid]" in result.stderr
     assert "Schema validation failed" in result.stderr
 
 

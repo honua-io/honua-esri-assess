@@ -10,6 +10,20 @@
       "extra-files": [
         "src/honua_esri_assess/__init__.py"
       ]
+    },
+    "packages/javascript": {
+      "release-type": "simple",
+      "component": "javascript",
+      "tag-separator": "-",
+      "include-component-in-tag": true,
+      "bump-minor-pre-major": true
+    },
+    "packages/maui": {
+      "release-type": "simple",
+      "component": "maui",
+      "tag-separator": "-",
+      "include-component-in-tag": true,
+      "bump-minor-pre-major": true
     }
   }
 }

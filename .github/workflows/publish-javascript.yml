@@ -1,0 +1,133 @@
+name: Publish JavaScript package
+
+on:
+  push:
+    tags:
+      - "javascript-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build, audit, pack, and smoke-install without publishing."
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      present: ${{ steps.package.outputs.present }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - id: package
+        run: python scripts/runtime_package.py detect javascript >> "$GITHUB_OUTPUT"
+
+  validate-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Validate release tag
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run == false }}
+        run: python scripts/validate_publish_tag.py "${GITHUB_REF_NAME}" --package javascript
+      - name: Allow untagged dry run
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+        run: python scripts/validate_publish_tag.py --allow-untagged --package javascript
+
+  build:
+    runs-on: ubuntu-latest
+    needs:
+      - detect
+      - validate-tag
+    if: needs.detect.outputs.present == 'true'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packages/javascript/package-lock.json
+      - working-directory: packages/javascript
+        run: npm ci
+      - working-directory: packages/javascript
+        run: npm run build
+      - working-directory: packages/javascript
+        run: npm test
+      - working-directory: packages/javascript
+        run: npm run lint
+      - working-directory: packages/javascript
+        run: npm audit --audit-level=high
+      - run: python scripts/check_runtime_licenses.py javascript
+      - name: Pack package
+        working-directory: packages/javascript
+        run: |
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          mkdir -p "$RUNNER_TEMP/javascript-dist"
+          npm pack --pack-destination "$RUNNER_TEMP/javascript-dist"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: javascript-dist-${{ github.sha }}
+          path: ${{ runner.temp }}/javascript-dist/*.tgz
+          if-no-files-found: error
+          retention-days: 14
+
+  smoke-install:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: javascript-dist-${{ github.sha }}
+          path: ${{ runner.temp }}/javascript-dist
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Install and invoke packaged CLI
+        run: |
+          mkdir -p "$RUNNER_TEMP/javascript-smoke"
+          cd "$RUNNER_TEMP/javascript-smoke"
+          npm init --yes
+          npm install --ignore-scripts "$RUNNER_TEMP/javascript-dist"/*.tgz
+          PACKAGE_NAME=$(node -p "require('$GITHUB_WORKSPACE/packages/javascript/package.json').name")
+          BIN_NAME=$(node -p "Object.keys(require('./node_modules/' + '$PACKAGE_NAME' + '/package.json').bin)[0]")
+          "$RUNNER_TEMP/javascript-smoke/node_modules/.bin/$BIN_NAME" matrix \
+            --report "$RUNNER_TEMP/javascript-smoke/matrix.json"
+          test -s "$RUNNER_TEMP/javascript-smoke/matrix.json"
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: smoke-install
+    if: ${{ startsWith(github.ref, 'refs/tags/javascript-v') && (github.event_name != 'workflow_dispatch' || inputs.dry_run == false) }}
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: javascript-dist-${{ github.sha }}
+          path: dist
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/*.tgz
+      - name: Publish with npm trusted publishing and provenance
+        run: |
+          npm install --global npm@11
+          npm publish dist/*.tgz --access public --provenance

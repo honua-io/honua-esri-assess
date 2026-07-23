@@ -55,7 +55,9 @@ def test_release_please_manifest_matches_project_version() -> None:
     manifest = json.loads(
         (REPO_ROOT / ".release-please-manifest.json").read_text(encoding="utf-8")
     )
-    assert manifest == {".": _pyproject()["project"]["version"]}
+    assert manifest["."] == _pyproject()["project"]["version"]
+    assert manifest["packages/javascript"] == "0.0.0"
+    assert manifest["packages/maui"] == "0.0.0"
 
 
 def test_release_please_config_uses_component_tags() -> None:
@@ -69,6 +71,18 @@ def test_release_please_config_uses_component_tags() -> None:
     assert package["tag-separator"] == "-"
     assert package["include-component-in-tag"] is True
     assert package["bump-minor-pre-major"] is True
+    javascript_release_type = (
+        "node"
+        if (REPO_ROOT / "packages/javascript/package.json").is_file()
+        else "simple"
+    )
+    assert (
+        config["packages"]["packages/javascript"]["release-type"]
+        == javascript_release_type
+    )
+    assert config["packages"]["packages/javascript"]["component"] == "javascript"
+    assert config["packages"]["packages/maui"]["release-type"] == "simple"
+    assert config["packages"]["packages/maui"]["component"] == "maui"
 
 
 def test_publish_workflow_publishes_only_from_validated_release_tags() -> None:
@@ -107,3 +121,28 @@ def test_publish_tag_validator_rejects_untagged_non_dry_run(
     assert module.main(["main"]) == 1
     assert module.main([]) == 1
     assert module.main(["--allow-untagged"]) == 0
+
+
+def test_runtime_release_tags_follow_checked_out_package_state(monkeypatch) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "validate_runtime_publish_tag",
+        REPO_ROOT / "scripts" / "validate_publish_tag.py",
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    monkeypatch.chdir(REPO_ROOT)
+    javascript_present = (REPO_ROOT / "packages/javascript/package.json").is_file()
+    javascript_version = module.javascript_version() if javascript_present else "0.1.0"
+    assert module.main(
+        [f"javascript-v{javascript_version}", "--package", "javascript"]
+    ) == (0 if javascript_present else 1)
+
+    maui_present = any((REPO_ROOT / "packages/maui").rglob("*.csproj"))
+    maui_version = module.maui_version() if maui_present else "0.1.0"
+    assert module.main([f"maui-v{maui_version}", "--package", "maui"]) == (
+        0 if maui_present else 1
+    )
+    assert module.main(["--allow-untagged", "--package", "javascript"]) == 0

@@ -282,6 +282,10 @@ Esri IP & licensing posture (clean-room formats via GDAL/community readers, no
 rehosting of licensed data, no embedded proprietary assets) is documented in
 [`docs/compliance/esri-ip-and-licensing-guardrails.md`](docs/compliance/esri-ip-and-licensing-guardrails.md).
 
+Migration implementation ownership, retained SDK/server API boundaries,
+release provenance, licensing, and legacy-entry removal gates are defined in
+the [ownership and deprecation policy](docs/ownership-and-deprecation.md).
+
 ## Related Honua projects
 
 - [honua-server](https://github.com/honua-io/honua-server) — the flagship multi-protocol geospatial server (GeoServices REST, OGC API, WMS/WFS/WMTS/WCS, STAC, vector tiles, and more) that Esri clients such as ArcGIS Pro connect to unmodified; the migration target this tool sizes.

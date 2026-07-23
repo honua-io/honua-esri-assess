@@ -9,8 +9,11 @@ artifact, `EsriFootprint.json` (v0.1 schema), plus an optional human-readable
 Markdown readiness report.
 
 Hard project constraints (do not violate):
-- The tool is strictly read-only against Esri systems — only HTTP `GET`s, never
-  `POST`/`PUT`/`DELETE`. No write helpers exist in the HTTP wrappers.
+- The legacy assessment modules and `honua-migrate assess` are strictly read-only
+  against Esri systems — only HTTP `GET`s, never `POST`/`PUT`/`DELETE`. No write
+  helpers exist in their HTTP wrappers. Write-capable target operations belong only
+  under `honua_migrate`, and must be protected by reviewable plan and explicit apply
+  gates.
 - No network telemetry, usage pings, crash uploads, or update checks. These are
   off by default and there is no opt-in sink. Tests enforce this.
 - `EsriFootprint.json` is the sole supported handoff into the closed Honua

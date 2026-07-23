@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.honua.io/migrate/v1/report.schema.json",
+  "title": "Honua migration engine report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "engine", "readiness", "automated", "manual", "blocked", "warnings", "evidence"],
+  "properties": {
+    "contract_version": {"const": "v1"},
+    "engine": {"type": "string", "minLength": 1},
+    "readiness": {"enum": ["ready", "assisted", "blocked"]},
+    "automated": {"type": "array", "items": {"$ref": "#/$defs/safeObject"}},
+    "manual": {"type": "array", "items": {"$ref": "#/$defs/safeObject"}},
+    "blocked": {"type": "array", "items": {"$ref": "#/$defs/safeObject"}},
+    "warnings": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}},
+    "evidence": {"type": "array", "items": {"$ref": "#/$defs/safeObject"}}
+  },
+  "$defs": {
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "code", "message", "severity"],
+      "properties": {
+        "contract_version": {"const": "v1"},
+        "code": {"type": "string", "pattern": "^[a-z][a-z0-9.-]*$"},
+        "message": {"type": "string", "minLength": 1},
+        "severity": {"enum": ["info", "warning", "error"]},
+        "scope": {"type": ["string", "null"]}
+      }
+    },
+    "safeObject": {
+      "type": "object",
+      "propertyNames": {
+        "not": {"pattern": "[Pp]assword|[Ss]ecret|[Tt]oken|[Aa]uthorization|[Cc]redential|[Aa]pi[_-]?[Kk]ey"}
+      },
+      "additionalProperties": {"$ref": "#/$defs/safeValue"}
+    },
+    "safeValue": {
+      "oneOf": [
+        {"type": ["string", "number", "integer", "boolean", "null"]},
+        {"type": "array", "items": {"$ref": "#/$defs/safeValue"}},
+        {"$ref": "#/$defs/safeObject"}
+      ]
+    }
+  }
+}

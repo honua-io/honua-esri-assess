@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.honua.io/migrate/v1/reconciliation.schema.json",
+  "title": "Honua migration reconciliation result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "run_id", "status", "checks", "diagnostics"],
+  "properties": {
+    "contract_version": {"const": "v1"},
+    "run_id": {"type": "string", "minLength": 1},
+    "status": {"enum": ["matched", "partial", "mismatched", "failed"]},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status"],
+        "propertyNames": {
+          "not": {"pattern": "[Pp]assword|[Ss]ecret|[Tt]oken|[Aa]uthorization|[Cc]redential|[Aa]pi[_-]?[Kk]ey"}
+        },
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "status": {"enum": ["matched", "mismatched", "skipped", "failed"]},
+          "source": {},
+          "target": {},
+          "evidence": {"type": "array"},
+          "warnings": {"type": "array", "items": {"type": "object"}}
+        }
+      }
+    },
+    "diagnostics": {"type": "array", "items": {"type": "object"}}
+  }
+}

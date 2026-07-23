@@ -1,0 +1,1 @@
+"""Packaged migration contract schemas."""

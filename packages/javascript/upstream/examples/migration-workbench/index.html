@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Inspect deterministic honua-migrate artifacts and generated-target behavior without uploading source or using credentials."
+    />
+    <title>Honua ArcGIS Migration Workbench</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to migration evidence</a>
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Honua migration evidence</p>
+        <h1>Source-to-running-result workbench</h1>
+        <p class="hero-copy">
+          A credential-free projection of committed <code>honua-migrate</code> output. No browser transform, source
+          upload, or cloud import occurs here.
+        </p>
+      </div>
+      <dl class="hero-facts">
+        <div><dt>Fixture</dt><dd id="fixture-name">Loading?</dd></div>
+        <div><dt>Target</dt><dd id="target-name">Loading?</dd></div>
+        <div><dt>Artifact set</dt><dd id="artifact-set">Loading?</dd></div>
+        <div><dt>Browser proof</dt><dd id="runtime-status" data-status="loading">Loading?</dd></div>
+      </dl>
+    </header>
+
+    <main id="main-content" class="page-shell">
+      <section id="load-error" class="error-panel" role="alert" hidden></section>
+
+      <section class="panel source-proof" aria-labelledby="source-proof-title">
+        <div class="section-heading">
+          <p class="eyebrow">Provenance</p>
+          <h2 id="source-proof-title">Fixed, licensed source</h2>
+        </div>
+        <dl id="source-facts" class="fact-grid"></dl>
+      </section>
+
+      <section class="panel" aria-labelledby="compat-title">
+        <div class="section-heading split-heading">
+          <div>
+            <p class="eyebrow">Primary migration</p>
+            <h2 id="compat-title">Honua compatibility target</h2>
+          </div>
+          <strong id="compat-readiness" class="status-pill">Loading?</strong>
+        </div>
+        <div id="compat-metrics" class="metric-grid"></div>
+        <div class="two-column">
+          <section aria-labelledby="compat-gates-title">
+            <h3 id="compat-gates-title">CLI gates</h3>
+            <div id="compat-gates" class="evidence-list"></div>
+          </section>
+          <section aria-labelledby="compat-residuals-title">
+            <h3 id="compat-residuals-title">Compatibility manual and unsupported</h3>
+            <div id="compat-residuals" class="evidence-list"></div>
+          </section>
+        </div>
+        <h3>Every codemod category</h3>
+        <p class="section-note">Zero-count categories are retained; this table is not filtered to successful mappings.</p>
+        <div id="compat-mappings" class="table-scroll" tabindex="0" aria-label="Compatibility codemod categories"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="runtime-title">
+        <div class="section-heading split-heading">
+          <div>
+            <p class="eyebrow">Runtime proof</p>
+            <h2 id="runtime-title">Generated target assertion matrix</h2>
+          </div>
+          <strong id="assertion-summary" class="status-pill">Loading?</strong>
+        </div>
+        <p class="section-note">
+          Stored expected and observed values come from Slice 1. The browser column comes from importing the generated
+          target, whose migrated module resolves <code>@honua/sdk-js/esri-compat</code>.
+        </p>
+        <div id="assertion-matrix" class="table-scroll" tabindex="0" aria-label="Generated target assertion matrix"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="widget-title">
+        <div class="section-heading">
+          <p class="eyebrow">Survival guidance</p>
+          <h2 id="widget-title">Classic widget readiness</h2>
+        </div>
+        <div id="widget-metrics" class="metric-grid"></div>
+        <p id="widget-summary" class="callout"></p>
+        <div id="widget-guidance" class="table-scroll" tabindex="0" aria-label="Classic widget migration guidance"></div>
+      </section>
+
+      <section class="panel alternative-panel" aria-labelledby="maplibre-title">
+        <div class="section-heading split-heading">
+          <div>
+            <p class="eyebrow">Alternative assessment</p>
+            <h2 id="maplibre-title">Direct Honua MapLibre dry run</h2>
+          </div>
+          <strong id="maplibre-readiness" class="status-pill">Loading?</strong>
+        </div>
+        <p class="callout warning-callout">
+          This is a committed dry-run assessment, not the generated compatibility target. Its manual work and
+          unsupported modules remain visible.
+        </p>
+        <div id="maplibre-metrics" class="metric-grid"></div>
+        <div class="two-column">
+          <section aria-labelledby="maplibre-gates-title">
+            <h3 id="maplibre-gates-title">Dry-run gates</h3>
+            <div id="maplibre-gates" class="evidence-list"></div>
+          </section>
+          <section aria-labelledby="maplibre-residuals-title">
+            <h3 id="maplibre-residuals-title">MapLibre manual and unsupported</h3>
+            <div id="maplibre-residuals" class="evidence-list"></div>
+          </section>
+        </div>
+        <h3>Every MapLibre codemod category</h3>
+        <p class="section-note">The complete CLI category matrix is retained, including zero values.</p>
+        <div id="maplibre-mappings" class="table-scroll" tabindex="0" aria-label="MapLibre codemod categories"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="commands-title">
+        <div class="section-heading">
+          <p class="eyebrow">Reproducibility</p>
+          <h2 id="commands-title">Exact CLI commands</h2>
+        </div>
+        <div id="command-list" class="command-list"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="artifacts-title">
+        <div class="section-heading">
+          <p class="eyebrow">Evidence files</p>
+          <h2 id="artifacts-title">Manifest hashes and exports</h2>
+        </div>
+        <div id="artifact-files" class="table-scroll" tabindex="0" aria-label="Artifact file hashes and downloads"></div>
+        <dl id="patch-proof" class="fact-grid compact-facts"></dl>
+      </section>
+
+      <section class="panel" aria-labelledby="diff-title">
+        <div class="section-heading">
+          <p class="eyebrow">Source / target</p>
+          <h2 id="diff-title">Exact generated patch</h2>
+        </div>
+        <pre id="migration-diff" class="diff-view" tabindex="0"></pre>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

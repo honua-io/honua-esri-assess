@@ -1,0 +1,829 @@
+{
+  "schemaVersion": "honua.migration-workbench.maplibre-assessment.v1",
+  "fixture": "arcgis-source-app",
+  "command": {
+    "id": "honua-maplibre-dry-run",
+    "executable": "node",
+    "argv": [
+      "dist/src/migration/cli.js",
+      "codemod",
+      "<repo>/examples/arcgis-source-app",
+      "--target",
+      "honua-maplibre",
+      "--annotate-todos",
+      "--report",
+      "<workspace>/maplibre-assessment.raw.json"
+    ],
+    "exitCode": 0,
+    "stdout": "filesScanned=3 filesChanged=2 autoMigrated=5 manual=[trivial:0 moderate:4 complex:0] manualRewrite=4/9 manualIntervention=7/12 writeMode=dry-run annotateTodos=enabled target=honua-maplibre readiness=assisted byKind=feature-layer:1/1/2,graphic:0/0/0,point-geometry:0/0/0,polyline-geometry:0/0/0,polygon-geometry:0/0/0,extent-geometry:0/0/0,spatial-reference:0/0/0,color:0/0/0,simple-line-symbol:0/0/0,simple-marker-symbol:0/0/0,picture-marker-symbol:0/0/0,text-symbol:0/0/0,label-class:0/0/0,simple-fill-symbol:0/0/0,class-breaks-renderer:0/0/0,simple-renderer:0/0/0,unique-value-renderer:0/0/0,graphics-layer:0/0/0,group-layer:0/0/0,map-image-layer:0/0/0,tile-layer:0/0/0,route-layer:0/0/0,route-task:0/0/0,basemap:0/0/0,map:2/0/2,map-view:2/0/2,scene-view:0/0/0,web-map:0/0/0,layer-list:0/1/1,table-list-widget:0/0/0,feature-widget:0/0/0,feature-templates-widget:0/0/0,feature-form-widget:0/0/0,feature-table-widget:0/1/1,feature-set:0/0/0,legend-widget:0/0/0,popup-widget:0/1/1,popup-template:0/0/0,swipe-widget:0/0/0,print-widget:0/0/0,home-widget:0/0/0,basemap-toggle-widget:0/0/0,locate-widget:0/0/0,scale-bar-widget:0/0/0,search-widget:0/0/0,basemap-layer-list-widget:0/0/0,basemap-gallery-widget:0/0/0,expand-widget:0/0/0,compass-widget:0/0/0,bookmarks-widget:0/0/0,fullscreen-widget:0/0/0,zoom-widget:0/0/0,attribution-widget:0/0/0,sketch-widget:0/0/0,editor-widget:0/0/0,track-widget:0/0/0,distance-measurement-2d-widget:0/0/0,area-measurement-2d-widget:0/0/0,measurement-widget:0/0/0,time-slider-widget:0/0/0,directions-widget:0/0/0,coordinate-conversion-widget:0/0/0,query:0/0/0,oauth-info:0/0/0,identity-manager:0/0/0,esri-request:0/0/0,esri-config:0/0/0,reactive-utils:0/0/0,feature-filter:0/0/0,vector-tile-layer:0/0/0,geojson-layer:0/0/0,wms-layer:0/0/0,wfs-layer:0/0/0,imagery-layer:0/0/0,geometry-engine:0/0/0\ngates=no-manual-todos:fail,no-unhandled-modules:fail,no-blocking-flags:pass\nmanualTodos:\n- <repo>/examples/arcgis-source-app/src/main.ts:27:19 [feature-layer] FeatureLayer options include unsupported properties: popupTemplate; requires manual migration.\n- <repo>/examples/arcgis-source-app/src/workbench-scenario.js:73:17 [popup-widget] No deterministic Honua MapLibre mapping for this constructor; requires manual migration.\n- <repo>/examples/arcgis-source-app/src/workbench-scenario.js:74:17 [feature-table-widget] No deterministic Honua MapLibre mapping for this constructor; requires manual migration.\n- <repo>/examples/arcgis-source-app/src/workbench-scenario.js:81:21 [layer-list] No deterministic Honua MapLibre mapping for this constructor; requires manual migration.\nmanualReasons:\n- 3x [feature-table-widget,layer-list,popup-widget] No deterministic Honua MapLibre mapping for this constructor; requires manual migration.\n- 1x [feature-layer] FeatureLayer options include unsupported properties: popupTemplate; requires manual migration.\nunhandledArcGisModules:\n- @arcgis/core/widgets/FeatureTable [static-import] (1)\n- @arcgis/core/widgets/LayerList [static-import] (1)\n- @arcgis/core/widgets/Popup [static-import] (1)\n{\n  \"rootDir\": \"<repo>/examples/arcgis-source-app\",\n  \"codemodTarget\": \"honua-maplibre\",\n  \"scanSummary\": \"filesScanned=3 filesWithArcGisImports=2 importCount=9 esriLeafletImportCount=0 topSymbols=[FeatureLayer:5, Map:5, MapView:5, FeatureTable:2, LayerList:2, Popup:2] flags=[none]\",\n  \"scanReport\": {\n    \"rootDir\": \"<repo>/examples/arcgis-source-app\",\n    \"filesScanned\": 3,\n    \"filesWithArcGisImports\": 2,\n    \"imports\": [\n      {\n        \"file\": \"<repo>/examples/arcgis-source-app/src/main.ts\",\n        \"modulePath\": \"@arcgis/core/layers/FeatureLayer\",\n        \"importClause\": \"FeatureLayer\",\n        \"symbols\": [\n          \"FeatureLayer\"\n        ]\n      },\n      {\n        \"file\": \"<repo>/examples/arcgis-source-app/src/main.ts\",\n        \"modulePath\": \"@arcgis/core/Map\",\n        \"importClause\": \"Map\",\n        \"symbols\": [\n          \"Map\"\n        ]\n      },\n      {\n        \"file\": \"<repo>/examples/arcgis-source-app/src/main.ts\",\n        \"modulePath\": \"@arcgis/core/views/MapView\",\n        \"importClause\": \"MapView\",\n        \"symbols\": [\n          \"MapView\"\n        ]\n      },\n      {\n        \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n        \"modulePath\": \"@arcgis/core/layers/FeatureLayer\",\n        \"importClause\": \"FeatureLayer\",\n        \"symbols\": [\n          \"FeatureLayer\"\n        ]\n      },\n      {\n        \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n        \"modulePath\": \"@arcgis/core/Map\",\n        \"importClause\": \"Map\",\n        \"symbols\": [\n          \"Map\"\n        ]\n      },\n      {\n        \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n        \"modulePath\": \"@arcgis/core/views/MapView\",\n        \"importClause\": \"MapView\",\n        \"symbols\": [\n          \"MapView\"\n        ]\n      },\n      {\n        \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n        \"modulePath\": \"@arcgis/core/widgets/FeatureTable\",\n        \"importClause\": \"FeatureTable\",\n        \"symbols\": [\n          \"FeatureTable\"\n        ]\n      },\n      {\n        \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n        \"modulePath\": \"@arcgis/core/widgets/LayerList\",\n        \"importClause\": \"LayerList\",\n        \"symbols\": [\n          \"LayerList\"\n        ]\n      },\n      {\n        \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n        \"modulePath\": \"@arcgis/core/widgets/Popup\",\n        \"importClause\": \"Popup\",\n        \"symbols\": [\n          \"Popup\"\n        ]\n      }\n    ],\n    \"filesWithEsriLeafletImports\": 0,\n    \"esriLeafletImportCount\": 0,\n    \"esriLeafletImports\": [],\n    \"symbolUsageCounts\": {\n      \"FeatureLayer\": 5,\n      \"Map\": 5,\n      \"MapView\": 5,\n      \"FeatureTable\": 2,\n      \"LayerList\": 2,\n      \"Popup\": 2\n    },\n    \"flags\": []\n  },\n  \"codemodResult\": {\n    \"rootDir\": \"<repo>/examples/arcgis-source-app\",\n    \"target\": \"honua-maplibre\",\n    \"filesScanned\": 3,\n    \"filesChanged\": 2,\n    \"metrics\": {\n      \"totalCodemodScopedCallSites\": 9,\n      \"autoMigratedCallSites\": 5,\n      \"manualCallSites\": 4,\n      \"byKind\": {\n        \"feature-layer\": {\n          \"total\": 2,\n          \"autoMigrated\": 1,\n          \"manual\": 1\n        },\n        \"graphic\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"point-geometry\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"polyline-geometry\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"polygon-geometry\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"extent-geometry\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"spatial-reference\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"color\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"simple-line-symbol\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"simple-marker-symbol\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"picture-marker-symbol\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"text-symbol\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"label-class\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"simple-fill-symbol\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"class-breaks-renderer\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"simple-renderer\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"unique-value-renderer\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"graphics-layer\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"group-layer\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"map-image-layer\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"tile-layer\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"route-layer\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"route-task\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"basemap\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"map\": {\n          \"total\": 2,\n          \"autoMigrated\": 2,\n          \"manual\": 0\n        },\n        \"map-view\": {\n          \"total\": 2,\n          \"autoMigrated\": 2,\n          \"manual\": 0\n        },\n        \"scene-view\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"web-map\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"layer-list\": {\n          \"total\": 1,\n          \"autoMigrated\": 0,\n          \"manual\": 1\n        },\n        \"table-list-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"feature-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"feature-templates-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"feature-form-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"feature-table-widget\": {\n          \"total\": 1,\n          \"autoMigrated\": 0,\n          \"manual\": 1\n        },\n        \"feature-set\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"legend-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"popup-widget\": {\n          \"total\": 1,\n          \"autoMigrated\": 0,\n          \"manual\": 1\n        },\n        \"popup-template\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"swipe-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"print-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"home-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"basemap-toggle-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"locate-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"scale-bar-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"search-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"basemap-layer-list-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"basemap-gallery-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"expand-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"compass-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"bookmarks-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"fullscreen-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"zoom-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"attribution-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"sketch-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"editor-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"track-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"distance-measurement-2d-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"area-measurement-2d-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"measurement-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"time-slider-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"directions-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"coordinate-conversion-widget\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"query\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"oauth-info\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"identity-manager\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"esri-request\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"esri-config\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"reactive-utils\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"feature-filter\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"vector-tile-layer\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"geojson-layer\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"wms-layer\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"wfs-layer\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"imagery-layer\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        },\n        \"geometry-engine\": {\n          \"total\": 0,\n          \"autoMigrated\": 0,\n          \"manual\": 0\n        }\n      }\n    },\n    \"fileResults\": [\n      {\n        \"file\": \"<repo>/examples/arcgis-source-app/src/main.ts\",\n        \"rewrittenImports\": 0,\n        \"rewrittenConstructors\": 2,\n        \"rewrittenDynamicImports\": 0,\n        \"rewrittenEventNames\": 1,\n        \"addedCompatImport\": true,\n        \"removedArcGisImports\": 2,\n        \"annotatedTodoComments\": 1,\n        \"manualTodos\": [\n          {\n            \"kind\": \"feature-layer\",\n            \"file\": \"<repo>/examples/arcgis-source-app/src/main.ts\",\n            \"line\": 27,\n            \"column\": 19,\n            \"reason\": \"FeatureLayer options include unsupported properties: popupTemplate; requires manual migration.\",\n            \"difficulty\": \"moderate\"\n          }\n        ]\n      },\n      {\n        \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n        \"rewrittenImports\": 0,\n        \"rewrittenConstructors\": 3,\n        \"rewrittenDynamicImports\": 0,\n        \"rewrittenEventNames\": 0,\n        \"addedCompatImport\": true,\n        \"removedArcGisImports\": 3,\n        \"annotatedTodoComments\": 3,\n        \"manualTodos\": [\n          {\n            \"kind\": \"popup-widget\",\n            \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n            \"line\": 73,\n            \"column\": 17,\n            \"reason\": \"No deterministic Honua MapLibre mapping for this constructor; requires manual migration.\",\n            \"difficulty\": \"moderate\"\n          },\n          {\n            \"kind\": \"feature-table-widget\",\n            \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n            \"line\": 74,\n            \"column\": 17,\n            \"reason\": \"No deterministic Honua MapLibre mapping for this constructor; requires manual migration.\",\n            \"difficulty\": \"moderate\"\n          },\n          {\n            \"kind\": \"layer-list\",\n            \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n            \"line\": 81,\n            \"column\": 21,\n            \"reason\": \"No deterministic Honua MapLibre mapping for this constructor; requires manual migration.\",\n            \"difficulty\": \"moderate\"\n          }\n        ]\n      }\n    ],\n    \"manualTodos\": [\n      {\n        \"kind\": \"feature-layer\",\n        \"file\": \"<repo>/examples/arcgis-source-app/src/main.ts\",\n        \"line\": 27,\n        \"column\": 19,\n        \"reason\": \"FeatureLayer options include unsupported properties: popupTemplate; requires manual migration.\",\n        \"difficulty\": \"moderate\"\n      },\n      {\n        \"kind\": \"popup-widget\",\n        \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n        \"line\": 73,\n        \"column\": 17,\n        \"reason\": \"No deterministic Honua MapLibre mapping for this constructor; requires manual migration.\",\n        \"difficulty\": \"moderate\"\n      },\n      {\n        \"kind\": \"feature-table-widget\",\n        \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n        \"line\": 74,\n        \"column\": 17,\n        \"reason\": \"No deterministic Honua MapLibre mapping for this constructor; requires manual migration.\",\n        \"difficulty\": \"moderate\"\n      },\n      {\n        \"kind\": \"layer-list\",\n        \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n        \"line\": 81,\n        \"column\": 21,\n        \"reason\": \"No deterministic Honua MapLibre mapping for this constructor; requires manual migration.\",\n        \"difficulty\": \"moderate\"\n      }\n    ]\n  },\n  \"manualRewriteMetric\": {\n    \"numerator\": 4,\n    \"denominator\": 9,\n    \"ratio\": 0.4444444444444444,\n    \"scope\": \"FeatureLayer/Graphic/Point/Polyline/Polygon/Extent/SpatialReference/Color/SimpleLineSymbol/SimpleMarkerSymbol/PictureMarkerSymbol/TextSymbol/LabelClass/SimpleFillSymbol/ClassBreaksRenderer/SimpleRenderer/UniqueValueRenderer/GraphicsLayer/GroupLayer/MapImageLayer/TileLayer/RouteLayer/RouteTask/Basemap/Map/MapView/SceneView/WebMap/LayerList/TableList/Feature/FeatureTemplates/FeatureForm/FeatureTable/FeatureSet/Legend/Popup/PopupTemplate/Swipe/Print/Home/BasemapToggle/Locate/ScaleBar/Search/BasemapLayerList/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution/Sketch/Editor/Track/DistanceMeasurement2D/AreaMeasurement2D/Measurement/TimeSlider/Directions/CoordinateConversion/Query/OAuthInfo/IdentityManager/EsriRequest/EsriConfig/ReactiveUtils codemod-scoped usage in safe migration scope\"\n  },\n  \"manualInterventionMetric\": {\n    \"numerator\": 7,\n    \"denominator\": 12,\n    \"ratio\": 0.5833333333333334,\n    \"scope\": \"Codemod-scoped call sites plus unhandled ArcGIS module usage hits (static-import/dynamic-import/require)\",\n    \"manualCodemodCallSites\": 4,\n    \"unhandledUsageHits\": 3\n  },\n  \"readiness\": \"assisted\",\n  \"gates\": [\n    {\n      \"gate\": \"no-manual-todos\",\n      \"passed\": false,\n      \"detail\": \"4 manual codemod-scoped call sites remain\"\n    },\n    {\n      \"gate\": \"no-unhandled-modules\",\n      \"passed\": false,\n      \"detail\": \"3 ArcGIS modules remain outside codemod scope\"\n    },\n    {\n      \"gate\": \"no-blocking-flags\",\n      \"passed\": true,\n      \"detail\": \"no blocking migration flags detected\"\n    }\n  ],\n  \"manualTodosByKind\": {\n    \"feature-layer\": 1,\n    \"graphic\": 0,\n    \"point-geometry\": 0,\n    \"polyline-geometry\": 0,\n    \"polygon-geometry\": 0,\n    \"extent-geometry\": 0,\n    \"spatial-reference\": 0,\n    \"color\": 0,\n    \"simple-line-symbol\": 0,\n    \"simple-marker-symbol\": 0,\n    \"picture-marker-symbol\": 0,\n    \"text-symbol\": 0,\n    \"label-class\": 0,\n    \"simple-fill-symbol\": 0,\n    \"class-breaks-renderer\": 0,\n    \"simple-renderer\": 0,\n    \"unique-value-renderer\": 0,\n    \"graphics-layer\": 0,\n    \"group-layer\": 0,\n    \"map-image-layer\": 0,\n    \"tile-layer\": 0,\n    \"route-layer\": 0,\n    \"route-task\": 0,\n    \"basemap\": 0,\n    \"map\": 0,\n    \"map-view\": 0,\n    \"scene-view\": 0,\n    \"web-map\": 0,\n    \"layer-list\": 1,\n    \"table-list-widget\": 0,\n    \"feature-widget\": 0,\n    \"feature-templates-widget\": 0,\n    \"feature-form-widget\": 0,\n    \"feature-table-widget\": 1,\n    \"feature-set\": 0,\n    \"legend-widget\": 0,\n    \"popup-widget\": 1,\n    \"popup-template\": 0,\n    \"swipe-widget\": 0,\n    \"print-widget\": 0,\n    \"home-widget\": 0,\n    \"basemap-toggle-widget\": 0,\n    \"locate-widget\": 0,\n    \"scale-bar-widget\": 0,\n    \"search-widget\": 0,\n    \"basemap-layer-list-widget\": 0,\n    \"basemap-gallery-widget\": 0,\n    \"expand-widget\": 0,\n    \"compass-widget\": 0,\n    \"bookmarks-widget\": 0,\n    \"fullscreen-widget\": 0,\n    \"zoom-widget\": 0,\n    \"attribution-widget\": 0,\n    \"sketch-widget\": 0,\n    \"editor-widget\": 0,\n    \"track-widget\": 0,\n    \"distance-measurement-2d-widget\": 0,\n    \"area-measurement-2d-widget\": 0,\n    \"measurement-widget\": 0,\n    \"time-slider-widget\": 0,\n    \"directions-widget\": 0,\n    \"coordinate-conversion-widget\": 0,\n    \"query\": 0,\n    \"oauth-info\": 0,\n    \"identity-manager\": 0,\n    \"esri-request\": 0,\n    \"esri-config\": 0,\n    \"reactive-utils\": 0,\n    \"feature-filter\": 0,\n    \"vector-tile-layer\": 0,\n    \"geojson-layer\": 0,\n    \"wms-layer\": 0,\n    \"wfs-layer\": 0,\n    \"imagery-layer\": 0,\n    \"geometry-engine\": 0\n  },\n  \"manualTodoReasons\": [\n    {\n      \"reason\": \"No deterministic Honua MapLibre mapping for this constructor; requires manual migration.\",\n      \"count\": 3,\n      \"kinds\": [\n        \"feature-table-widget\",\n        \"layer-list\",\n        \"popup-widget\"\n      ]\n    },\n    {\n      \"reason\": \"FeatureLayer options include unsupported properties: popupTemplate; requires manual migration.\",\n      \"count\": 1,\n      \"kinds\": [\n        \"feature-layer\"\n      ]\n    }\n  ],\n  \"unhandledArcGisModules\": [\n    {\n      \"modulePath\": \"@arcgis/core/widgets/FeatureTable\",\n      \"usageStyle\": \"static-import\",\n      \"count\": 1\n    },\n    {\n      \"modulePath\": \"@arcgis/core/widgets/LayerList\",\n      \"usageStyle\": \"static-import\",\n      \"count\": 1\n    },\n    {\n      \"modulePath\": \"@arcgis/core/widgets/Popup\",\n      \"usageStyle\": \"static-import\",\n      \"count\": 1\n    }\n  ],\n  \"manualTodos\": [\n    {\n      \"kind\": \"feature-layer\",\n      \"file\": \"<repo>/examples/arcgis-source-app/src/main.ts\",\n      \"line\": 27,\n      \"column\": 19,\n      \"reason\": \"FeatureLayer options include unsupported properties: popupTemplate; requires manual migration.\",\n      \"difficulty\": \"moderate\"\n    },\n    {\n      \"kind\": \"popup-widget\",\n      \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n      \"line\": 73,\n      \"column\": 17,\n      \"reason\": \"No deterministic Honua MapLibre mapping for this constructor; requires manual migration.\",\n      \"difficulty\": \"moderate\"\n    },\n    {\n      \"kind\": \"feature-table-widget\",\n      \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n      \"line\": 74,\n      \"column\": 17,\n      \"reason\": \"No deterministic Honua MapLibre mapping for this constructor; requires manual migration.\",\n      \"difficulty\": \"moderate\"\n    },\n    {\n      \"kind\": \"layer-list\",\n      \"file\": \"<repo>/examples/arcgis-source-app/src/workbench-scenario.js\",\n      \"line\": 81,\n      \"column\": 21,\n      \"reason\": \"No deterministic Honua MapLibre mapping for this constructor; requires manual migration.\",\n      \"difficulty\": \"moderate\"\n    }\n  ]\n}\nreportWritten=<workspace>/maplibre-assessment.raw.json\n",
+    "stderr": ""
+  },
+  "report": {
+    "codemodResult": {
+      "fileResults": [
+        {
+          "addedCompatImport": true,
+          "annotatedTodoComments": 1,
+          "file": "<repo>/examples/arcgis-source-app/src/main.ts",
+          "manualTodos": [
+            {
+              "column": 19,
+              "difficulty": "moderate",
+              "file": "<repo>/examples/arcgis-source-app/src/main.ts",
+              "kind": "feature-layer",
+              "line": 27,
+              "reason": "FeatureLayer options include unsupported properties: popupTemplate; requires manual migration."
+            }
+          ],
+          "removedArcGisImports": 2,
+          "rewrittenConstructors": 2,
+          "rewrittenDynamicImports": 0,
+          "rewrittenEventNames": 1,
+          "rewrittenImports": 0
+        },
+        {
+          "addedCompatImport": true,
+          "annotatedTodoComments": 3,
+          "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+          "manualTodos": [
+            {
+              "column": 17,
+              "difficulty": "moderate",
+              "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+              "kind": "popup-widget",
+              "line": 73,
+              "reason": "No deterministic Honua MapLibre mapping for this constructor; requires manual migration."
+            },
+            {
+              "column": 17,
+              "difficulty": "moderate",
+              "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+              "kind": "feature-table-widget",
+              "line": 74,
+              "reason": "No deterministic Honua MapLibre mapping for this constructor; requires manual migration."
+            },
+            {
+              "column": 21,
+              "difficulty": "moderate",
+              "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+              "kind": "layer-list",
+              "line": 81,
+              "reason": "No deterministic Honua MapLibre mapping for this constructor; requires manual migration."
+            }
+          ],
+          "removedArcGisImports": 3,
+          "rewrittenConstructors": 3,
+          "rewrittenDynamicImports": 0,
+          "rewrittenEventNames": 0,
+          "rewrittenImports": 0
+        }
+      ],
+      "filesChanged": 2,
+      "filesScanned": 3,
+      "manualTodos": [
+        {
+          "column": 19,
+          "difficulty": "moderate",
+          "file": "<repo>/examples/arcgis-source-app/src/main.ts",
+          "kind": "feature-layer",
+          "line": 27,
+          "reason": "FeatureLayer options include unsupported properties: popupTemplate; requires manual migration."
+        },
+        {
+          "column": 17,
+          "difficulty": "moderate",
+          "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+          "kind": "popup-widget",
+          "line": 73,
+          "reason": "No deterministic Honua MapLibre mapping for this constructor; requires manual migration."
+        },
+        {
+          "column": 17,
+          "difficulty": "moderate",
+          "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+          "kind": "feature-table-widget",
+          "line": 74,
+          "reason": "No deterministic Honua MapLibre mapping for this constructor; requires manual migration."
+        },
+        {
+          "column": 21,
+          "difficulty": "moderate",
+          "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+          "kind": "layer-list",
+          "line": 81,
+          "reason": "No deterministic Honua MapLibre mapping for this constructor; requires manual migration."
+        }
+      ],
+      "metrics": {
+        "autoMigratedCallSites": 5,
+        "byKind": {
+          "area-measurement-2d-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "attribution-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "basemap": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "basemap-gallery-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "basemap-layer-list-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "basemap-toggle-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "bookmarks-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "class-breaks-renderer": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "color": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "compass-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "coordinate-conversion-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "directions-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "distance-measurement-2d-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "editor-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "esri-config": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "esri-request": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "expand-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "extent-geometry": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "feature-filter": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "feature-form-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "feature-layer": {
+            "autoMigrated": 1,
+            "manual": 1,
+            "total": 2
+          },
+          "feature-set": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "feature-table-widget": {
+            "autoMigrated": 0,
+            "manual": 1,
+            "total": 1
+          },
+          "feature-templates-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "feature-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "fullscreen-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "geojson-layer": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "geometry-engine": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "graphic": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "graphics-layer": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "group-layer": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "home-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "identity-manager": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "imagery-layer": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "label-class": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "layer-list": {
+            "autoMigrated": 0,
+            "manual": 1,
+            "total": 1
+          },
+          "legend-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "locate-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "map": {
+            "autoMigrated": 2,
+            "manual": 0,
+            "total": 2
+          },
+          "map-image-layer": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "map-view": {
+            "autoMigrated": 2,
+            "manual": 0,
+            "total": 2
+          },
+          "measurement-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "oauth-info": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "picture-marker-symbol": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "point-geometry": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "polygon-geometry": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "polyline-geometry": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "popup-template": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "popup-widget": {
+            "autoMigrated": 0,
+            "manual": 1,
+            "total": 1
+          },
+          "print-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "query": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "reactive-utils": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "route-layer": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "route-task": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "scale-bar-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "scene-view": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "search-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "simple-fill-symbol": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "simple-line-symbol": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "simple-marker-symbol": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "simple-renderer": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "sketch-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "spatial-reference": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "swipe-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "table-list-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "text-symbol": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "tile-layer": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "time-slider-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "track-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "unique-value-renderer": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "vector-tile-layer": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "web-map": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "wfs-layer": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "wms-layer": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          },
+          "zoom-widget": {
+            "autoMigrated": 0,
+            "manual": 0,
+            "total": 0
+          }
+        },
+        "manualCallSites": 4,
+        "totalCodemodScopedCallSites": 9
+      },
+      "rootDir": "<repo>/examples/arcgis-source-app",
+      "target": "honua-maplibre"
+    },
+    "codemodTarget": "honua-maplibre",
+    "gates": [
+      {
+        "detail": "4 manual codemod-scoped call sites remain",
+        "gate": "no-manual-todos",
+        "passed": false
+      },
+      {
+        "detail": "3 ArcGIS modules remain outside codemod scope",
+        "gate": "no-unhandled-modules",
+        "passed": false
+      },
+      {
+        "detail": "no blocking migration flags detected",
+        "gate": "no-blocking-flags",
+        "passed": true
+      }
+    ],
+    "manualInterventionMetric": {
+      "denominator": 12,
+      "manualCodemodCallSites": 4,
+      "numerator": 7,
+      "ratio": 0.5833333333333334,
+      "scope": "Codemod-scoped call sites plus unhandled ArcGIS module usage hits (static-import/dynamic-import/require)",
+      "unhandledUsageHits": 3
+    },
+    "manualRewriteMetric": {
+      "denominator": 9,
+      "numerator": 4,
+      "ratio": 0.4444444444444444,
+      "scope": "FeatureLayer/Graphic/Point/Polyline/Polygon/Extent/SpatialReference/Color/SimpleLineSymbol/SimpleMarkerSymbol/PictureMarkerSymbol/TextSymbol/LabelClass/SimpleFillSymbol/ClassBreaksRenderer/SimpleRenderer/UniqueValueRenderer/GraphicsLayer/GroupLayer/MapImageLayer/TileLayer/RouteLayer/RouteTask/Basemap/Map/MapView/SceneView/WebMap/LayerList/TableList/Feature/FeatureTemplates/FeatureForm/FeatureTable/FeatureSet/Legend/Popup/PopupTemplate/Swipe/Print/Home/BasemapToggle/Locate/ScaleBar/Search/BasemapLayerList/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution/Sketch/Editor/Track/DistanceMeasurement2D/AreaMeasurement2D/Measurement/TimeSlider/Directions/CoordinateConversion/Query/OAuthInfo/IdentityManager/EsriRequest/EsriConfig/ReactiveUtils codemod-scoped usage in safe migration scope"
+    },
+    "manualTodoReasons": [
+      {
+        "count": 3,
+        "kinds": [
+          "feature-table-widget",
+          "layer-list",
+          "popup-widget"
+        ],
+        "reason": "No deterministic Honua MapLibre mapping for this constructor; requires manual migration."
+      },
+      {
+        "count": 1,
+        "kinds": [
+          "feature-layer"
+        ],
+        "reason": "FeatureLayer options include unsupported properties: popupTemplate; requires manual migration."
+      }
+    ],
+    "manualTodos": [
+      {
+        "column": 19,
+        "difficulty": "moderate",
+        "file": "<repo>/examples/arcgis-source-app/src/main.ts",
+        "kind": "feature-layer",
+        "line": 27,
+        "reason": "FeatureLayer options include unsupported properties: popupTemplate; requires manual migration."
+      },
+      {
+        "column": 17,
+        "difficulty": "moderate",
+        "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+        "kind": "popup-widget",
+        "line": 73,
+        "reason": "No deterministic Honua MapLibre mapping for this constructor; requires manual migration."
+      },
+      {
+        "column": 17,
+        "difficulty": "moderate",
+        "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+        "kind": "feature-table-widget",
+        "line": 74,
+        "reason": "No deterministic Honua MapLibre mapping for this constructor; requires manual migration."
+      },
+      {
+        "column": 21,
+        "difficulty": "moderate",
+        "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+        "kind": "layer-list",
+        "line": 81,
+        "reason": "No deterministic Honua MapLibre mapping for this constructor; requires manual migration."
+      }
+    ],
+    "manualTodosByKind": {
+      "area-measurement-2d-widget": 0,
+      "attribution-widget": 0,
+      "basemap": 0,
+      "basemap-gallery-widget": 0,
+      "basemap-layer-list-widget": 0,
+      "basemap-toggle-widget": 0,
+      "bookmarks-widget": 0,
+      "class-breaks-renderer": 0,
+      "color": 0,
+      "compass-widget": 0,
+      "coordinate-conversion-widget": 0,
+      "directions-widget": 0,
+      "distance-measurement-2d-widget": 0,
+      "editor-widget": 0,
+      "esri-config": 0,
+      "esri-request": 0,
+      "expand-widget": 0,
+      "extent-geometry": 0,
+      "feature-filter": 0,
+      "feature-form-widget": 0,
+      "feature-layer": 1,
+      "feature-set": 0,
+      "feature-table-widget": 1,
+      "feature-templates-widget": 0,
+      "feature-widget": 0,
+      "fullscreen-widget": 0,
+      "geojson-layer": 0,
+      "geometry-engine": 0,
+      "graphic": 0,
+      "graphics-layer": 0,
+      "group-layer": 0,
+      "home-widget": 0,
+      "identity-manager": 0,
+      "imagery-layer": 0,
+      "label-class": 0,
+      "layer-list": 1,
+      "legend-widget": 0,
+      "locate-widget": 0,
+      "map": 0,
+      "map-image-layer": 0,
+      "map-view": 0,
+      "measurement-widget": 0,
+      "oauth-info": 0,
+      "picture-marker-symbol": 0,
+      "point-geometry": 0,
+      "polygon-geometry": 0,
+      "polyline-geometry": 0,
+      "popup-template": 0,
+      "popup-widget": 1,
+      "print-widget": 0,
+      "query": 0,
+      "reactive-utils": 0,
+      "route-layer": 0,
+      "route-task": 0,
+      "scale-bar-widget": 0,
+      "scene-view": 0,
+      "search-widget": 0,
+      "simple-fill-symbol": 0,
+      "simple-line-symbol": 0,
+      "simple-marker-symbol": 0,
+      "simple-renderer": 0,
+      "sketch-widget": 0,
+      "spatial-reference": 0,
+      "swipe-widget": 0,
+      "table-list-widget": 0,
+      "text-symbol": 0,
+      "tile-layer": 0,
+      "time-slider-widget": 0,
+      "track-widget": 0,
+      "unique-value-renderer": 0,
+      "vector-tile-layer": 0,
+      "web-map": 0,
+      "wfs-layer": 0,
+      "wms-layer": 0,
+      "zoom-widget": 0
+    },
+    "readiness": "assisted",
+    "rootDir": "<repo>/examples/arcgis-source-app",
+    "scanReport": {
+      "esriLeafletImportCount": 0,
+      "esriLeafletImports": [],
+      "filesScanned": 3,
+      "filesWithArcGisImports": 2,
+      "filesWithEsriLeafletImports": 0,
+      "flags": [],
+      "imports": [
+        {
+          "file": "<repo>/examples/arcgis-source-app/src/main.ts",
+          "importClause": "FeatureLayer",
+          "modulePath": "@arcgis/core/layers/FeatureLayer",
+          "symbols": [
+            "FeatureLayer"
+          ]
+        },
+        {
+          "file": "<repo>/examples/arcgis-source-app/src/main.ts",
+          "importClause": "Map",
+          "modulePath": "@arcgis/core/Map",
+          "symbols": [
+            "Map"
+          ]
+        },
+        {
+          "file": "<repo>/examples/arcgis-source-app/src/main.ts",
+          "importClause": "MapView",
+          "modulePath": "@arcgis/core/views/MapView",
+          "symbols": [
+            "MapView"
+          ]
+        },
+        {
+          "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+          "importClause": "FeatureLayer",
+          "modulePath": "@arcgis/core/layers/FeatureLayer",
+          "symbols": [
+            "FeatureLayer"
+          ]
+        },
+        {
+          "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+          "importClause": "Map",
+          "modulePath": "@arcgis/core/Map",
+          "symbols": [
+            "Map"
+          ]
+        },
+        {
+          "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+          "importClause": "MapView",
+          "modulePath": "@arcgis/core/views/MapView",
+          "symbols": [
+            "MapView"
+          ]
+        },
+        {
+          "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+          "importClause": "FeatureTable",
+          "modulePath": "@arcgis/core/widgets/FeatureTable",
+          "symbols": [
+            "FeatureTable"
+          ]
+        },
+        {
+          "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+          "importClause": "LayerList",
+          "modulePath": "@arcgis/core/widgets/LayerList",
+          "symbols": [
+            "LayerList"
+          ]
+        },
+        {
+          "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+          "importClause": "Popup",
+          "modulePath": "@arcgis/core/widgets/Popup",
+          "symbols": [
+            "Popup"
+          ]
+        }
+      ],
+      "rootDir": "<repo>/examples/arcgis-source-app",
+      "symbolUsageCounts": {
+        "FeatureLayer": 5,
+        "FeatureTable": 2,
+        "LayerList": 2,
+        "Map": 5,
+        "MapView": 5,
+        "Popup": 2
+      }
+    },
+    "scanSummary": "filesScanned=3 filesWithArcGisImports=2 importCount=9 esriLeafletImportCount=0 topSymbols=[FeatureLayer:5, Map:5, MapView:5, FeatureTable:2, LayerList:2, Popup:2] flags=[none]",
+    "unhandledArcGisModules": [
+      {
+        "count": 1,
+        "modulePath": "@arcgis/core/widgets/FeatureTable",
+        "usageStyle": "static-import"
+      },
+      {
+        "count": 1,
+        "modulePath": "@arcgis/core/widgets/LayerList",
+        "usageStyle": "static-import"
+      },
+      {
+        "count": 1,
+        "modulePath": "@arcgis/core/widgets/Popup",
+        "usageStyle": "static-import"
+      }
+    ]
+  },
+  "residuals": {
+    "errors": [],
+    "manualTodos": [
+      {
+        "column": 19,
+        "difficulty": "moderate",
+        "file": "<repo>/examples/arcgis-source-app/src/main.ts",
+        "kind": "feature-layer",
+        "line": 27,
+        "reason": "FeatureLayer options include unsupported properties: popupTemplate; requires manual migration."
+      },
+      {
+        "column": 17,
+        "difficulty": "moderate",
+        "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+        "kind": "popup-widget",
+        "line": 73,
+        "reason": "No deterministic Honua MapLibre mapping for this constructor; requires manual migration."
+      },
+      {
+        "column": 17,
+        "difficulty": "moderate",
+        "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+        "kind": "feature-table-widget",
+        "line": 74,
+        "reason": "No deterministic Honua MapLibre mapping for this constructor; requires manual migration."
+      },
+      {
+        "column": 21,
+        "difficulty": "moderate",
+        "file": "<repo>/examples/arcgis-source-app/src/workbench-scenario.js",
+        "kind": "layer-list",
+        "line": 81,
+        "reason": "No deterministic Honua MapLibre mapping for this constructor; requires manual migration."
+      }
+    ],
+    "unsupportedModules": [
+      {
+        "count": 1,
+        "modulePath": "@arcgis/core/widgets/FeatureTable",
+        "usageStyle": "static-import"
+      },
+      {
+        "count": 1,
+        "modulePath": "@arcgis/core/widgets/LayerList",
+        "usageStyle": "static-import"
+      },
+      {
+        "count": 1,
+        "modulePath": "@arcgis/core/widgets/Popup",
+        "usageStyle": "static-import"
+      }
+    ]
+  }
+}

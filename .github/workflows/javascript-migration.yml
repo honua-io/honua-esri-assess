@@ -1,0 +1,33 @@
+name: JavaScript migration package
+
+on:
+  pull_request:
+    paths:
+      - "packages/javascript/**"
+      - ".github/workflows/javascript-migration.yml"
+  push:
+    branches: [trunk]
+    paths:
+      - "packages/javascript/**"
+      - ".github/workflows/javascript-migration.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/javascript
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/javascript/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test

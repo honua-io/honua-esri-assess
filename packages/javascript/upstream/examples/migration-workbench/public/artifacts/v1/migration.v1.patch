@@ -1,0 +1,104 @@
+diff --git a/src/main.ts b/src/main.ts
+index 85e2506..a8ae0c9 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -9,11 +9,9 @@
+ // - layer.on("layerview-create", ...) remapped to "layer-view-created"
+ // - view.on("click", ...) left untouched
+
+-import FeatureLayer from "@arcgis/core/layers/FeatureLayer";
+-import Map from "@arcgis/core/Map";
+-import MapView from "@arcgis/core/views/MapView";
+
+ import { configureViewer, type ParcelViewerOptions } from "./viewer-config.js";
++import { FeatureLayerCompat, MapCompat, MapViewCompat } from "@honua/sdk-js/esri-compat";
+
+ export interface ParcelViewerHandle {
+   parcels: unknown;
+@@ -24,7 +22,7 @@ export interface ParcelViewerHandle {
+ export function bootstrapParcelViewer(options: ParcelViewerOptions): ParcelViewerHandle {
+   const config = configureViewer(options);
+
+-  const parcels = new FeatureLayer({
++  const parcels = new FeatureLayerCompat({
+     url: config.parcelsUrl,
+     outFields: ["OBJECTID", "PARCEL_ID", "OWNER", "USE_CODE"],
+     popupTemplate: {
+@@ -33,10 +31,10 @@ export function bootstrapParcelViewer(options: ParcelViewerOptions): ParcelViewe
+     },
+   });
+
+-  const map = new Map({ basemap: "streets" });
++  const map = new MapCompat({ basemap: "streets" });
+   map.add(parcels);
+
+-  const view = new MapView({
++  const view = new MapViewCompat({
+     container: config.containerId,
+     map,
+     center: config.center,
+@@ -50,7 +48,7 @@ export function bootstrapParcelViewer(options: ParcelViewerOptions): ParcelViewe
+
+   // Event-name remap target ? codemod rewrites "layerview-create" to
+   // "layer-view-created" because compat emits the kebab-past-tense form.
+-  parcels.on("layerview-create", (event) => {
++  parcels.on("layer-view-created", (event) => {
+     void event;
+   });
+
+diff --git a/src/workbench-scenario.js b/src/workbench-scenario.js
+index 705aa39..20a4f55 100644
+--- a/src/workbench-scenario.js
++++ b/src/workbench-scenario.js
+@@ -1,13 +1,8 @@
++import { FeatureLayerCompat, FeatureTableCompat, LayerListCompat, MapCompat, MapViewCompat, PopupCompat } from "@honua/sdk-js/esri-compat";
+ // Original Honua migration-workbench scenario. This file intentionally uses
+ // ArcGIS JS SDK imports so the repository's honua-migrate CLI is the only
+ // source-to-target transformation engine exercised by the artifact generator.
+
+-import FeatureLayer from "@arcgis/core/layers/FeatureLayer";
+-import Map from "@arcgis/core/Map";
+-import MapView from "@arcgis/core/views/MapView";
+-import FeatureTable from "@arcgis/core/widgets/FeatureTable";
+-import LayerList from "@arcgis/core/widgets/LayerList";
+-import Popup from "@arcgis/core/widgets/Popup";
+
+ const PARCELS = [
+   {
+@@ -34,7 +29,7 @@ const ASSESSMENTS = {
+ };
+
+ export async function runMigrationWorkbenchScenario() {
+-  const parcels = new FeatureLayer({
++  const parcels = new FeatureLayerCompat({
+     id: "parcels",
+     title: "Honua-authored parcels",
+     url: "https://example.test/rest/services/parcels/FeatureServer/0",
+@@ -63,22 +58,22 @@ export async function runMigrationWorkbenchScenario() {
+     };
+   };
+
+-  const map = new Map({ basemap: "streets", layers: [parcels] });
+-  const view = new MapView({
++  const map = new MapCompat({ basemap: "streets", layers: [parcels] });
++  const view = new MapViewCompat({
+     map,
+     container: null,
+     center: [-157.81, 21.304],
+     zoom: 13,
+   });
+-  const popup = new Popup({ view });
+-  const table = new FeatureTable({
++  const popup = new PopupCompat({ view });
++  const table = new FeatureTableCompat({
+     view,
+     layer: parcels,
+     container: null,
+     relatedRecordsEnabled: true,
+     where: "1=1",
+   });
+-  const layerList = new LayerList({
++  const layerList = new LayerListCompat({
+     view,
+     listItemCreatedFunction: ({ item }) => {
+       item.actionsSections = [[{ id: "inspect-selected", title: "Inspect selected parcel" }]];

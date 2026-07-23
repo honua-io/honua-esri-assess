@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "honua.migration-workbench.expected-behavior.v1",
+  "fixture": "arcgis-source-app",
+  "entry": "src/workbench-scenario.js",
+  "expected": {
+    "constructors": {
+      "layer": "FeatureLayerCompat",
+      "map": "MapCompat",
+      "view": "MapViewCompat",
+      "table": "FeatureTableCompat",
+      "popup": "PopupCompat",
+      "layerList": "LayerListCompat"
+    },
+    "map": {
+      "layerCount": 1,
+      "center": [-157.81, 21.304],
+      "zoom": 13
+    },
+    "table": {
+      "countBeforeFilter": 3,
+      "countAfterFilter": 2,
+      "where": "ZONING = 'residential'"
+    },
+    "selection": {
+      "objectIds": [41],
+      "selectedRowCount": 1,
+      "popupVisible": true,
+      "popupFeatureId": "parcel-41",
+      "synchronized": true
+    },
+    "relatedRecords": {
+      "groupCount": 1,
+      "recordCount": 2
+    },
+    "layerAction": {
+      "id": "inspect-selected",
+      "dispatched": true,
+      "triggered": true
+    }
+  }
+}

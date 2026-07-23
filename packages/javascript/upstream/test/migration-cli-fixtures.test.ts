@@ -1,0 +1,252 @@
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import { afterEach, describe, expect, it } from "vitest";
+import { getProjectRoot, withCliLock } from "./migration-cli-lock.js";
+import { getPreparedMigrationCliPath } from "./prepared-sdk-artifacts.js";
+
+const tempDirs: string[] = [];
+
+function makeTempDir(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "honua-cli-fixtures-"));
+  tempDirs.push(dir);
+  return dir;
+}
+
+function ensureBuiltCliArtifacts(): void {
+  getPreparedMigrationCliPath();
+}
+
+function runCli(args: readonly string[], cwd: string): { status: number | null; stdout: string; stderr: string } {
+  return withCliLock(() => {
+    const cliPath = getPreparedMigrationCliPath();
+    const result = spawnSync("node", [cliPath, ...args], {
+      cwd,
+      encoding: "utf8",
+    });
+
+    return {
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    };
+  });
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+describe("migration cli fixtures metrics", () => {
+  it("prints and writes real-sample fixture metrics", () => {
+    ensureBuiltCliArtifacts();
+    const root = makeTempDir();
+    const reportPath = path.join(root, "real-sample-metrics.json");
+
+    const result = runCli(["fixtures", "--report", reportPath], getProjectRoot());
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("fixtures=4");
+    expect(result.stdout).toContain("target=honua-compat");
+    expect(result.stdout).toContain(`reportWritten=${reportPath}`);
+    expect(fs.existsSync(reportPath)).toBe(true);
+
+    const report = JSON.parse(fs.readFileSync(reportPath, "utf8")) as {
+      codemodTarget: string;
+      fixtureNames: string[];
+      summary: {
+        fixtureCount: number;
+        totalCallSites: number;
+        autoMigratedCallSites: number;
+        manualCallSites: number;
+        unhandledUsageHits: number;
+      };
+      gates: {
+        passed: boolean;
+        failures: string[];
+      };
+      fixtures: Array<{
+        fixture: string;
+        readiness: string;
+        totalCallSites: number;
+        autoMigratedCallSites: number;
+        manualCallSites: number;
+      }>;
+    };
+
+    expect(report.codemodTarget).toBe("honua-compat");
+    expect(report.summary.fixtureCount).toBe(4);
+    expect(report.fixtureNames).toEqual([
+      "esri-real-sample-incident-command-app",
+      "esri-real-sample-ops-center-app",
+      "esri-real-sample-editing-app",
+      "esri-real-sample-network-app",
+    ]);
+    expect(report.summary.totalCallSites).toBeGreaterThan(0);
+    expect(report.summary.autoMigratedCallSites).toBe(report.summary.totalCallSites);
+    expect(report.summary.manualCallSites).toBe(0);
+    expect(report.summary.unhandledUsageHits).toBe(0);
+    expect(report.gates.passed).toBe(true);
+    expect(report.gates.failures).toEqual([]);
+    expect(report.fixtures).toHaveLength(4);
+    expect(report.fixtures.every((fixture) => fixture.readiness === "ready")).toBe(true);
+    expect(report.fixtures.every((fixture) => fixture.manualCallSites === 0)).toBe(true);
+  }, 240_000);
+
+  it("supports fixture subset selection", () => {
+    ensureBuiltCliArtifacts();
+    const root = makeTempDir();
+    const reportPath = path.join(root, "subset-metrics.json");
+
+    const result = runCli(
+      ["fixtures", "--target", "esri-leaflet", "--fixtures", "esri-real-sample-network-app", "--report", reportPath],
+      getProjectRoot(),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("fixtures=1");
+    expect(result.stdout).toContain("target=esri-leaflet");
+    expect(fs.existsSync(reportPath)).toBe(true);
+
+    const report = JSON.parse(fs.readFileSync(reportPath, "utf8")) as {
+      codemodTarget: string;
+      fixtureNames: string[];
+      summary: {
+        fixtureCount: number;
+      };
+      fixtures: Array<{
+        fixture: string;
+      }>;
+    };
+
+    expect(report.codemodTarget).toBe("esri-leaflet");
+    expect(report.summary.fixtureCount).toBe(1);
+    expect(report.fixtureNames).toEqual(["esri-real-sample-network-app"]);
+    expect(report.fixtures).toEqual([expect.objectContaining({ fixture: "esri-real-sample-network-app" })]);
+  }, 240_000);
+
+  it("reports honua-maplibre fixture metrics for native supported sample", () => {
+    ensureBuiltCliArtifacts();
+    const root = makeTempDir();
+    const reportPath = path.join(root, "maplibre-metrics.json");
+
+    const result = runCli(
+      ["fixtures", "--target", "honua-maplibre", "--fixtures", "esri-maplibre-simple-app", "--report", reportPath],
+      getProjectRoot(),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("fixtures=1");
+    expect(result.stdout).toContain("target=honua-maplibre");
+    expect(fs.existsSync(reportPath)).toBe(true);
+
+    const report = JSON.parse(fs.readFileSync(reportPath, "utf8")) as {
+      codemodTarget: string;
+      summary: {
+        fixtureCount: number;
+        ready: number;
+        autoMigratedCallSites: number;
+        manualCallSites: number;
+        unhandledUsageHits: number;
+      };
+      fixtures: Array<{
+        fixture: string;
+        readiness: string;
+        totalCallSites: number;
+        autoMigratedCallSites: number;
+        manualCallSites: number;
+      }>;
+    };
+
+    expect(report.codemodTarget).toBe("honua-maplibre");
+    expect(report.summary.fixtureCount).toBe(1);
+    expect(report.summary.ready).toBe(1);
+    expect(report.summary.autoMigratedCallSites).toBe(5);
+    expect(report.summary.manualCallSites).toBe(0);
+    expect(report.summary.unhandledUsageHits).toBe(0);
+    expect(report.fixtures).toEqual([
+      expect.objectContaining({
+        fixture: "esri-maplibre-simple-app",
+        readiness: "ready",
+        totalCallSites: 5,
+        autoMigratedCallSites: 5,
+        manualCallSites: 0,
+      }),
+    ]);
+  }, 240_000);
+
+  it("passes strict fixture gates for honua-compat target", () => {
+    ensureBuiltCliArtifacts();
+
+    const result = runCli(
+      [
+        "fixtures",
+        "--fail-on-manual",
+        "--fail-on-unhandled",
+        "--fail-on-blocked",
+        "--max-manual-ratio",
+        "0",
+        "--max-manual-intervention-ratio",
+        "0",
+      ],
+      getProjectRoot(),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("fixturesGate=pass");
+  }, 240_000);
+
+  it("passes fixture gates for esri-leaflet network sample after compat-fallback expansion", () => {
+    ensureBuiltCliArtifacts();
+
+    const result = runCli(
+      [
+        "fixtures",
+        "--target",
+        "esri-leaflet",
+        "--fixtures",
+        "esri-real-sample-network-app",
+        "--fail-on-manual",
+        "--max-manual-ratio",
+        "0",
+      ],
+      getProjectRoot(),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("fixturesGate=pass");
+    expect(result.stdout).toContain("manual=0");
+  }, 240_000);
+
+  it("passes strict fixture gates for deterministic esri-leaflet subset", () => {
+    ensureBuiltCliArtifacts();
+
+    const result = runCli(
+      [
+        "fixtures",
+        "--target",
+        "esri-leaflet",
+        "--fixtures",
+        "esri-real-sample-ops-center-app",
+        "--fail-on-manual",
+        "--fail-on-unhandled",
+        "--fail-on-blocked",
+        "--max-manual-ratio",
+        "0",
+        "--max-manual-intervention-ratio",
+        "0",
+      ],
+      getProjectRoot(),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("fixturesGate=pass");
+    expect(result.stdout).toContain("target=esri-leaflet");
+    expect(result.stdout).toContain("manual=0");
+    expect(result.stdout).toContain("unhandled=0");
+  }, 240_000);
+});

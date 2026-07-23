@@ -12,7 +12,7 @@
       ]
     },
     "packages/javascript": {
-      "release-type": "simple",
+      "release-type": "node",
       "component": "javascript",
       "tag-separator": "-",
       "include-component-in-tag": true,

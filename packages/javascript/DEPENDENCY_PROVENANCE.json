@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/honua-io/honua-sdk-js",
+    "ref": "origin/trunk",
+    "commit": "842ecf17c2effa86c0d4a931a71233ed713bae13",
+    "retrievedAt": "2026-07-22T17:04:02Z",
+    "license": "Apache-2.0",
+    "sourcePaths": [
+      "src/migration/cli.ts",
+      "src/migration/codemod.ts",
+      "src/migration/content.ts",
+      "src/migration/demo-targets.ts",
+      "src/migration/demo.ts",
+      "src/migration/gating.ts",
+      "src/migration/parity-matrix.ts",
+      "src/migration/reconcile.ts",
+      "src/migration/report.ts",
+      "src/migration/runtime-matrix.ts",
+      "src/migration/sample-corpus-evidence.ts",
+      "src/migration/sample-corpus.ts",
+      "src/migration/scanner.ts",
+      "src/migration/widget-dispositions.ts",
+      "src/migration/widget-scanner.ts"
+    ]
+  },
+  "historyImport": {
+    "method": "git format-patch --root with path filters, applied by git am --directory=packages/javascript/upstream",
+    "commitProvenance": "each replayed commit records its original source SHA in an Upstream-Commit trailer",
+    "engineCommits": 23,
+    "engineSourceCommits": [
+      "172d66be9b34b61eb62a121fad3d7af36e0d5a20",
+      "b3e5727c64ce114cb44229171cc7b02304b42719",
+      "c3e2b7230d385ace13dbcf764d6c58c654fff1b8",
+      "a820bd7ab6460226ea457dd82cbae578ad1b2051",
+      "667f38f774f2a1c02f745693d0fd8b1948239edb",
+      "af1ebee59c37b1af145e0f863f70fcbfdc335bf5",
+      "c3d80954e244bffbcb2dd7e40f63aee82d409a04",
+      "8450df2601e0364a92e8c8c377728315820190d6",
+      "521d2b36c793296c95f0f8c8d1a349ef0362ffeb",
+      "d463b0083a77fcd91c8da07a186f9a9f241bba92",
+      "dfc106a4ff6b649b9e927416bf83ca4cb9a1a936",
+      "a77e585fc80fda3e07aae70b7512e6d037388c33",
+      "bee361161fa7452144e76f2612ef72dab019281f",
+      "50e4e4f58e32270715f73e78c22efdea524ce6f4",
+      "fc722c36f582cfb55e2104afb0c26344a1392d4e",
+      "fec30be27db111f4a2b0e8158f496d6da16cadcd",
+      "6a9419efdae689b89f3406464ec8d46f778a96bd",
+      "ebacd9a4e5b42dc91db0f261629157cf9e79801a",
+      "99c99df55bb2562f677610f703f2c64c07807f33",
+      "c8a3c9b6d5e6087253db169d3614f9681e915234",
+      "536e88d7ccfe03ea66d5424093df3ea4b8ef55a1",
+      "7df1259917cacc714ca867c0e3c9ba9e1501d1e4",
+      "9fcde3046dd8430a1c6715498a2beb470ebb164a"
+    ],
+    "totalPreservedCommits": 138,
+    "sourceHead": "842ecf17c2effa86c0d4a931a71233ed713bae13"
+  },
+  "extracted": [
+    "scan", "widgets", "codemod", "reports", "gates", "matrix",
+    "runtime-matrix", "fixtures", "content", "content-webmap", "reconcile",
+    "demo", "corpus-evidence", "sample-corpus"
+  ],
+  "publicSdkDependencies": [
+    "@honua/sdk-js/map",
+    "@honua/sdk-js/webmap",
+    "@honua/sdk-js/migration",
+    "@honua/sdk-esri-compat"
+  ],
+  "blockedInternalDependencies": [
+    {
+      "feature": "workbench artifact regeneration security harness",
+      "reason": "depends on source-repository scripts and prepared build ownership; imported workbench model is tested, generator migration remains #100"
+    }
+  ],
+  "safety": {
+    "default": "read-only",
+    "codemodWrite": "requires --write",
+    "mutationAcknowledgement": "content export/import and demo require --acknowledge-mutations",
+    "outputSafety": "CLI reports and artifact trees are atomic, no-clobber by default, and require --force to replace",
+    "networkOperations": "read-only scans, reports, and reconciliation do not require mutation acknowledgement",
+    "localSafetyModules": ["artifact-safety.ts", "output-writer.ts"]
+  },
+  "executable": {
+    "npmPackage": "@honua/honua-migrate",
+    "bin": "honua-js-migrate",
+    "reason": "avoids collision with the canonical Python honua-migrate executable"
+  },
+  "validation": {
+    "vitestFiles": 32,
+    "vitestTests": 280,
+    "excludedSourceSdkSuiteCount": 3,
+    "excludedSourceSdkSuites": [
+      "upstream/test/migration-workbench-artifacts.test.ts",
+      "upstream/test/migration-workbench-artifacts-security.test.ts",
+      "upstream/test/migration-workbench-vite.test.ts"
+    ]
+  }
+}

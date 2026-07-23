@@ -1,0 +1,7915 @@
+import fs from "node:fs";
+import path from "node:path";
+import { type WebMapMapLibreManualGap, webmapJsonToMapLibreStyle } from "@honua/sdk-js/map";
+import type { WebMapJson } from "@honua/sdk-js/webmap";
+import ts from "typescript";
+
+const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
+const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
+const DEFAULT_COMPAT_IMPORT_PATH = "@honua/sdk-esri-compat";
+const ESRI_LEAFLET_IMPORT_PATH = "esri-leaflet";
+const ESRI_LEAFLET_NAMESPACE = "HonuaEsriLeaflet";
+const HONUA_MAP_IMPORT_PATH = "@honua/sdk-js/map";
+const MAPLIBRE_IMPORT_PATH = "maplibre-gl";
+const MAPLIBRE_NAMESPACE = "maplibregl";
+const TODO_MARKER = "TODO(honua-migrate)";
+const CJS_REQUIRE_MANUAL_REASON =
+  "CommonJS require constructors are not auto-migrated; convert the module to ESM and rerun.";
+const ESRI_LEAFLET_UNSUPPORTED_CONSTRUCTOR_REASON =
+  "No deterministic esri-leaflet mapping for this constructor; requires manual migration.";
+const ESRI_LEAFLET_UNSUPPORTED_DYNAMIC_IMPORT_REASON =
+  "Dynamic import has no deterministic esri-leaflet mapping; requires manual migration.";
+const HONUA_MAPLIBRE_UNSUPPORTED_CONSTRUCTOR_REASON =
+  "No deterministic Honua MapLibre mapping for this constructor; requires manual migration.";
+const HONUA_MAPLIBRE_UNSUPPORTED_DYNAMIC_IMPORT_REASON =
+  "Dynamic import has no deterministic Honua MapLibre mapping; requires manual migration.";
+const HONUA_MAPLIBRE_UNSUPPORTED_IMPORT_REASON =
+  "No deterministic Honua MapLibre mapping for this import; requires manual migration.";
+const HONUA_MAPLIBRE_WEBMAP_DYNAMIC_REASON =
+  "Dynamic / portal-loaded WebMap has no deterministic Honua MapLibre style derivation; requires manual migration.";
+const HONUA_MAPLIBRE_WEBMAP_UNSUPPORTED_SHAPE_REASON =
+  "WebMap constructor argument is not a static WebMap JSON literal; requires manual migration.";
+const REACTIVE_UTILS_IMPORT_UNSUPPORTED_REASON = "ReactiveUtils import shape is unsupported for automatic migration.";
+const ESRI_CONFIG_IMPORT_UNSUPPORTED_REASON = "esriConfig import shape is unsupported for automatic migration.";
+const IDENTITY_MANAGER_IMPORT_UNSUPPORTED_REASON =
+  "IdentityManager import shape is unsupported for automatic migration.";
+const ESRI_REQUEST_IMPORT_UNSUPPORTED_REASON = "esriRequest import shape is unsupported for automatic migration.";
+const GEOMETRY_ENGINE_IMPORT_UNSUPPORTED_REASON =
+  "geometryEngine import shape is unsupported for automatic migration (expected a default or namespace import).";
+// Esri geometryEngine operations backed by the geometryEngineCompat shim
+// (@honua/geometry). Call sites of these ops migrate cleanly; anything else
+// (geodesic densify, offset, cut, generalize, relate, ?) keeps a manual TODO.
+const GEOMETRY_ENGINE_COVERED_OPS: ReadonlySet<string> = new Set([
+  "buffer",
+  "intersect",
+  "union",
+  "difference",
+  "geodesicArea",
+  "planarArea",
+  "geodesicLength",
+  "planarLength",
+  "simplify",
+  "convexHull",
+  "contains",
+  "intersects",
+]);
+function geometryEngineUncoveredOpReason(op: string): string {
+  return `geometryEngine.${op} is not covered by the geometryEngineCompat shim; requires manual migration.`;
+}
+const SHADOWED_IMPORT_CONSTRUCTOR_REASON =
+  "Constructor identifier is shadowed by a local declaration; requires manual migration.";
+const FEATURE_LAYER_RENDERER_FIELD_CASE_REASON =
+  "FeatureLayer renderer.field name appears to be mixed-case; Honua expects lowercase";
+const FEATURE_LAYER_POPUP_FIELD_INFO_FORMAT_REASON =
+  "FeatureLayer popupTemplate.content fieldInfos format callback requires manual migration";
+const REACTIVE_UTILS_WATCH_ACCESSOR_REASON =
+  "reactiveUtils.watch accessor function is too complex to rewrite automatically; requires manual migration.";
+
+const ARCGIS_TO_COMPAT_EVENT_REMAP: Readonly<Record<string, string>> = Object.freeze({
+  "layerview-create": "layer-view-created",
+  "layerview-create-error": "layer-view-create-error",
+  "layerview-destroy": "layer-view-removed",
+  "visibility-change": "visibility-changed",
+  "extent-change": "extent-changed",
+  "rotation-change": "rotation-changed",
+  "scale-change": "scale-changed",
+  "zoom-change": "zoom-changed",
+  "center-change": "center-changed",
+  "spatial-reference-change": "spatial-reference-changed",
+  "padding-change": "padding-changed",
+  "constraints-change": "constraints-changed",
+  "highlight-options-change": "highlight-options-changed",
+  "basemap-change": "basemap-changed",
+  "ground-change": "ground-changed",
+  "portal-item-change": "portal-item-changed",
+  "active-basemap-change": "active-basemap-changed",
+  "camera-change": "camera-changed",
+  "quality-profile-change": "quality-profile-changed",
+  "viewing-mode-change": "viewing-mode-changed",
+  refresh: "refreshed",
+});
+
+const ESRI_LEAFLET_NATIVE_KINDS = new Set<CodemodConstructorKind>(["feature-layer", "map-image-layer", "tile-layer"]);
+const HONUA_MAPLIBRE_NATIVE_KINDS = new Set<CodemodConstructorKind>([
+  "feature-layer",
+  "map-image-layer",
+  "tile-layer",
+  "map",
+  "map-view",
+]);
+const ESRI_LEAFLET_COMPAT_FALLBACK_KINDS = new Set<CodemodConstructorKind>([
+  "graphic",
+  "point-geometry",
+  "polyline-geometry",
+  "polygon-geometry",
+  "extent-geometry",
+  "spatial-reference",
+  "color",
+  "simple-line-symbol",
+  "simple-marker-symbol",
+  "picture-marker-symbol",
+  "text-symbol",
+  "label-class",
+  "simple-fill-symbol",
+  "class-breaks-renderer",
+  "simple-renderer",
+  "unique-value-renderer",
+  "graphics-layer",
+  "group-layer",
+  "route-layer",
+  "route-task",
+  "basemap",
+  "map",
+  "map-view",
+  "scene-view",
+  "web-map",
+  "layer-list",
+  "legend-widget",
+  "popup-widget",
+  "search-widget",
+  "home-widget",
+  "basemap-toggle-widget",
+  "locate-widget",
+  "scale-bar-widget",
+  "basemap-gallery-widget",
+  "expand-widget",
+  "compass-widget",
+  "bookmarks-widget",
+  "fullscreen-widget",
+  "zoom-widget",
+  "attribution-widget",
+  "table-list-widget",
+  "feature-widget",
+  "feature-templates-widget",
+  "feature-form-widget",
+  "feature-table-widget",
+  "feature-set",
+  "popup-template",
+  "swipe-widget",
+  "print-widget",
+  "basemap-layer-list-widget",
+  "sketch-widget",
+  "editor-widget",
+  "track-widget",
+  "distance-measurement-2d-widget",
+  "area-measurement-2d-widget",
+  "measurement-widget",
+  "time-slider-widget",
+  "directions-widget",
+  "coordinate-conversion-widget",
+  "query",
+  "oauth-info",
+  "identity-manager",
+  "esri-request",
+  "esri-config",
+  "reactive-utils",
+  "feature-filter",
+  "vector-tile-layer",
+  "geojson-layer",
+  "wms-layer",
+  "wfs-layer",
+  "imagery-layer",
+  "geometry-engine",
+]);
+
+export type CodemodTarget = "honua-compat" | "esri-leaflet" | "honua-maplibre";
+
+export type CodemodConstructorKind =
+  | "feature-layer"
+  | "graphic"
+  | "point-geometry"
+  | "polyline-geometry"
+  | "polygon-geometry"
+  | "extent-geometry"
+  | "spatial-reference"
+  | "color"
+  | "simple-line-symbol"
+  | "simple-marker-symbol"
+  | "picture-marker-symbol"
+  | "text-symbol"
+  | "label-class"
+  | "simple-fill-symbol"
+  | "class-breaks-renderer"
+  | "simple-renderer"
+  | "unique-value-renderer"
+  | "graphics-layer"
+  | "group-layer"
+  | "map-image-layer"
+  | "tile-layer"
+  | "route-layer"
+  | "route-task"
+  | "basemap"
+  | "map"
+  | "map-view"
+  | "scene-view"
+  | "web-map"
+  | "layer-list"
+  | "table-list-widget"
+  | "feature-widget"
+  | "feature-templates-widget"
+  | "feature-form-widget"
+  | "feature-table-widget"
+  | "feature-set"
+  | "legend-widget"
+  | "popup-widget"
+  | "popup-template"
+  | "swipe-widget"
+  | "print-widget"
+  | "home-widget"
+  | "basemap-toggle-widget"
+  | "locate-widget"
+  | "scale-bar-widget"
+  | "search-widget"
+  | "basemap-layer-list-widget"
+  | "basemap-gallery-widget"
+  | "expand-widget"
+  | "compass-widget"
+  | "bookmarks-widget"
+  | "fullscreen-widget"
+  | "zoom-widget"
+  | "attribution-widget"
+  | "sketch-widget"
+  | "editor-widget"
+  | "track-widget"
+  | "distance-measurement-2d-widget"
+  | "area-measurement-2d-widget"
+  | "measurement-widget"
+  | "time-slider-widget"
+  | "directions-widget"
+  | "coordinate-conversion-widget"
+  | "query"
+  | "oauth-info"
+  | "identity-manager"
+  | "esri-request"
+  | "esri-config"
+  | "reactive-utils"
+  | "feature-filter"
+  | "vector-tile-layer"
+  | "geojson-layer"
+  | "wms-layer"
+  | "wfs-layer"
+  | "imagery-layer"
+  | "geometry-engine";
+
+interface ConstructorRewriteSpec {
+  kind: CodemodConstructorKind;
+  compatSymbol: string;
+  arcGisModules: ReadonlySet<string>;
+}
+
+const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
+  {
+    kind: "feature-layer",
+    compatSymbol: "FeatureLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/FeatureLayer", "@arcgis/core/layers/FeatureLayer.js"]),
+  },
+  {
+    kind: "graphic",
+    compatSymbol: "GraphicCompat",
+    arcGisModules: new Set(["@arcgis/core/Graphic", "@arcgis/core/Graphic.js"]),
+  },
+  {
+    kind: "point-geometry",
+    compatSymbol: "PointCompat",
+    arcGisModules: new Set(["@arcgis/core/geometry/Point", "@arcgis/core/geometry/Point.js"]),
+  },
+  {
+    kind: "polyline-geometry",
+    compatSymbol: "PolylineCompat",
+    arcGisModules: new Set(["@arcgis/core/geometry/Polyline", "@arcgis/core/geometry/Polyline.js"]),
+  },
+  {
+    kind: "polygon-geometry",
+    compatSymbol: "PolygonCompat",
+    arcGisModules: new Set(["@arcgis/core/geometry/Polygon", "@arcgis/core/geometry/Polygon.js"]),
+  },
+  {
+    kind: "extent-geometry",
+    compatSymbol: "ExtentCompat",
+    arcGisModules: new Set(["@arcgis/core/geometry/Extent", "@arcgis/core/geometry/Extent.js"]),
+  },
+  {
+    kind: "spatial-reference",
+    compatSymbol: "SpatialReferenceCompat",
+    arcGisModules: new Set(["@arcgis/core/geometry/SpatialReference", "@arcgis/core/geometry/SpatialReference.js"]),
+  },
+  {
+    kind: "color",
+    compatSymbol: "ColorCompat",
+    arcGisModules: new Set(["@arcgis/core/Color", "@arcgis/core/Color.js"]),
+  },
+  {
+    kind: "simple-line-symbol",
+    compatSymbol: "SimpleLineSymbolCompat",
+    arcGisModules: new Set(["@arcgis/core/symbols/SimpleLineSymbol", "@arcgis/core/symbols/SimpleLineSymbol.js"]),
+  },
+  {
+    kind: "simple-marker-symbol",
+    compatSymbol: "SimpleMarkerSymbolCompat",
+    arcGisModules: new Set(["@arcgis/core/symbols/SimpleMarkerSymbol", "@arcgis/core/symbols/SimpleMarkerSymbol.js"]),
+  },
+  {
+    kind: "picture-marker-symbol",
+    compatSymbol: "PictureMarkerSymbolCompat",
+    arcGisModules: new Set(["@arcgis/core/symbols/PictureMarkerSymbol", "@arcgis/core/symbols/PictureMarkerSymbol.js"]),
+  },
+  {
+    kind: "text-symbol",
+    compatSymbol: "TextSymbolCompat",
+    arcGisModules: new Set(["@arcgis/core/symbols/TextSymbol", "@arcgis/core/symbols/TextSymbol.js"]),
+  },
+  {
+    kind: "label-class",
+    compatSymbol: "LabelClassCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/support/LabelClass", "@arcgis/core/layers/support/LabelClass.js"]),
+  },
+  {
+    kind: "simple-fill-symbol",
+    compatSymbol: "SimpleFillSymbolCompat",
+    arcGisModules: new Set(["@arcgis/core/symbols/SimpleFillSymbol", "@arcgis/core/symbols/SimpleFillSymbol.js"]),
+  },
+  {
+    kind: "class-breaks-renderer",
+    compatSymbol: "ClassBreaksRendererCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/renderers/ClassBreaksRenderer",
+      "@arcgis/core/renderers/ClassBreaksRenderer.js",
+    ]),
+  },
+  {
+    kind: "simple-renderer",
+    compatSymbol: "SimpleRendererCompat",
+    arcGisModules: new Set(["@arcgis/core/renderers/SimpleRenderer", "@arcgis/core/renderers/SimpleRenderer.js"]),
+  },
+  {
+    kind: "unique-value-renderer",
+    compatSymbol: "UniqueValueRendererCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/renderers/UniqueValueRenderer",
+      "@arcgis/core/renderers/UniqueValueRenderer.js",
+    ]),
+  },
+  {
+    kind: "graphics-layer",
+    compatSymbol: "GraphicsLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/GraphicsLayer", "@arcgis/core/layers/GraphicsLayer.js"]),
+  },
+  {
+    kind: "group-layer",
+    compatSymbol: "GroupLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/GroupLayer", "@arcgis/core/layers/GroupLayer.js"]),
+  },
+  {
+    kind: "map-image-layer",
+    compatSymbol: "MapImageLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/MapImageLayer", "@arcgis/core/layers/MapImageLayer.js"]),
+  },
+  {
+    kind: "tile-layer",
+    compatSymbol: "TileLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/TileLayer", "@arcgis/core/layers/TileLayer.js"]),
+  },
+  {
+    kind: "route-layer",
+    compatSymbol: "RouteLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/RouteLayer", "@arcgis/core/layers/RouteLayer.js"]),
+  },
+  {
+    kind: "route-task",
+    compatSymbol: "RouteTaskCompat",
+    arcGisModules: new Set(["@arcgis/core/rest/route/RouteTask", "@arcgis/core/rest/route/RouteTask.js"]),
+  },
+  {
+    kind: "basemap",
+    compatSymbol: "BasemapCompat",
+    arcGisModules: new Set(["@arcgis/core/Basemap", "@arcgis/core/Basemap.js"]),
+  },
+  {
+    kind: "map",
+    compatSymbol: "MapCompat",
+    arcGisModules: new Set(["@arcgis/core/Map", "@arcgis/core/Map.js"]),
+  },
+  {
+    kind: "map-view",
+    compatSymbol: "MapViewCompat",
+    arcGisModules: new Set(["@arcgis/core/views/MapView", "@arcgis/core/views/MapView.js"]),
+  },
+  {
+    kind: "web-map",
+    compatSymbol: "WebMapCompat",
+    arcGisModules: new Set(["@arcgis/core/WebMap", "@arcgis/core/WebMap.js"]),
+  },
+  {
+    kind: "scene-view",
+    compatSymbol: "SceneViewCompat",
+    arcGisModules: new Set(["@arcgis/core/views/SceneView", "@arcgis/core/views/SceneView.js"]),
+  },
+  {
+    kind: "layer-list",
+    compatSymbol: "LayerListCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/LayerList", "@arcgis/core/widgets/LayerList.js"]),
+  },
+  {
+    kind: "table-list-widget",
+    compatSymbol: "TableListCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/TableList", "@arcgis/core/widgets/TableList.js"]),
+  },
+  {
+    kind: "feature-widget",
+    compatSymbol: "FeatureCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Feature", "@arcgis/core/widgets/Feature.js"]),
+  },
+  {
+    kind: "feature-templates-widget",
+    compatSymbol: "FeatureTemplatesCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/FeatureTemplates", "@arcgis/core/widgets/FeatureTemplates.js"]),
+  },
+  {
+    kind: "feature-form-widget",
+    compatSymbol: "FeatureFormCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/FeatureForm", "@arcgis/core/widgets/FeatureForm.js"]),
+  },
+  {
+    kind: "feature-table-widget",
+    compatSymbol: "FeatureTableCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/FeatureTable", "@arcgis/core/widgets/FeatureTable.js"]),
+  },
+  {
+    kind: "feature-set",
+    compatSymbol: "FeatureSetCompat",
+    arcGisModules: new Set(["@arcgis/core/rest/support/FeatureSet", "@arcgis/core/rest/support/FeatureSet.js"]),
+  },
+  {
+    kind: "legend-widget",
+    compatSymbol: "LegendCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Legend", "@arcgis/core/widgets/Legend.js"]),
+  },
+  {
+    kind: "popup-widget",
+    compatSymbol: "PopupCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Popup", "@arcgis/core/widgets/Popup.js"]),
+  },
+  {
+    kind: "popup-template",
+    compatSymbol: "PopupTemplateCompat",
+    arcGisModules: new Set(["@arcgis/core/PopupTemplate", "@arcgis/core/PopupTemplate.js"]),
+  },
+  {
+    kind: "swipe-widget",
+    compatSymbol: "SwipeCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Swipe", "@arcgis/core/widgets/Swipe.js"]),
+  },
+  {
+    kind: "print-widget",
+    compatSymbol: "PrintCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Print", "@arcgis/core/widgets/Print.js"]),
+  },
+  {
+    kind: "home-widget",
+    compatSymbol: "HomeCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Home", "@arcgis/core/widgets/Home.js"]),
+  },
+  {
+    kind: "basemap-toggle-widget",
+    compatSymbol: "BasemapToggleCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/BasemapToggle", "@arcgis/core/widgets/BasemapToggle.js"]),
+  },
+  {
+    kind: "locate-widget",
+    compatSymbol: "LocateCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Locate", "@arcgis/core/widgets/Locate.js"]),
+  },
+  {
+    kind: "scale-bar-widget",
+    compatSymbol: "ScaleBarCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/ScaleBar", "@arcgis/core/widgets/ScaleBar.js"]),
+  },
+  {
+    kind: "search-widget",
+    compatSymbol: "SearchCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Search", "@arcgis/core/widgets/Search.js"]),
+  },
+  {
+    kind: "basemap-layer-list-widget",
+    compatSymbol: "BasemapLayerListCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/BasemapLayerList", "@arcgis/core/widgets/BasemapLayerList.js"]),
+  },
+  {
+    kind: "basemap-gallery-widget",
+    compatSymbol: "BasemapGalleryCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/BasemapGallery", "@arcgis/core/widgets/BasemapGallery.js"]),
+  },
+  {
+    kind: "expand-widget",
+    compatSymbol: "ExpandCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Expand", "@arcgis/core/widgets/Expand.js"]),
+  },
+  {
+    kind: "compass-widget",
+    compatSymbol: "CompassCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Compass", "@arcgis/core/widgets/Compass.js"]),
+  },
+  {
+    kind: "bookmarks-widget",
+    compatSymbol: "BookmarksCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Bookmarks", "@arcgis/core/widgets/Bookmarks.js"]),
+  },
+  {
+    kind: "fullscreen-widget",
+    compatSymbol: "FullscreenCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Fullscreen", "@arcgis/core/widgets/Fullscreen.js"]),
+  },
+  {
+    kind: "zoom-widget",
+    compatSymbol: "ZoomCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Zoom", "@arcgis/core/widgets/Zoom.js"]),
+  },
+  {
+    kind: "attribution-widget",
+    compatSymbol: "AttributionCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Attribution", "@arcgis/core/widgets/Attribution.js"]),
+  },
+  {
+    kind: "sketch-widget",
+    compatSymbol: "SketchCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Sketch", "@arcgis/core/widgets/Sketch.js"]),
+  },
+  {
+    kind: "editor-widget",
+    compatSymbol: "EditorCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Editor", "@arcgis/core/widgets/Editor.js"]),
+  },
+  {
+    kind: "track-widget",
+    compatSymbol: "TrackCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Track", "@arcgis/core/widgets/Track.js"]),
+  },
+  {
+    kind: "distance-measurement-2d-widget",
+    compatSymbol: "DistanceMeasurement2DCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/DistanceMeasurement2D",
+      "@arcgis/core/widgets/DistanceMeasurement2D.js",
+    ]),
+  },
+  {
+    kind: "area-measurement-2d-widget",
+    compatSymbol: "AreaMeasurement2DCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/AreaMeasurement2D", "@arcgis/core/widgets/AreaMeasurement2D.js"]),
+  },
+  {
+    kind: "measurement-widget",
+    compatSymbol: "MeasurementCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Measurement", "@arcgis/core/widgets/Measurement.js"]),
+  },
+  {
+    kind: "time-slider-widget",
+    compatSymbol: "TimeSliderCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/TimeSlider", "@arcgis/core/widgets/TimeSlider.js"]),
+  },
+  {
+    kind: "directions-widget",
+    compatSymbol: "DirectionsCompat",
+    arcGisModules: new Set(["@arcgis/core/widgets/Directions", "@arcgis/core/widgets/Directions.js"]),
+  },
+  {
+    kind: "coordinate-conversion-widget",
+    compatSymbol: "CoordinateConversionCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/CoordinateConversion",
+      "@arcgis/core/widgets/CoordinateConversion.js",
+    ]),
+  },
+  {
+    kind: "query",
+    compatSymbol: "QueryCompat",
+    arcGisModules: new Set(["@arcgis/core/rest/support/Query", "@arcgis/core/rest/support/Query.js"]),
+  },
+  {
+    kind: "oauth-info",
+    compatSymbol: "OAuthInfoCompat",
+    arcGisModules: new Set(["@arcgis/core/identity/OAuthInfo", "@arcgis/core/identity/OAuthInfo.js"]),
+  },
+  {
+    kind: "identity-manager",
+    compatSymbol: "identityManager",
+    arcGisModules: new Set(["@arcgis/core/identity/IdentityManager", "@arcgis/core/identity/IdentityManager.js"]),
+  },
+  {
+    kind: "esri-request",
+    compatSymbol: "esriRequest",
+    arcGisModules: new Set(["@arcgis/core/request", "@arcgis/core/request.js"]),
+  },
+  {
+    kind: "esri-config",
+    compatSymbol: "esriConfig",
+    arcGisModules: new Set(["@arcgis/core/config", "@arcgis/core/config.js"]),
+  },
+  {
+    kind: "reactive-utils",
+    compatSymbol: "reactiveUtils",
+    arcGisModules: new Set(["@arcgis/core/core/reactiveUtils", "@arcgis/core/core/reactiveUtils.js"]),
+  },
+  {
+    kind: "feature-filter",
+    compatSymbol: "FeatureFilterCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/layers/support/FeatureFilter",
+      "@arcgis/core/layers/support/FeatureFilter.js",
+    ]),
+  },
+  {
+    kind: "vector-tile-layer",
+    compatSymbol: "VectorTileLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/VectorTileLayer", "@arcgis/core/layers/VectorTileLayer.js"]),
+  },
+  {
+    kind: "geojson-layer",
+    compatSymbol: "GeoJSONLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/GeoJSONLayer", "@arcgis/core/layers/GeoJSONLayer.js"]),
+  },
+  {
+    kind: "wms-layer",
+    compatSymbol: "WMSLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/WMSLayer", "@arcgis/core/layers/WMSLayer.js"]),
+  },
+  {
+    kind: "wfs-layer",
+    compatSymbol: "WFSLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/WFSLayer", "@arcgis/core/layers/WFSLayer.js"]),
+  },
+  {
+    kind: "imagery-layer",
+    compatSymbol: "ImageryLayerCompat",
+    arcGisModules: new Set(["@arcgis/core/layers/ImageryLayer", "@arcgis/core/layers/ImageryLayer.js"]),
+  },
+  {
+    kind: "geometry-engine",
+    compatSymbol: "geometryEngineCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/geometry/geometryEngine",
+      "@arcgis/core/geometry/geometryEngine.js",
+      "@arcgis/core/geometry/geometryEngineAsync",
+      "@arcgis/core/geometry/geometryEngineAsync.js",
+    ]),
+  },
+];
+
+const TARGET_SUPPORTED_KINDS: Readonly<Record<CodemodTarget, ReadonlySet<CodemodConstructorKind>>> = Object.freeze({
+  "honua-compat": new Set(REWRITE_SPECS.map((spec) => spec.kind)),
+  "esri-leaflet": new Set([...ESRI_LEAFLET_NATIVE_KINDS, ...ESRI_LEAFLET_COMPAT_FALLBACK_KINDS]),
+  "honua-maplibre": HONUA_MAPLIBRE_NATIVE_KINDS,
+});
+
+export const SUPPORTED_ARCGIS_MODULES: readonly string[] = REWRITE_SPECS.flatMap((spec) =>
+  Array.from(spec.arcGisModules),
+);
+export const SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH: Readonly<Record<string, CodemodConstructorKind>> = Object.freeze(
+  buildModuleToKindLookup(REWRITE_SPECS),
+);
+const ARCGIS_BARREL_KIND_BY_PATH: Readonly<Record<string, Readonly<Record<string, CodemodConstructorKind>>>> =
+  Object.freeze(buildBarrelKindLookup(REWRITE_SPECS));
+export const SUPPORTED_ARCGIS_BARREL_MODULES: readonly string[] = Object.freeze(
+  Object.keys(ARCGIS_BARREL_KIND_BY_PATH).sort(),
+);
+
+const MODULE_TO_SPEC = buildModuleToSpecLookup(REWRITE_SPECS);
+
+export function isKindSupportedForTarget(kind: CodemodConstructorKind, target: CodemodTarget): boolean {
+  return TARGET_SUPPORTED_KINDS[target].has(kind);
+}
+
+export function isSupportedArcGisBarrelModulePath(modulePath: string): boolean {
+  return ARCGIS_BARREL_KIND_BY_PATH[normalizeArcGisModulePath(modulePath)] !== undefined;
+}
+
+export function resolveArcGisBarrelImportKind(
+  modulePath: string,
+  importedName: string,
+): CodemodConstructorKind | undefined {
+  const bySymbol = ARCGIS_BARREL_KIND_BY_PATH[normalizeArcGisModulePath(modulePath)];
+  return bySymbol?.[importedName];
+}
+
+interface TextEdit {
+  start: number;
+  end: number;
+  text: string;
+}
+
+interface ArcGisImportBinding {
+  kind: CodemodConstructorKind;
+  localName: string;
+  importStyle: "identifier" | "namespace-default";
+  sourceKind: "import" | "require";
+}
+
+interface RequireBinding {
+  modulePath: string;
+  localName: string;
+}
+
+export type MigrationTodoDifficulty = "trivial" | "moderate" | "complex";
+
+export interface MigrationTodo {
+  kind: CodemodConstructorKind;
+  file: string;
+  line: number;
+  column: number;
+  reason: string;
+  difficulty: MigrationTodoDifficulty;
+}
+
+export interface CodemodKindMetrics {
+  total: number;
+  autoMigrated: number;
+  manual: number;
+}
+
+export type CodemodMetricsByKind = Record<CodemodConstructorKind, CodemodKindMetrics>;
+
+export interface CodemodMetrics {
+  totalCodemodScopedCallSites: number;
+  autoMigratedCallSites: number;
+  manualCallSites: number;
+  byKind: CodemodMetricsByKind;
+}
+
+export interface CodemodFileResult {
+  file: string;
+  rewrittenImports: number;
+  rewrittenConstructors: number;
+  rewrittenDynamicImports: number;
+  rewrittenEventNames: number;
+  addedCompatImport: boolean;
+  removedArcGisImports: number;
+  annotatedTodoComments: number;
+  manualTodos: MigrationTodo[];
+}
+
+export interface EsriCompatCodemodResult {
+  rootDir: string;
+  target: CodemodTarget;
+  filesScanned: number;
+  filesChanged: number;
+  metrics: CodemodMetrics;
+  fileResults: CodemodFileResult[];
+  manualTodos: MigrationTodo[];
+  errors?: CodemodFileError[];
+}
+
+export interface EsriCompatCodemodOptions {
+  rootDir: string;
+  write?: boolean;
+  compatImportPath?: string;
+  annotateTodos?: boolean;
+  target?: CodemodTarget;
+}
+
+export interface CodemodFileError {
+  file: string;
+  stage: "read" | "transform" | "write";
+  message: string;
+}
+
+export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCompatCodemodResult {
+  const rootDir = path.resolve(options.rootDir);
+  const files = collectSourceFiles(rootDir);
+  const sourceFilesSet = new Set(files.map((file) => path.resolve(file)));
+  const localArcGisReExports = buildLocalArcGisReExportIndex(files, sourceFilesSet);
+  const compatImportPath = options.compatImportPath ?? DEFAULT_COMPAT_IMPORT_PATH;
+  const annotateTodos = options.annotateTodos ?? false;
+  const target = options.target ?? "honua-compat";
+
+  const metrics: CodemodMetrics = {
+    totalCodemodScopedCallSites: 0,
+    autoMigratedCallSites: 0,
+    manualCallSites: 0,
+    byKind: createEmptyByKindMetrics(),
+  };
+  const fileResults: CodemodFileResult[] = [];
+  const manualTodos: MigrationTodo[] = [];
+  const errors: CodemodFileError[] = [];
+
+  for (const file of files) {
+    let source: string;
+    try {
+      source = fs.readFileSync(file, "utf8");
+    } catch (error) {
+      errors.push({
+        file,
+        stage: "read",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
+
+    let fileResult: ReturnType<typeof codemodFile>;
+    try {
+      fileResult = codemodFile(
+        file,
+        source,
+        compatImportPath,
+        annotateTodos,
+        target,
+        localArcGisReExports,
+        sourceFilesSet,
+      );
+    } catch (error) {
+      errors.push({
+        file,
+        stage: "transform",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
+
+    for (const kind of fileResult.rewrittenKinds) {
+      metrics.byKind[kind].autoMigrated += 1;
+      metrics.byKind[kind].total += 1;
+      metrics.autoMigratedCallSites += 1;
+      metrics.totalCodemodScopedCallSites += 1;
+    }
+    for (const todo of fileResult.manualTodos) {
+      metrics.byKind[todo.kind].manual += 1;
+      metrics.byKind[todo.kind].total += 1;
+      metrics.manualCallSites += 1;
+      metrics.totalCodemodScopedCallSites += 1;
+    }
+    manualTodos.push(...fileResult.manualTodos);
+
+    const hasChanges =
+      fileResult.rewrittenImports > 0 ||
+      fileResult.rewrittenConstructors > 0 ||
+      fileResult.rewrittenDynamicImports > 0 ||
+      fileResult.rewrittenEventNames > 0 ||
+      fileResult.addedCompatImport ||
+      fileResult.removedArcGisImports > 0 ||
+      fileResult.annotatedTodoComments > 0;
+    if (hasChanges) {
+      if (options.write) {
+        try {
+          fs.writeFileSync(file, fileResult.nextSource, "utf8");
+        } catch (error) {
+          errors.push({
+            file,
+            stage: "write",
+            message: error instanceof Error ? error.message : String(error),
+          });
+          continue;
+        }
+      }
+      fileResults.push({
+        file,
+        rewrittenImports: fileResult.rewrittenImports,
+        rewrittenConstructors: fileResult.rewrittenConstructors,
+        rewrittenDynamicImports: fileResult.rewrittenDynamicImports,
+        rewrittenEventNames: fileResult.rewrittenEventNames,
+        addedCompatImport: fileResult.addedCompatImport,
+        removedArcGisImports: fileResult.removedArcGisImports,
+        annotatedTodoComments: fileResult.annotatedTodoComments,
+        manualTodos: fileResult.manualTodos,
+      });
+    } else if (fileResult.manualTodos.length > 0) {
+      fileResults.push({
+        file,
+        rewrittenImports: 0,
+        rewrittenConstructors: 0,
+        rewrittenDynamicImports: 0,
+        rewrittenEventNames: 0,
+        addedCompatImport: false,
+        removedArcGisImports: 0,
+        annotatedTodoComments: 0,
+        manualTodos: fileResult.manualTodos,
+      });
+    }
+  }
+
+  return {
+    rootDir,
+    target,
+    filesScanned: files.length,
+    filesChanged: fileResults.filter(
+      (item) =>
+        item.rewrittenConstructors > 0 ||
+        item.rewrittenImports > 0 ||
+        item.rewrittenDynamicImports > 0 ||
+        item.rewrittenEventNames > 0 ||
+        item.addedCompatImport ||
+        item.removedArcGisImports > 0 ||
+        item.annotatedTodoComments > 0,
+    ).length,
+    metrics,
+    fileResults: fileResults.sort((a, b) => a.file.localeCompare(b.file)),
+    manualTodos: manualTodos.sort(compareTodos),
+    errors: errors.length > 0 ? errors.sort(compareFileErrors) : undefined,
+  };
+}
+
+function assertParsableSource(file: string, source: string): void {
+  const parseProbe = ts.transpileModule(source, {
+    fileName: file,
+    reportDiagnostics: true,
+    compilerOptions: {
+      allowJs: true,
+      jsx: ts.JsxEmit.Preserve,
+      target: ts.ScriptTarget.ESNext,
+      module: ts.ModuleKind.ESNext,
+    },
+  });
+  const syntaxError = parseProbe.diagnostics?.find((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
+  if (!syntaxError) {
+    return;
+  }
+
+  const message = ts.flattenDiagnosticMessageText(syntaxError.messageText, "\n");
+  throw new Error(`Unable to parse source file: ${message}`);
+}
+
+function codemodFile(
+  file: string,
+  source: string,
+  compatImportPath: string,
+  annotateTodos: boolean,
+  target: CodemodTarget,
+  localArcGisReExports: ReadonlyMap<string, Readonly<Record<string, CodemodConstructorKind>>>,
+  sourceFilesSet: ReadonlySet<string>,
+): {
+  nextSource: string;
+  rewrittenImports: number;
+  rewrittenConstructors: number;
+  rewrittenDynamicImports: number;
+  rewrittenEventNames: number;
+  rewrittenKinds: CodemodConstructorKind[];
+  addedCompatImport: boolean;
+  removedArcGisImports: number;
+  annotatedTodoComments: number;
+  manualTodos: MigrationTodo[];
+} {
+  assertParsableSource(file, source);
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+  const imports = collectSupportedImports(sourceFile, file, localArcGisReExports, sourceFilesSet);
+
+  const importsByLocalName = new Map<string, ArcGisImportBinding>();
+  for (const importBinding of imports) {
+    if (!importsByLocalName.has(importBinding.localName)) {
+      importsByLocalName.set(importBinding.localName, importBinding);
+    }
+  }
+  const shadowedImportLocalNames = collectShadowedImportLocalNames(sourceFile, new Set(importsByLocalName.keys()));
+  const identifierMemberUsage = buildIdentifierMemberUsageIndex(sourceFile);
+  const trackedReceiverKeys = collectTrackedCompatReceiverKeys(sourceFile, importsByLocalName);
+  const reactiveUtilsLocals = collectReactiveUtilsLocalNames(sourceFile);
+
+  const constructorEdits: TextEdit[] = [];
+  const dynamicImportEdits: TextEdit[] = [];
+  const eventNameEdits: TextEdit[] = [];
+  const importEdits: TextEdit[] = [];
+  const rewrittenKinds: CodemodConstructorKind[] = [];
+  const manualTodos: MigrationTodo[] = [];
+  const todoCommentEdits: TextEdit[] = [];
+  const requiredCompatSymbols = new Set<string>();
+  const requiredHonuaMapLibreSymbols = new Set<string>();
+  const requiresEsriLeafletImport = { value: false };
+  const requiresMapLibreImport = { value: false };
+  const esriLeafletNamespaceAlias =
+    findNamespaceImportAlias(sourceFile, ESRI_LEAFLET_IMPORT_PATH) ?? ESRI_LEAFLET_NAMESPACE;
+  const mapLibreNamespaceAlias = findNamespaceImportAlias(sourceFile, MAPLIBRE_IMPORT_PATH) ?? MAPLIBRE_NAMESPACE;
+  const fileExtension = path.extname(file).toLowerCase();
+  const isCommonJsModule = fileExtension === ".cjs" || hasCommonJsExportMarkers(source);
+
+  const esriRequestImportRewrite = rewriteEsriRequestImports({
+    source,
+    sourceFile,
+    file,
+    compatImportPath,
+    annotateTodos,
+    target,
+  });
+  importEdits.push(...esriRequestImportRewrite.edits);
+  rewrittenKinds.push(...esriRequestImportRewrite.rewrittenKinds);
+  manualTodos.push(...esriRequestImportRewrite.manualTodos);
+  todoCommentEdits.push(...esriRequestImportRewrite.todoCommentEdits);
+
+  const identityManagerImportRewrite = rewriteIdentityManagerImports({
+    source,
+    sourceFile,
+    file,
+    compatImportPath,
+    annotateTodos,
+    target,
+  });
+  importEdits.push(...identityManagerImportRewrite.edits);
+  rewrittenKinds.push(...identityManagerImportRewrite.rewrittenKinds);
+  manualTodos.push(...identityManagerImportRewrite.manualTodos);
+  todoCommentEdits.push(...identityManagerImportRewrite.todoCommentEdits);
+
+  const esriConfigImportRewrite = rewriteEsriConfigImports({
+    source,
+    sourceFile,
+    file,
+    compatImportPath,
+    annotateTodos,
+    target,
+  });
+  importEdits.push(...esriConfigImportRewrite.edits);
+  rewrittenKinds.push(...esriConfigImportRewrite.rewrittenKinds);
+  manualTodos.push(...esriConfigImportRewrite.manualTodos);
+  todoCommentEdits.push(...esriConfigImportRewrite.todoCommentEdits);
+
+  const reactiveUtilsImportRewrite = rewriteReactiveUtilsImports({
+    source,
+    sourceFile,
+    file,
+    compatImportPath,
+    annotateTodos,
+    target,
+  });
+  importEdits.push(...reactiveUtilsImportRewrite.edits);
+  rewrittenKinds.push(...reactiveUtilsImportRewrite.rewrittenKinds);
+  manualTodos.push(...reactiveUtilsImportRewrite.manualTodos);
+  todoCommentEdits.push(...reactiveUtilsImportRewrite.todoCommentEdits);
+
+  const geometryEngineImportRewrite = rewriteGeometryEngineImports({
+    source,
+    sourceFile,
+    file,
+    compatImportPath,
+    annotateTodos,
+    target,
+  });
+  importEdits.push(...geometryEngineImportRewrite.edits);
+  rewrittenKinds.push(...geometryEngineImportRewrite.rewrittenKinds);
+  manualTodos.push(...geometryEngineImportRewrite.manualTodos);
+  todoCommentEdits.push(...geometryEngineImportRewrite.todoCommentEdits);
+
+  // Flag call sites of uncovered geometryEngine ops (covered ops resolve to the
+  // rewritten geometryEngineCompat import and need no TODO). Only when the
+  // import was actually rewritten to the compat shim (honua targets).
+  if (target !== "honua-maplibre") {
+    flagUncoveredGeometryEngineOps({
+      sourceFile,
+      source,
+      file,
+      annotateTodos,
+      localNames: collectGeometryEngineLocalNames(sourceFile),
+      manualTodos,
+      todoCommentEdits,
+    });
+  }
+
+  walk(sourceFile, (node) => {
+    if (isArcGisDynamicImportCall(node)) {
+      const firstArg = node.arguments[0];
+      if (!ts.isStringLiteral(firstArg)) {
+        return;
+      }
+
+      const modulePath = firstArg.text;
+      const spec = MODULE_TO_SPEC.get(modulePath);
+      if (spec) {
+        if (target === "honua-compat") {
+          dynamicImportEdits.push({
+            start: node.getStart(sourceFile),
+            end: node.getEnd(),
+            text: buildCompatDynamicImportExpression(compatImportPath, spec.compatSymbol),
+          });
+          rewrittenKinds.push(spec.kind);
+          return;
+        }
+
+        if (target === "honua-maplibre") {
+          const nodeStart = node.getStart(sourceFile);
+          const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+          manualTodos.push({
+            kind: spec.kind,
+            file,
+            line: location.line + 1,
+            column: location.character + 1,
+            reason: HONUA_MAPLIBRE_UNSUPPORTED_DYNAMIC_IMPORT_REASON,
+            difficulty: "complex",
+          });
+          if (annotateTodos) {
+            const lineStart = findLineStartOffset(source, nodeStart);
+            if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+              todoCommentEdits.push({
+                start: lineStart,
+                end: lineStart,
+                text: `// ${TODO_MARKER}[${spec.kind}]: ${HONUA_MAPLIBRE_UNSUPPORTED_DYNAMIC_IMPORT_REASON}\n`,
+              });
+            }
+          }
+          return;
+        }
+
+        const targetExpression = buildEsriLeafletDynamicImportExpression(spec.kind, esriLeafletNamespaceAlias);
+        if (targetExpression) {
+          dynamicImportEdits.push({
+            start: node.getStart(sourceFile),
+            end: node.getEnd(),
+            text: targetExpression,
+          });
+          rewrittenKinds.push(spec.kind);
+          requiresEsriLeafletImport.value = true;
+          return;
+        }
+
+        const fallbackSymbol = esriLeafletCompatFallbackSymbolForKind(spec.kind);
+        if (fallbackSymbol) {
+          dynamicImportEdits.push({
+            start: node.getStart(sourceFile),
+            end: node.getEnd(),
+            text: buildCompatDynamicImportExpression(compatImportPath, fallbackSymbol),
+          });
+          rewrittenKinds.push(spec.kind);
+          requiredCompatSymbols.add(fallbackSymbol);
+          return;
+        }
+
+        const nodeStart = node.getStart(sourceFile);
+        const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+        manualTodos.push({
+          kind: spec.kind,
+          file,
+          line: location.line + 1,
+          column: location.character + 1,
+          reason: ESRI_LEAFLET_UNSUPPORTED_DYNAMIC_IMPORT_REASON,
+          difficulty: "complex",
+        });
+        if (annotateTodos) {
+          const lineStart = findLineStartOffset(source, nodeStart);
+          if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+            todoCommentEdits.push({
+              start: lineStart,
+              end: lineStart,
+              text: `// ${TODO_MARKER}[${spec.kind}]: ${ESRI_LEAFLET_UNSUPPORTED_DYNAMIC_IMPORT_REASON}\n`,
+            });
+          }
+        }
+      }
+      return;
+    }
+
+    if (
+      imports.length > 0 &&
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      (node.expression.name.text === "on" || node.expression.name.text === "watch") &&
+      node.arguments.length >= 1 &&
+      ts.isStringLiteral(node.arguments[0])
+    ) {
+      const literal = node.arguments[0];
+      const remapped = ARCGIS_TO_COMPAT_EVENT_REMAP[literal.text];
+      const receiverKey = resolveReceiverKey(node.expression);
+      if (remapped && receiverKey && trackedReceiverKeys.has(receiverKey)) {
+        eventNameEdits.push({
+          start: literal.getStart(sourceFile),
+          end: literal.getEnd(),
+          text: `"${remapped}"`,
+        });
+      }
+      return;
+    }
+
+    // reactiveUtils.watch(accessor, handler) ? rewrite simple property-access
+    // accessors to compat (receiver, propertyPath, handler) form, and emit a
+    // manual TODO when the accessor is too complex to rewrite safely.
+    if (
+      ts.isCallExpression(node) &&
+      node.arguments.length >= 2 &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      reactiveUtilsLocals.namespaceNames.has(node.expression.expression.text) &&
+      node.expression.name.text === "watch"
+    ) {
+      const parsed = parseReactiveUtilsWatchAccessor(node.arguments[0], trackedReceiverKeys);
+      handleReactiveUtilsWatchAccessor({
+        node,
+        accessor: node.arguments[0],
+        parsed,
+        sourceFile,
+        source,
+        file,
+        annotateTodos,
+        eventNameEdits,
+        manualTodos,
+        todoCommentEdits,
+      });
+      return;
+    }
+    if (
+      ts.isCallExpression(node) &&
+      node.arguments.length >= 2 &&
+      ts.isIdentifier(node.expression) &&
+      reactiveUtilsLocals.watchNames.has(node.expression.text)
+    ) {
+      const parsed = parseReactiveUtilsWatchAccessor(node.arguments[0], trackedReceiverKeys);
+      handleReactiveUtilsWatchAccessor({
+        node,
+        accessor: node.arguments[0],
+        parsed,
+        sourceFile,
+        source,
+        file,
+        annotateTodos,
+        eventNameEdits,
+        manualTodos,
+        todoCommentEdits,
+      });
+      return;
+    }
+
+    if (!ts.isNewExpression(node)) {
+      return;
+    }
+
+    const rewriteTarget = resolveConstructorRewriteTarget(node.expression, sourceFile, importsByLocalName);
+    if (!rewriteTarget) {
+      return;
+    }
+
+    const importBinding = rewriteTarget.binding;
+    if (shadowedImportLocalNames.has(importBinding.localName)) {
+      const nodeStart = node.getStart(sourceFile);
+      const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: importBinding.kind,
+        file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: `${SHADOWED_IMPORT_CONSTRUCTOR_REASON} (${importBinding.localName})`,
+        difficulty: "trivial",
+      });
+      if (annotateTodos) {
+        const lineStart = findLineStartOffset(source, nodeStart);
+        if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[${importBinding.kind}]: ${SHADOWED_IMPORT_CONSTRUCTOR_REASON}\n`,
+          });
+        }
+      }
+      return;
+    }
+
+    if (isCommonJsModule && importBinding.sourceKind === "require") {
+      if (target !== "honua-compat") {
+        const nodeStart = node.getStart(sourceFile);
+        const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+        manualTodos.push({
+          kind: importBinding.kind,
+          file,
+          line: location.line + 1,
+          column: location.character + 1,
+          reason: CJS_REQUIRE_MANUAL_REASON,
+          difficulty: "moderate",
+        });
+        if (annotateTodos) {
+          const lineStart = findLineStartOffset(source, nodeStart);
+          if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+            todoCommentEdits.push({
+              start: lineStart,
+              end: lineStart,
+              text: `// ${TODO_MARKER}[${importBinding.kind}]: ${CJS_REQUIRE_MANUAL_REASON}\n`,
+            });
+          }
+        }
+        return;
+      }
+    }
+
+    if (target === "honua-maplibre" && importBinding.kind === "web-map") {
+      const webmapOutcome = handleHonuaMapLibreWebMapNewExpression(node, sourceFile);
+      if (webmapOutcome.kind === "rewrite") {
+        constructorEdits.push({
+          start: node.getStart(sourceFile),
+          end: node.getEnd(),
+          text: webmapOutcome.text,
+        });
+        requiredHonuaMapLibreSymbols.add("webmapJsonToMapLibreStyle");
+        rewrittenKinds.push("web-map");
+        for (const gap of webmapOutcome.manualGaps) {
+          const nodeStart = node.getStart(sourceFile);
+          const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+          const gapReason = formatWebMapMapLibreGapReason(gap);
+          manualTodos.push({
+            kind: "web-map",
+            file,
+            line: location.line + 1,
+            column: location.character + 1,
+            reason: gapReason,
+            difficulty: "complex",
+          });
+          if (annotateTodos) {
+            const lineStart = findLineStartOffset(source, nodeStart);
+            if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+              todoCommentEdits.push({
+                start: lineStart,
+                end: lineStart,
+                text: `// ${TODO_MARKER}[web-map]: ${gapReason}\n`,
+              });
+            }
+          }
+        }
+        return;
+      }
+
+      const nodeStart = node.getStart(sourceFile);
+      const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: "web-map",
+        file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: webmapOutcome.reason,
+        difficulty: "complex",
+      });
+      if (annotateTodos) {
+        const lineStart = findLineStartOffset(source, nodeStart);
+        if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[web-map]: ${webmapOutcome.reason}\n`,
+          });
+        }
+      }
+      return;
+    }
+
+    const safeCheck = isSafeConstructorCall(importBinding.kind, node, target);
+    if (safeCheck.ok) {
+      if (target === "honua-compat") {
+        const spec = specForKind(importBinding.kind);
+        requiredCompatSymbols.add(spec.compatSymbol);
+        constructorEdits.push({
+          start: rewriteTarget.start,
+          end: rewriteTarget.end,
+          text: spec.compatSymbol,
+        });
+        if (importBinding.kind === "query") {
+          // Deep-transform Query options into the Honua QueryFeaturesRequest
+          // shape (renames + geometry split + outStatistics normalization).
+          // Validation already guaranteed every rewrite below is safe.
+          const argEdits = buildQueryArgumentRewrite(node, sourceFile, source);
+          for (const edit of argEdits) {
+            constructorEdits.push(edit);
+          }
+        }
+        rewrittenKinds.push(importBinding.kind);
+        return;
+      }
+
+      if (target === "honua-maplibre") {
+        const replacement = buildHonuaMapLibreConstructorExpression(
+          importBinding.kind,
+          node,
+          sourceFile,
+          mapLibreNamespaceAlias,
+        );
+        if (replacement) {
+          constructorEdits.push({
+            start: node.getStart(sourceFile),
+            end: node.getEnd(),
+            text: replacement.text,
+          });
+          for (const symbol of replacement.helperSymbols) {
+            requiredHonuaMapLibreSymbols.add(symbol);
+          }
+          if (replacement.requiresMapLibreImport) {
+            requiresMapLibreImport.value = true;
+          }
+          rewrittenKinds.push(importBinding.kind);
+          return;
+        }
+
+        const nodeStart = node.getStart(sourceFile);
+        const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+        manualTodos.push({
+          kind: importBinding.kind,
+          file,
+          line: location.line + 1,
+          column: location.character + 1,
+          reason: HONUA_MAPLIBRE_UNSUPPORTED_CONSTRUCTOR_REASON,
+          difficulty: "complex",
+        });
+        if (annotateTodos) {
+          const lineStart = findLineStartOffset(source, nodeStart);
+          if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+            todoCommentEdits.push({
+              start: lineStart,
+              end: lineStart,
+              text: `// ${TODO_MARKER}[${importBinding.kind}]: ${HONUA_MAPLIBRE_UNSUPPORTED_CONSTRUCTOR_REASON}\n`,
+            });
+          }
+        }
+        return;
+      }
+
+      const forcedFallbackSymbol = resolveEsriLeafletForcedCompatFallbackSymbol(
+        importBinding.kind,
+        node,
+        sourceFile,
+        identifierMemberUsage,
+      );
+      if (forcedFallbackSymbol) {
+        requiredCompatSymbols.add(forcedFallbackSymbol);
+        constructorEdits.push({
+          start: rewriteTarget.start,
+          end: rewriteTarget.end,
+          text: forcedFallbackSymbol,
+        });
+        rewrittenKinds.push(importBinding.kind);
+        return;
+      }
+
+      const replacement = buildEsriLeafletConstructorExpression(
+        importBinding.kind,
+        node,
+        sourceFile,
+        esriLeafletNamespaceAlias,
+      );
+      if (replacement) {
+        constructorEdits.push({
+          start: node.getStart(sourceFile),
+          end: node.getEnd(),
+          text: replacement,
+        });
+        rewrittenKinds.push(importBinding.kind);
+        requiresEsriLeafletImport.value = true;
+        return;
+      }
+
+      const fallbackSymbol = esriLeafletCompatFallbackSymbolForKind(importBinding.kind);
+      if (fallbackSymbol) {
+        requiredCompatSymbols.add(fallbackSymbol);
+        constructorEdits.push({
+          start: rewriteTarget.start,
+          end: rewriteTarget.end,
+          text: fallbackSymbol,
+        });
+        rewrittenKinds.push(importBinding.kind);
+        return;
+      }
+
+      const nodeStart = node.getStart(sourceFile);
+      const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: importBinding.kind,
+        file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: ESRI_LEAFLET_UNSUPPORTED_CONSTRUCTOR_REASON,
+        difficulty: "complex",
+      });
+      if (annotateTodos) {
+        const lineStart = findLineStartOffset(source, nodeStart);
+        if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[${importBinding.kind}]: ${ESRI_LEAFLET_UNSUPPORTED_CONSTRUCTOR_REASON}\n`,
+          });
+        }
+      }
+      return;
+    }
+
+    const nodeStart = node.getStart(sourceFile);
+    const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+    manualTodos.push({
+      kind: importBinding.kind,
+      file,
+      line: location.line + 1,
+      column: location.character + 1,
+      reason: safeCheck.reason,
+      difficulty: "moderate",
+    });
+    if (annotateTodos) {
+      const lineStart = findLineStartOffset(source, nodeStart);
+      if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+        todoCommentEdits.push({
+          start: lineStart,
+          end: lineStart,
+          text: `// ${TODO_MARKER}[${importBinding.kind}]: ${safeCheck.reason}\n`,
+        });
+      }
+    }
+  });
+
+  if (
+    constructorEdits.length === 0 &&
+    dynamicImportEdits.length === 0 &&
+    eventNameEdits.length === 0 &&
+    importEdits.length === 0
+  ) {
+    return {
+      nextSource: applyTextEdits(source, todoCommentEdits),
+      rewrittenImports: 0,
+      rewrittenConstructors: 0,
+      rewrittenDynamicImports: 0,
+      rewrittenEventNames: 0,
+      rewrittenKinds: [],
+      addedCompatImport: false,
+      removedArcGisImports: 0,
+      annotatedTodoComments: todoCommentEdits.length,
+      manualTodos: manualTodos.sort(compareTodos),
+    };
+  }
+
+  let transformed = applyTextEdits(source, [
+    ...importEdits,
+    ...constructorEdits,
+    ...dynamicImportEdits,
+    ...eventNameEdits,
+    ...todoCommentEdits,
+  ]);
+  const removedArcGisImports = removeUnusedArcGisImports(file, transformed);
+  transformed = removedArcGisImports.nextSource;
+
+  let addedCompatImport = false;
+  const compatSymbols = Array.from(requiredCompatSymbols).sort();
+  if (compatSymbols.length > 0) {
+    const compatImportResult = isCommonJsModule
+      ? ensureCompatNamedRequire(file, transformed, compatSymbols, compatImportPath)
+      : ensureCompatNamedImports(file, transformed, compatSymbols, compatImportPath);
+    transformed = compatImportResult.nextSource;
+    addedCompatImport = compatImportResult.changed;
+  }
+  const honuaMapLibreSymbols = Array.from(requiredHonuaMapLibreSymbols).sort();
+  if (honuaMapLibreSymbols.length > 0) {
+    const honuaImportResult = ensureCompatNamedImports(file, transformed, honuaMapLibreSymbols, HONUA_MAP_IMPORT_PATH);
+    transformed = honuaImportResult.nextSource;
+    addedCompatImport = addedCompatImport || honuaImportResult.changed;
+  }
+  if (target === "honua-maplibre" && requiresMapLibreImport.value) {
+    const mapLibreImportResult = ensureNamespaceImport(file, transformed, MAPLIBRE_IMPORT_PATH, mapLibreNamespaceAlias);
+    transformed = mapLibreImportResult.nextSource;
+    addedCompatImport = addedCompatImport || mapLibreImportResult.changed;
+  }
+  if (target === "esri-leaflet" && requiresEsriLeafletImport.value) {
+    const esriLeafletImportResult = ensureNamespaceImport(
+      file,
+      transformed,
+      ESRI_LEAFLET_IMPORT_PATH,
+      esriLeafletNamespaceAlias,
+    );
+    transformed = esriLeafletImportResult.nextSource;
+    addedCompatImport = addedCompatImport || esriLeafletImportResult.changed;
+  }
+
+  return {
+    nextSource: transformed,
+    rewrittenImports: importEdits.length,
+    rewrittenConstructors: constructorEdits.length,
+    rewrittenDynamicImports: dynamicImportEdits.length,
+    rewrittenEventNames: eventNameEdits.length,
+    rewrittenKinds,
+    addedCompatImport,
+    removedArcGisImports: removedArcGisImports.removedCount,
+    annotatedTodoComments: todoCommentEdits.length,
+    manualTodos: manualTodos.sort(compareTodos),
+  };
+}
+
+function pushImportManualTodo(
+  options: {
+    source: string;
+    sourceFile: ts.SourceFile;
+    file: string;
+    annotateTodos: boolean;
+  },
+  statement: ts.ImportDeclaration,
+  kind: CodemodConstructorKind,
+  reason: string,
+  manualTodos: MigrationTodo[],
+  todoCommentEdits: TextEdit[],
+): void {
+  const nodeStart = statement.getStart(options.sourceFile);
+  const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
+  manualTodos.push({
+    kind,
+    file: options.file,
+    line: location.line + 1,
+    column: location.character + 1,
+    reason,
+    difficulty: "complex",
+  });
+
+  if (!options.annotateTodos) {
+    return;
+  }
+
+  const lineStart = findLineStartOffset(options.source, nodeStart);
+  if (shouldInsertTodoComment(options.source, lineStart, nodeStart)) {
+    todoCommentEdits.push({
+      start: lineStart,
+      end: lineStart,
+      text: `// ${TODO_MARKER}[${kind}]: ${reason}\n`,
+    });
+  }
+}
+
+function rewriteReactiveUtilsImports(options: {
+  source: string;
+  sourceFile: ts.SourceFile;
+  file: string;
+  compatImportPath: string;
+  annotateTodos: boolean;
+  target: CodemodTarget;
+}): {
+  edits: TextEdit[];
+  rewrittenKinds: CodemodConstructorKind[];
+  manualTodos: MigrationTodo[];
+  todoCommentEdits: TextEdit[];
+} {
+  const edits: TextEdit[] = [];
+  const rewrittenKinds: CodemodConstructorKind[] = [];
+  const manualTodos: MigrationTodo[] = [];
+  const todoCommentEdits: TextEdit[] = [];
+
+  for (const statement of options.sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "reactive-utils") {
+      continue;
+    }
+
+    if (options.target === "honua-maplibre") {
+      pushImportManualTodo(
+        options,
+        statement,
+        "reactive-utils",
+        HONUA_MAPLIBRE_UNSUPPORTED_IMPORT_REASON,
+        manualTodos,
+        todoCommentEdits,
+      );
+      continue;
+    }
+
+    const replacement = buildReactiveUtilsCompatImport(statement, options.sourceFile, options.compatImportPath);
+    if (!replacement) {
+      const nodeStart = statement.getStart(options.sourceFile);
+      const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: "reactive-utils",
+        file: options.file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: REACTIVE_UTILS_IMPORT_UNSUPPORTED_REASON,
+        difficulty: "complex",
+      });
+
+      if (options.annotateTodos) {
+        const lineStart = findLineStartOffset(options.source, nodeStart);
+        if (shouldInsertTodoComment(options.source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[reactive-utils]: ${REACTIVE_UTILS_IMPORT_UNSUPPORTED_REASON}\n`,
+          });
+        }
+      }
+      continue;
+    }
+
+    edits.push({
+      start: statement.getStart(options.sourceFile),
+      end: statement.getEnd(),
+      text: replacement,
+    });
+    rewrittenKinds.push("reactive-utils");
+  }
+
+  return {
+    edits,
+    rewrittenKinds,
+    manualTodos,
+    todoCommentEdits,
+  };
+}
+
+/**
+ * `geometryEngine` is a namespace/default module (like reactiveUtils), so it is
+ * rewritten import-first rather than by constructor. The default/namespace local
+ * name is aliased to the `geometryEngineCompat` (or `geometryEngineAsyncCompat`)
+ * export of the compat package; covered ops then resolve to the shim and
+ * uncovered ops are flagged per call site by {@link flagUncoveredGeometryEngineOps}.
+ */
+function rewriteGeometryEngineImports(options: {
+  source: string;
+  sourceFile: ts.SourceFile;
+  file: string;
+  compatImportPath: string;
+  annotateTodos: boolean;
+  target: CodemodTarget;
+}): {
+  edits: TextEdit[];
+  rewrittenKinds: CodemodConstructorKind[];
+  manualTodos: MigrationTodo[];
+  todoCommentEdits: TextEdit[];
+} {
+  const edits: TextEdit[] = [];
+  const rewrittenKinds: CodemodConstructorKind[] = [];
+  const manualTodos: MigrationTodo[] = [];
+  const todoCommentEdits: TextEdit[] = [];
+
+  for (const statement of options.sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "geometry-engine") {
+      continue;
+    }
+
+    if (options.target === "honua-maplibre") {
+      pushImportManualTodo(
+        options,
+        statement,
+        "geometry-engine",
+        HONUA_MAPLIBRE_UNSUPPORTED_IMPORT_REASON,
+        manualTodos,
+        todoCommentEdits,
+      );
+      continue;
+    }
+
+    const isAsync = /geometryEngineAsync(\.js)?$/.test(statement.moduleSpecifier.text);
+    const compatSymbol = isAsync ? "geometryEngineAsyncCompat" : "geometryEngineCompat";
+    const replacement = buildGeometryEngineCompatImport(
+      statement,
+      options.sourceFile,
+      options.compatImportPath,
+      compatSymbol,
+    );
+    if (!replacement) {
+      const nodeStart = statement.getStart(options.sourceFile);
+      const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: "geometry-engine",
+        file: options.file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: GEOMETRY_ENGINE_IMPORT_UNSUPPORTED_REASON,
+        difficulty: "complex",
+      });
+
+      if (options.annotateTodos) {
+        const lineStart = findLineStartOffset(options.source, nodeStart);
+        if (shouldInsertTodoComment(options.source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[geometry-engine]: ${GEOMETRY_ENGINE_IMPORT_UNSUPPORTED_REASON}\n`,
+          });
+        }
+      }
+      continue;
+    }
+
+    edits.push({
+      start: statement.getStart(options.sourceFile),
+      end: statement.getEnd(),
+      text: replacement,
+    });
+    rewrittenKinds.push("geometry-engine");
+  }
+
+  return {
+    edits,
+    rewrittenKinds,
+    manualTodos,
+    todoCommentEdits,
+  };
+}
+
+function buildGeometryEngineCompatImport(
+  statement: ts.ImportDeclaration,
+  sourceFile: ts.SourceFile,
+  compatImportPath: string,
+  compatSymbol: string,
+): string | undefined {
+  const importClause = statement.importClause;
+  if (!importClause) {
+    return undefined;
+  }
+
+  const specifiers: string[] = [];
+  if (importClause.name) {
+    specifiers.push(renderImportSpecifier(compatSymbol, importClause.name.text));
+  }
+
+  const namedBindings = importClause.namedBindings;
+  if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+    specifiers.push(renderImportSpecifier(compatSymbol, namedBindings.name.text));
+  } else if (namedBindings && ts.isNamedImports(namedBindings)) {
+    for (const element of namedBindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      const localName = element.name.text;
+      if (importedName === "default" || importedName === compatSymbol) {
+        specifiers.push(renderImportSpecifier(compatSymbol, localName));
+        continue;
+      }
+      return undefined;
+    }
+  }
+
+  const uniqueSpecifiers = Array.from(new Set(specifiers));
+  if (uniqueSpecifiers.length === 0) {
+    return undefined;
+  }
+
+  return `import { ${uniqueSpecifiers.join(", ")} } from "${compatImportPath}";`;
+}
+
+/**
+ * Collect the local identifier names that resolve to a geometryEngine import
+ * binding (default or namespace import). Used to scope the uncovered-op scan to
+ * genuine `<geometryEngine>.<op>()` call sites.
+ */
+function collectGeometryEngineLocalNames(sourceFile: ts.SourceFile): Set<string> {
+  const names = new Set<string>();
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "geometry-engine") {
+      continue;
+    }
+    const importClause = statement.importClause;
+    if (!importClause) {
+      continue;
+    }
+    if (importClause.name) {
+      names.add(importClause.name.text);
+    }
+    const namedBindings = importClause.namedBindings;
+    if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+      names.add(namedBindings.name.text);
+    } else if (namedBindings && ts.isNamedImports(namedBindings)) {
+      for (const element of namedBindings.elements) {
+        const importedName = element.propertyName?.text ?? element.name.text;
+        if (importedName === "default" || importedName === "geometryEngineCompat") {
+          names.add(element.name.text);
+        }
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * Emit a manual TODO for every `<geometryEngine>.<op>()` call whose op is not
+ * covered by the geometryEngineCompat shim. Covered ops are left untouched (they
+ * resolve to the rewritten import), so only genuinely unsupported operations
+ * keep a manual-intervention warning.
+ */
+function flagUncoveredGeometryEngineOps(options: {
+  sourceFile: ts.SourceFile;
+  source: string;
+  file: string;
+  annotateTodos: boolean;
+  localNames: ReadonlySet<string>;
+  manualTodos: MigrationTodo[];
+  todoCommentEdits: TextEdit[];
+}): void {
+  if (options.localNames.size === 0) {
+    return;
+  }
+  const seen = new Set<string>();
+  walk(options.sourceFile, (node) => {
+    if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) {
+      return;
+    }
+    const access = node.expression;
+    if (!ts.isIdentifier(access.expression) || !options.localNames.has(access.expression.text)) {
+      return;
+    }
+    const op = access.name.text;
+    if (GEOMETRY_ENGINE_COVERED_OPS.has(op)) {
+      return;
+    }
+    const nodeStart = node.getStart(options.sourceFile);
+    const dedupeKey = `${nodeStart}:${op}`;
+    if (seen.has(dedupeKey)) {
+      return;
+    }
+    seen.add(dedupeKey);
+    const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
+    const reason = geometryEngineUncoveredOpReason(op);
+    options.manualTodos.push({
+      kind: "geometry-engine",
+      file: options.file,
+      line: location.line + 1,
+      column: location.character + 1,
+      reason,
+      difficulty: "moderate",
+    });
+    if (options.annotateTodos) {
+      const lineStart = findLineStartOffset(options.source, nodeStart);
+      if (shouldInsertTodoComment(options.source, lineStart, nodeStart)) {
+        options.todoCommentEdits.push({
+          start: lineStart,
+          end: lineStart,
+          text: `// ${TODO_MARKER}[geometry-engine]: ${reason}\n`,
+        });
+      }
+    }
+  });
+}
+
+function rewriteEsriRequestImports(options: {
+  source: string;
+  sourceFile: ts.SourceFile;
+  file: string;
+  compatImportPath: string;
+  annotateTodos: boolean;
+  target: CodemodTarget;
+}): {
+  edits: TextEdit[];
+  rewrittenKinds: CodemodConstructorKind[];
+  manualTodos: MigrationTodo[];
+  todoCommentEdits: TextEdit[];
+} {
+  const edits: TextEdit[] = [];
+  const rewrittenKinds: CodemodConstructorKind[] = [];
+  const manualTodos: MigrationTodo[] = [];
+  const todoCommentEdits: TextEdit[] = [];
+
+  for (const statement of options.sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (!statement.importClause) {
+      continue;
+    }
+    if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "esri-request") {
+      continue;
+    }
+
+    if (options.target === "honua-maplibre") {
+      pushImportManualTodo(
+        options,
+        statement,
+        "esri-request",
+        HONUA_MAPLIBRE_UNSUPPORTED_IMPORT_REASON,
+        manualTodos,
+        todoCommentEdits,
+      );
+      continue;
+    }
+
+    const replacement = buildEsriRequestCompatImport(statement, options.sourceFile, options.compatImportPath);
+    if (!replacement) {
+      const nodeStart = statement.getStart(options.sourceFile);
+      const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: "esri-request",
+        file: options.file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: ESRI_REQUEST_IMPORT_UNSUPPORTED_REASON,
+        difficulty: "complex",
+      });
+
+      if (options.annotateTodos) {
+        const lineStart = findLineStartOffset(options.source, nodeStart);
+        if (shouldInsertTodoComment(options.source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[esri-request]: ${ESRI_REQUEST_IMPORT_UNSUPPORTED_REASON}\n`,
+          });
+        }
+      }
+      continue;
+    }
+
+    edits.push({
+      start: statement.getStart(options.sourceFile),
+      end: statement.getEnd(),
+      text: replacement,
+    });
+    rewrittenKinds.push("esri-request");
+  }
+
+  return {
+    edits,
+    rewrittenKinds,
+    manualTodos,
+    todoCommentEdits,
+  };
+}
+
+function buildEsriRequestCompatImport(
+  statement: ts.ImportDeclaration,
+  sourceFile: ts.SourceFile,
+  compatImportPath: string,
+): string | undefined {
+  const importClause = statement.importClause;
+  if (!importClause) {
+    return undefined;
+  }
+
+  const specifiers: string[] = [];
+  if (importClause.name) {
+    specifiers.push(renderImportSpecifier("esriRequest", importClause.name.text));
+  }
+
+  const namedBindings = importClause.namedBindings;
+  if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+    specifiers.push(renderImportSpecifier("esriRequest", namedBindings.name.text));
+  } else if (namedBindings && ts.isNamedImports(namedBindings)) {
+    for (const element of namedBindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      const localName = element.name.text;
+      if (importedName === "default" || importedName === "esriRequest") {
+        specifiers.push(renderImportSpecifier("esriRequest", localName));
+        continue;
+      }
+      return undefined;
+    }
+  }
+
+  const uniqueSpecifiers = Array.from(new Set(specifiers));
+  if (uniqueSpecifiers.length === 0) {
+    uniqueSpecifiers.push("esriRequest");
+  }
+
+  return `import { ${uniqueSpecifiers.join(", ")} } from "${compatImportPath}";`;
+}
+
+function rewriteIdentityManagerImports(options: {
+  source: string;
+  sourceFile: ts.SourceFile;
+  file: string;
+  compatImportPath: string;
+  annotateTodos: boolean;
+  target: CodemodTarget;
+}): {
+  edits: TextEdit[];
+  rewrittenKinds: CodemodConstructorKind[];
+  manualTodos: MigrationTodo[];
+  todoCommentEdits: TextEdit[];
+} {
+  const edits: TextEdit[] = [];
+  const rewrittenKinds: CodemodConstructorKind[] = [];
+  const manualTodos: MigrationTodo[] = [];
+  const todoCommentEdits: TextEdit[] = [];
+
+  for (const statement of options.sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (!statement.importClause) {
+      continue;
+    }
+    if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "identity-manager") {
+      continue;
+    }
+
+    if (options.target === "honua-maplibre") {
+      pushImportManualTodo(
+        options,
+        statement,
+        "identity-manager",
+        HONUA_MAPLIBRE_UNSUPPORTED_IMPORT_REASON,
+        manualTodos,
+        todoCommentEdits,
+      );
+      continue;
+    }
+
+    const replacement = buildIdentityManagerCompatImport(statement, options.sourceFile, options.compatImportPath);
+    if (!replacement) {
+      const nodeStart = statement.getStart(options.sourceFile);
+      const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: "identity-manager",
+        file: options.file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: IDENTITY_MANAGER_IMPORT_UNSUPPORTED_REASON,
+        difficulty: "complex",
+      });
+
+      if (options.annotateTodos) {
+        const lineStart = findLineStartOffset(options.source, nodeStart);
+        if (shouldInsertTodoComment(options.source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[identity-manager]: ${IDENTITY_MANAGER_IMPORT_UNSUPPORTED_REASON}\n`,
+          });
+        }
+      }
+      continue;
+    }
+
+    edits.push({
+      start: statement.getStart(options.sourceFile),
+      end: statement.getEnd(),
+      text: replacement,
+    });
+    rewrittenKinds.push("identity-manager");
+  }
+
+  return {
+    edits,
+    rewrittenKinds,
+    manualTodos,
+    todoCommentEdits,
+  };
+}
+
+function buildIdentityManagerCompatImport(
+  statement: ts.ImportDeclaration,
+  sourceFile: ts.SourceFile,
+  compatImportPath: string,
+): string | undefined {
+  const importClause = statement.importClause;
+  if (!importClause) {
+    return undefined;
+  }
+
+  const specifiers: string[] = [];
+  if (importClause.name) {
+    specifiers.push(renderImportSpecifier("identityManager", importClause.name.text));
+  }
+
+  const namedBindings = importClause.namedBindings;
+  if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+    specifiers.push(renderImportSpecifier("identityManager", namedBindings.name.text));
+  } else if (namedBindings && ts.isNamedImports(namedBindings)) {
+    for (const element of namedBindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      const localName = element.name.text;
+      if (importedName === "default" || importedName === "identityManager") {
+        specifiers.push(renderImportSpecifier("identityManager", localName));
+        continue;
+      }
+      return undefined;
+    }
+  }
+
+  const uniqueSpecifiers = Array.from(new Set(specifiers));
+  if (uniqueSpecifiers.length === 0) {
+    uniqueSpecifiers.push("identityManager");
+  }
+
+  return `import { ${uniqueSpecifiers.join(", ")} } from "${compatImportPath}";`;
+}
+
+function rewriteEsriConfigImports(options: {
+  source: string;
+  sourceFile: ts.SourceFile;
+  file: string;
+  compatImportPath: string;
+  annotateTodos: boolean;
+  target: CodemodTarget;
+}): {
+  edits: TextEdit[];
+  rewrittenKinds: CodemodConstructorKind[];
+  manualTodos: MigrationTodo[];
+  todoCommentEdits: TextEdit[];
+} {
+  const edits: TextEdit[] = [];
+  const rewrittenKinds: CodemodConstructorKind[] = [];
+  const manualTodos: MigrationTodo[] = [];
+  const todoCommentEdits: TextEdit[] = [];
+
+  for (const statement of options.sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (!statement.importClause) {
+      continue;
+    }
+    if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "esri-config") {
+      continue;
+    }
+
+    if (options.target === "honua-maplibre") {
+      pushImportManualTodo(
+        options,
+        statement,
+        "esri-config",
+        HONUA_MAPLIBRE_UNSUPPORTED_IMPORT_REASON,
+        manualTodos,
+        todoCommentEdits,
+      );
+      continue;
+    }
+
+    const replacement = buildEsriConfigCompatImport(statement, options.sourceFile, options.compatImportPath);
+    if (!replacement) {
+      const nodeStart = statement.getStart(options.sourceFile);
+      const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: "esri-config",
+        file: options.file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: ESRI_CONFIG_IMPORT_UNSUPPORTED_REASON,
+        difficulty: "complex",
+      });
+
+      if (options.annotateTodos) {
+        const lineStart = findLineStartOffset(options.source, nodeStart);
+        if (shouldInsertTodoComment(options.source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[esri-config]: ${ESRI_CONFIG_IMPORT_UNSUPPORTED_REASON}\n`,
+          });
+        }
+      }
+      continue;
+    }
+
+    edits.push({
+      start: statement.getStart(options.sourceFile),
+      end: statement.getEnd(),
+      text: replacement,
+    });
+    rewrittenKinds.push("esri-config");
+  }
+
+  return {
+    edits,
+    rewrittenKinds,
+    manualTodos,
+    todoCommentEdits,
+  };
+}
+
+function buildEsriConfigCompatImport(
+  statement: ts.ImportDeclaration,
+  sourceFile: ts.SourceFile,
+  compatImportPath: string,
+): string | undefined {
+  const importClause = statement.importClause;
+  if (!importClause) {
+    return undefined;
+  }
+
+  const specifiers: string[] = [];
+  if (importClause.name) {
+    specifiers.push(renderImportSpecifier("esriConfig", importClause.name.text));
+  }
+
+  const namedBindings = importClause.namedBindings;
+  if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+    specifiers.push(renderImportSpecifier("esriConfig", namedBindings.name.text));
+  } else if (namedBindings && ts.isNamedImports(namedBindings)) {
+    for (const element of namedBindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      const localName = element.name.text;
+      if (importedName === "default" || importedName === "esriConfig") {
+        specifiers.push(renderImportSpecifier("esriConfig", localName));
+        continue;
+      }
+      if (importedName === "resetEsriConfig" || importedName === "getEsriConfigHonuaInterceptors") {
+        specifiers.push(renderImportSpecifier(importedName, localName));
+        continue;
+      }
+
+      return undefined;
+    }
+  }
+
+  const uniqueSpecifiers = Array.from(new Set(specifiers));
+  if (uniqueSpecifiers.length === 0) {
+    uniqueSpecifiers.push("esriConfig");
+  }
+
+  return `import { ${uniqueSpecifiers.join(", ")} } from "${compatImportPath}";`;
+}
+
+function buildReactiveUtilsCompatImport(
+  statement: ts.ImportDeclaration,
+  sourceFile: ts.SourceFile,
+  compatImportPath: string,
+): string | undefined {
+  const importClause = statement.importClause;
+  if (!importClause) {
+    return `import { reactiveUtils } from "${compatImportPath}";`;
+  }
+
+  const specifiers: string[] = [];
+  if (importClause.name) {
+    specifiers.push(renderImportSpecifier("reactiveUtils", importClause.name.text));
+  }
+
+  const namedBindings = importClause.namedBindings;
+  if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+    specifiers.push(renderImportSpecifier("reactiveUtils", namedBindings.name.text));
+  } else if (namedBindings && ts.isNamedImports(namedBindings)) {
+    for (const element of namedBindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      const localName = element.name.text;
+      if (importedName === "default" || importedName === "reactiveUtils") {
+        specifiers.push(renderImportSpecifier("reactiveUtils", localName));
+        continue;
+      }
+      if (importedName === "watch" || importedName === "when" || importedName === "whenOnce") {
+        specifiers.push(renderImportSpecifier(importedName, localName));
+        continue;
+      }
+
+      return undefined;
+    }
+  }
+
+  const uniqueSpecifiers = Array.from(new Set(specifiers));
+  if (uniqueSpecifiers.length === 0) {
+    uniqueSpecifiers.push("reactiveUtils");
+  }
+
+  return `import { ${uniqueSpecifiers.join(", ")} } from "${compatImportPath}";`;
+}
+
+function renderImportSpecifier(importedName: string, localName: string): string {
+  return importedName === localName ? importedName : `${importedName} as ${localName}`;
+}
+
+function hasCommonJsExportMarkers(source: string): boolean {
+  return /\bmodule\.exports\b/.test(source) || /\bexports\.[A-Za-z_$][A-Za-z0-9_$]*\b/.test(source);
+}
+
+function buildModuleToSpecLookup(specs: readonly ConstructorRewriteSpec[]): Map<string, ConstructorRewriteSpec> {
+  const result = new Map<string, ConstructorRewriteSpec>();
+  for (const spec of specs) {
+    for (const modulePath of spec.arcGisModules) {
+      result.set(modulePath, spec);
+    }
+  }
+  return result;
+}
+
+function buildModuleToKindLookup(specs: readonly ConstructorRewriteSpec[]): Record<string, CodemodConstructorKind> {
+  const result: Record<string, CodemodConstructorKind> = {};
+  for (const spec of specs) {
+    for (const modulePath of spec.arcGisModules) {
+      result[modulePath] = spec.kind;
+    }
+  }
+  return result;
+}
+
+function buildBarrelKindLookup(
+  specs: readonly ConstructorRewriteSpec[],
+): Record<string, Readonly<Record<string, CodemodConstructorKind>>> {
+  const byPath = new Map<string, Map<string, CodemodConstructorKind>>();
+
+  for (const spec of specs) {
+    for (const rawModulePath of spec.arcGisModules) {
+      const modulePath = normalizeArcGisModulePath(rawModulePath);
+      const slashIndex = modulePath.lastIndexOf("/");
+      if (slashIndex < "@arcgis/core/".length) {
+        continue;
+      }
+      const barrelPath = modulePath.slice(0, slashIndex);
+      const symbol = modulePath.slice(slashIndex + 1);
+      if (!symbol) {
+        continue;
+      }
+
+      let symbols = byPath.get(barrelPath);
+      if (!symbols) {
+        symbols = new Map<string, CodemodConstructorKind>();
+        byPath.set(barrelPath, symbols);
+      }
+      if (!symbols.has(symbol)) {
+        symbols.set(symbol, spec.kind);
+      }
+    }
+  }
+
+  const result: Record<string, Readonly<Record<string, CodemodConstructorKind>>> = {};
+  for (const [barrelPath, symbols] of byPath.entries()) {
+    result[barrelPath] = Object.freeze(Object.fromEntries(symbols.entries()));
+  }
+  return result;
+}
+
+function normalizeArcGisModulePath(modulePath: string): string {
+  return modulePath.endsWith(".js") ? modulePath.slice(0, -3) : modulePath;
+}
+
+function resolveArcGisImportKindFromModule(
+  modulePath: string,
+  importedName: string,
+): CodemodConstructorKind | undefined {
+  const normalizedModulePath = normalizeArcGisModulePath(modulePath);
+  const spec = MODULE_TO_SPEC.get(modulePath) ?? MODULE_TO_SPEC.get(normalizedModulePath);
+  if (spec) {
+    if (importedName === "default") {
+      return spec.kind;
+    }
+    const inferredSymbol = normalizedModulePath.slice(normalizedModulePath.lastIndexOf("/") + 1);
+    if (importedName === inferredSymbol) {
+      return spec.kind;
+    }
+    return undefined;
+  }
+
+  return resolveArcGisBarrelImportKind(normalizedModulePath, importedName);
+}
+
+function resolveArcGisExportAllKinds(modulePath: string): ReadonlyArray<readonly [string, CodemodConstructorKind]> {
+  const normalizedModulePath = normalizeArcGisModulePath(modulePath);
+  const spec = MODULE_TO_SPEC.get(modulePath) ?? MODULE_TO_SPEC.get(normalizedModulePath);
+  if (spec) {
+    const inferredSymbol = normalizedModulePath.slice(normalizedModulePath.lastIndexOf("/") + 1);
+    if (!inferredSymbol) {
+      return [];
+    }
+    return [[inferredSymbol, spec.kind]];
+  }
+
+  const barrelKinds = ARCGIS_BARREL_KIND_BY_PATH[normalizedModulePath];
+  if (!barrelKinds) {
+    return [];
+  }
+  return Object.entries(barrelKinds);
+}
+
+function resolveLocalModulePath(
+  importerFile: string,
+  moduleSpecifier: string,
+  sourceFilesSet: ReadonlySet<string>,
+): string | undefined {
+  if (!moduleSpecifier.startsWith(".") && !moduleSpecifier.startsWith("/")) {
+    return undefined;
+  }
+
+  const basePath = path.resolve(path.dirname(importerFile), moduleSpecifier);
+  const candidates: string[] = [];
+
+  if (path.extname(basePath)) {
+    candidates.push(basePath);
+  } else {
+    candidates.push(basePath);
+    for (const extension of SOURCE_EXTENSIONS) {
+      candidates.push(`${basePath}${extension}`);
+    }
+    for (const extension of SOURCE_EXTENSIONS) {
+      candidates.push(path.join(basePath, `index${extension}`));
+    }
+  }
+
+  for (const candidate of candidates) {
+    const resolved = path.resolve(candidate);
+    if (sourceFilesSet.has(resolved)) {
+      return resolved;
+    }
+  }
+  return undefined;
+}
+
+function buildLocalArcGisReExportIndex(
+  files: readonly string[],
+  sourceFilesSet: ReadonlySet<string>,
+): ReadonlyMap<string, Readonly<Record<string, CodemodConstructorKind>>> {
+  type ReExportEdge =
+    | {
+        kind: "all";
+        file: string;
+        moduleSpecifier: string;
+      }
+    | {
+        kind: "named";
+        file: string;
+        moduleSpecifier: string;
+        mappings: Array<{ importedName: string; exportedName: string }>;
+      };
+
+  const byFile = new Map<string, Map<string, CodemodConstructorKind>>();
+  const localEdges: ReExportEdge[] = [];
+
+  for (const file of files) {
+    let source: string;
+    try {
+      source = fs.readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+
+    const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+    const exportsBySymbol = new Map<string, CodemodConstructorKind>();
+
+    for (const statement of sourceFile.statements) {
+      if (!ts.isExportDeclaration(statement) || !statement.moduleSpecifier) {
+        continue;
+      }
+      if (!ts.isStringLiteral(statement.moduleSpecifier)) {
+        continue;
+      }
+
+      const moduleSpecifier = statement.moduleSpecifier.text;
+      if (moduleSpecifier.startsWith("@arcgis/core/")) {
+        if (!statement.exportClause) {
+          for (const [symbol, kind] of resolveArcGisExportAllKinds(moduleSpecifier)) {
+            if (!exportsBySymbol.has(symbol)) {
+              exportsBySymbol.set(symbol, kind);
+            }
+          }
+          continue;
+        }
+
+        if (ts.isNamedExports(statement.exportClause)) {
+          for (const element of statement.exportClause.elements) {
+            const importedName = element.propertyName?.text ?? element.name.text;
+            const kind = resolveArcGisImportKindFromModule(moduleSpecifier, importedName);
+            if (!kind) {
+              continue;
+            }
+            const exportedName = element.name.text;
+            if (!exportsBySymbol.has(exportedName)) {
+              exportsBySymbol.set(exportedName, kind);
+            }
+          }
+        }
+        continue;
+      }
+
+      if (!moduleSpecifier.startsWith(".") && !moduleSpecifier.startsWith("/")) {
+        continue;
+      }
+      if (!statement.exportClause) {
+        localEdges.push({
+          kind: "all",
+          file,
+          moduleSpecifier,
+        });
+        continue;
+      }
+      if (!ts.isNamedExports(statement.exportClause)) {
+        continue;
+      }
+
+      const mappings: Array<{ importedName: string; exportedName: string }> = [];
+      for (const element of statement.exportClause.elements) {
+        mappings.push({
+          importedName: element.propertyName?.text ?? element.name.text,
+          exportedName: element.name.text,
+        });
+      }
+      if (mappings.length > 0) {
+        localEdges.push({
+          kind: "named",
+          file,
+          moduleSpecifier,
+          mappings,
+        });
+      }
+    }
+
+    if (exportsBySymbol.size > 0) {
+      byFile.set(path.resolve(file), exportsBySymbol);
+    }
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const edge of localEdges) {
+      const sourcePath = resolveLocalModulePath(edge.file, edge.moduleSpecifier, sourceFilesSet);
+      if (!sourcePath) {
+        continue;
+      }
+
+      const sourceExports = byFile.get(sourcePath);
+      if (!sourceExports || sourceExports.size === 0) {
+        continue;
+      }
+
+      let targetExports = byFile.get(path.resolve(edge.file));
+      if (!targetExports) {
+        targetExports = new Map<string, CodemodConstructorKind>();
+        byFile.set(path.resolve(edge.file), targetExports);
+      }
+
+      if (edge.kind === "all") {
+        for (const [exportedName, kind] of sourceExports.entries()) {
+          if (targetExports.has(exportedName)) {
+            continue;
+          }
+          targetExports.set(exportedName, kind);
+          changed = true;
+        }
+        continue;
+      }
+
+      for (const mapping of edge.mappings) {
+        const kind = sourceExports.get(mapping.importedName);
+        if (!kind || targetExports.has(mapping.exportedName)) {
+          continue;
+        }
+        targetExports.set(mapping.exportedName, kind);
+        changed = true;
+      }
+    }
+  }
+
+  const frozen = new Map<string, Readonly<Record<string, CodemodConstructorKind>>>();
+  for (const [file, exportsBySymbol] of byFile.entries()) {
+    if (exportsBySymbol.size === 0) {
+      continue;
+    }
+    frozen.set(file, Object.freeze(Object.fromEntries(exportsBySymbol.entries())));
+  }
+  return frozen;
+}
+
+function createEmptyByKindMetrics(): CodemodMetricsByKind {
+  return {
+    "feature-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    graphic: { total: 0, autoMigrated: 0, manual: 0 },
+    "point-geometry": { total: 0, autoMigrated: 0, manual: 0 },
+    "polyline-geometry": { total: 0, autoMigrated: 0, manual: 0 },
+    "polygon-geometry": { total: 0, autoMigrated: 0, manual: 0 },
+    "extent-geometry": { total: 0, autoMigrated: 0, manual: 0 },
+    "spatial-reference": { total: 0, autoMigrated: 0, manual: 0 },
+    color: { total: 0, autoMigrated: 0, manual: 0 },
+    "simple-line-symbol": { total: 0, autoMigrated: 0, manual: 0 },
+    "simple-marker-symbol": { total: 0, autoMigrated: 0, manual: 0 },
+    "picture-marker-symbol": { total: 0, autoMigrated: 0, manual: 0 },
+    "text-symbol": { total: 0, autoMigrated: 0, manual: 0 },
+    "label-class": { total: 0, autoMigrated: 0, manual: 0 },
+    "simple-fill-symbol": { total: 0, autoMigrated: 0, manual: 0 },
+    "class-breaks-renderer": { total: 0, autoMigrated: 0, manual: 0 },
+    "simple-renderer": { total: 0, autoMigrated: 0, manual: 0 },
+    "unique-value-renderer": { total: 0, autoMigrated: 0, manual: 0 },
+    "graphics-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "group-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "map-image-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "tile-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "route-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "route-task": { total: 0, autoMigrated: 0, manual: 0 },
+    basemap: { total: 0, autoMigrated: 0, manual: 0 },
+    map: { total: 0, autoMigrated: 0, manual: 0 },
+    "map-view": { total: 0, autoMigrated: 0, manual: 0 },
+    "scene-view": { total: 0, autoMigrated: 0, manual: 0 },
+    "web-map": { total: 0, autoMigrated: 0, manual: 0 },
+    "layer-list": { total: 0, autoMigrated: 0, manual: 0 },
+    "table-list-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "feature-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "feature-templates-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "feature-form-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "feature-table-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "feature-set": { total: 0, autoMigrated: 0, manual: 0 },
+    "legend-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "popup-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "popup-template": { total: 0, autoMigrated: 0, manual: 0 },
+    "swipe-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "print-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "home-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "basemap-toggle-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "locate-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "scale-bar-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "search-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "basemap-layer-list-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "basemap-gallery-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "expand-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "compass-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "bookmarks-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "fullscreen-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "zoom-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "attribution-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "sketch-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "editor-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "track-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "distance-measurement-2d-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "area-measurement-2d-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "measurement-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "time-slider-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "directions-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "coordinate-conversion-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    query: { total: 0, autoMigrated: 0, manual: 0 },
+    "oauth-info": { total: 0, autoMigrated: 0, manual: 0 },
+    "identity-manager": { total: 0, autoMigrated: 0, manual: 0 },
+    "esri-request": { total: 0, autoMigrated: 0, manual: 0 },
+    "esri-config": { total: 0, autoMigrated: 0, manual: 0 },
+    "reactive-utils": { total: 0, autoMigrated: 0, manual: 0 },
+    "feature-filter": { total: 0, autoMigrated: 0, manual: 0 },
+    "vector-tile-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "geojson-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "wms-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "wfs-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "imagery-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "geometry-engine": { total: 0, autoMigrated: 0, manual: 0 },
+  };
+}
+
+function collectSupportedImports(
+  sourceFile: ts.SourceFile,
+  file: string,
+  localArcGisReExports: ReadonlyMap<string, Readonly<Record<string, CodemodConstructorKind>>>,
+  sourceFilesSet: ReadonlySet<string>,
+): ArcGisImportBinding[] {
+  const result: ArcGisImportBinding[] = [];
+
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+
+    const modulePath = statement.moduleSpecifier.text;
+    const normalizedModulePath = normalizeArcGisModulePath(modulePath);
+    const spec = MODULE_TO_SPEC.get(modulePath) ?? MODULE_TO_SPEC.get(normalizedModulePath);
+
+    const importClause = statement.importClause;
+    if (!importClause) {
+      continue;
+    }
+
+    const namedBindings = importClause.namedBindings;
+    if (spec) {
+      if (importClause.name) {
+        result.push({
+          kind: spec.kind,
+          localName: importClause.name.text,
+          importStyle: "identifier",
+          sourceKind: "import",
+        });
+      }
+
+      if (namedBindings && ts.isNamedImports(namedBindings)) {
+        for (const element of namedBindings.elements) {
+          const importedName = element.propertyName?.text ?? element.name.text;
+          if (importedName === "default") {
+            result.push({
+              kind: spec.kind,
+              localName: element.name.text,
+              importStyle: "identifier",
+              sourceKind: "import",
+            });
+          }
+        }
+      }
+      if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+        result.push({
+          kind: spec.kind,
+          localName: namedBindings.name.text,
+          importStyle: "namespace-default",
+          sourceKind: "import",
+        });
+      }
+      continue;
+    }
+
+    if (!namedBindings || !ts.isNamedImports(namedBindings)) {
+      continue;
+    }
+
+    if (modulePath.startsWith(".") || modulePath.startsWith("/")) {
+      const resolvedImportPath = resolveLocalModulePath(file, modulePath, sourceFilesSet);
+      if (!resolvedImportPath) {
+        continue;
+      }
+      const reExportedKindsBySymbol = localArcGisReExports.get(resolvedImportPath);
+      if (!reExportedKindsBySymbol) {
+        continue;
+      }
+
+      for (const element of namedBindings.elements) {
+        const importedName = element.propertyName?.text ?? element.name.text;
+        const kind = reExportedKindsBySymbol[importedName];
+        if (!kind) {
+          continue;
+        }
+        result.push({
+          kind,
+          localName: element.name.text,
+          importStyle: "identifier",
+          sourceKind: "import",
+        });
+      }
+      continue;
+    }
+
+    for (const element of namedBindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      const kind = resolveArcGisBarrelImportKind(normalizedModulePath, importedName);
+      if (!kind) {
+        continue;
+      }
+      result.push({
+        kind,
+        localName: element.name.text,
+        importStyle: "identifier",
+        sourceKind: "import",
+      });
+    }
+  }
+
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) {
+      continue;
+    }
+
+    for (const declaration of statement.declarationList.declarations) {
+      const requireBinding = extractRequireBindingFromDeclaration(declaration);
+      if (!requireBinding) {
+        continue;
+      }
+
+      const spec = MODULE_TO_SPEC.get(requireBinding.modulePath);
+      if (!spec) {
+        continue;
+      }
+
+      result.push({
+        kind: spec.kind,
+        localName: requireBinding.localName,
+        importStyle: "identifier",
+        sourceKind: "require",
+      });
+    }
+  }
+
+  return result;
+}
+
+function collectShadowedImportLocalNames(
+  sourceFile: ts.SourceFile,
+  importLocalNames: ReadonlySet<string>,
+): Set<string> {
+  if (importLocalNames.size === 0) {
+    return new Set();
+  }
+
+  const shadowed = new Set<string>();
+  walk(sourceFile, (node) => {
+    if (!ts.isIdentifier(node) || !importLocalNames.has(node.text)) {
+      return;
+    }
+    if (!isShadowingDeclarationIdentifier(node)) {
+      return;
+    }
+    shadowed.add(node.text);
+  });
+
+  return shadowed;
+}
+
+function isShadowingDeclarationIdentifier(node: ts.Identifier): boolean {
+  const parent = node.parent;
+
+  if (ts.isImportClause(parent) || ts.isImportSpecifier(parent) || ts.isNamespaceImport(parent)) {
+    return false;
+  }
+  if (isArcGisRequireBindingIdentifier(node)) {
+    return false;
+  }
+
+  if (
+    (ts.isVariableDeclaration(parent) ||
+      ts.isParameter(parent) ||
+      ts.isBindingElement(parent) ||
+      ts.isFunctionDeclaration(parent) ||
+      ts.isFunctionExpression(parent) ||
+      ts.isClassDeclaration(parent) ||
+      ts.isClassExpression(parent) ||
+      ts.isEnumDeclaration(parent)) &&
+    parent.name === node
+  ) {
+    return true;
+  }
+
+  if (ts.isCatchClause(parent) && parent.variableDeclaration?.name === node) {
+    return true;
+  }
+
+  return false;
+}
+
+function isArcGisRequireBindingIdentifier(node: ts.Identifier): boolean {
+  if (ts.isVariableDeclaration(node.parent) && node.parent.name === node) {
+    if (!node.parent.initializer) {
+      return false;
+    }
+    const modulePath = extractModulePathFromRequireInitializer(node.parent.initializer);
+    return modulePath !== undefined && MODULE_TO_SPEC.has(modulePath);
+  }
+
+  if (
+    ts.isBindingElement(node.parent) &&
+    node.parent.name === node &&
+    ts.isObjectBindingPattern(node.parent.parent) &&
+    ts.isVariableDeclaration(node.parent.parent.parent) &&
+    node.parent.parent.parent.initializer
+  ) {
+    const modulePath = extractModulePathFromRequireInitializer(node.parent.parent.parent.initializer);
+    return modulePath !== undefined && MODULE_TO_SPEC.has(modulePath);
+  }
+
+  return false;
+}
+
+function resolveConstructorRewriteTarget(
+  expression: ts.Expression,
+  sourceFile: ts.SourceFile,
+  importsByLocalName: ReadonlyMap<string, ArcGisImportBinding>,
+): { binding: ArcGisImportBinding; start: number; end: number } | undefined {
+  if (ts.isIdentifier(expression)) {
+    const binding = importsByLocalName.get(expression.text);
+    if (!binding || binding.importStyle !== "identifier") {
+      return undefined;
+    }
+
+    return {
+      binding,
+      start: expression.getStart(sourceFile),
+      end: expression.getEnd(),
+    };
+  }
+
+  if (
+    ts.isPropertyAccessExpression(expression) &&
+    expression.name.text === "default" &&
+    ts.isIdentifier(expression.expression)
+  ) {
+    const binding = importsByLocalName.get(expression.expression.text);
+    if (!binding || binding.importStyle !== "namespace-default") {
+      return undefined;
+    }
+
+    return {
+      binding,
+      start: expression.getStart(sourceFile),
+      end: expression.getEnd(),
+    };
+  }
+
+  return undefined;
+}
+
+function ensureCompatNamedImports(
+  file: string,
+  source: string,
+  symbols: readonly string[],
+  importPath: string,
+): { nextSource: string; changed: boolean } {
+  if (symbols.length === 0) {
+    return { nextSource: source, changed: false };
+  }
+
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (statement.moduleSpecifier.text !== importPath) {
+      continue;
+    }
+
+    const importClause = statement.importClause;
+    const namedBindings = importClause?.namedBindings;
+    if (namedBindings && ts.isNamedImports(namedBindings)) {
+      const existingSpecifiers = namedBindings.elements.map((element) => element.getText(sourceFile));
+      const existingLocalNames = new Set(namedBindings.elements.map((element) => element.name.text));
+      const missing = symbols.filter((symbol) => !existingLocalNames.has(symbol));
+      if (missing.length === 0) {
+        return { nextSource: source, changed: false };
+      }
+
+      const mergedSymbols = [...existingSpecifiers, ...missing];
+      const replacement = buildNamedImportText(importPath, importClause?.name?.text, mergedSymbols);
+
+      const nextSource = applyTextEdits(source, [
+        {
+          start: statement.getStart(sourceFile),
+          end: statement.getEnd(),
+          text: replacement,
+        },
+      ]);
+      return { nextSource, changed: true };
+    }
+
+    const importLine = `${buildNamedImportText(importPath, undefined, symbols)}\n`;
+    const insertion = statement.getEnd();
+    const nextSource = `${source.slice(0, insertion)}\n${importLine}${source.slice(insertion)}`;
+    return { nextSource, changed: true };
+  }
+
+  const insertionIndex = findImportInsertionIndex(sourceFile);
+  const importLine = buildNamedImportText(importPath, undefined, symbols);
+  const prefix = source.slice(0, insertionIndex);
+  const suffix = source.slice(insertionIndex);
+  const needsLeadingNewline = prefix.length > 0 && !prefix.endsWith("\n");
+  const leading = needsLeadingNewline ? "\n" : "";
+  const needsTrailingNewline = suffix.length > 0 && !suffix.startsWith("\n") && !importLine.endsWith("\n");
+  const trailing = needsTrailingNewline ? "\n" : "";
+
+  return {
+    nextSource: `${prefix}${leading}${importLine}${trailing}${suffix}`,
+    changed: true,
+  };
+}
+
+function ensureCompatNamedRequire(
+  file: string,
+  source: string,
+  symbols: readonly string[],
+  importPath: string,
+): { nextSource: string; changed: boolean } {
+  if (symbols.length === 0) {
+    return { nextSource: source, changed: false };
+  }
+
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) {
+      continue;
+    }
+    for (const declaration of statement.declarationList.declarations) {
+      const modulePath = declaration.initializer
+        ? extractModulePathFromRequireInitializer(declaration.initializer)
+        : undefined;
+      if (modulePath !== importPath) {
+        continue;
+      }
+      if (!ts.isObjectBindingPattern(declaration.name)) {
+        continue;
+      }
+      const existingExportedNames = new Set<string>();
+      const renderedSpecifiers: string[] = [];
+      for (const element of declaration.name.elements) {
+        if (!ts.isIdentifier(element.name)) {
+          continue;
+        }
+        const localName = element.name.text;
+        let exportedName: string;
+        if (element.propertyName && ts.isIdentifier(element.propertyName)) {
+          exportedName = element.propertyName.text;
+          renderedSpecifiers.push(`${exportedName}: ${localName}`);
+        } else {
+          exportedName = localName;
+          renderedSpecifiers.push(localName);
+        }
+        existingExportedNames.add(exportedName);
+      }
+      const missing = symbols.filter((symbol) => !existingExportedNames.has(symbol));
+      if (missing.length === 0) {
+        return { nextSource: source, changed: false };
+      }
+      const mergedSpecifiers = [...renderedSpecifiers, ...missing];
+      const replacement = `const { ${mergedSpecifiers.join(", ")} } = require("${importPath}");`;
+      const nextSource = applyTextEdits(source, [
+        {
+          start: statement.getStart(sourceFile),
+          end: statement.getEnd(),
+          text: replacement,
+        },
+      ]);
+      return { nextSource, changed: true };
+    }
+  }
+
+  const requireLine = `const { ${[...symbols].sort().join(", ")} } = require("${importPath}");`;
+  const insertionIndex = findRequireInsertionIndexAfterDirectives(sourceFile, source);
+  const prefix = source.slice(0, insertionIndex);
+  const suffix = source.slice(insertionIndex);
+  const needsLeadingNewline = prefix.length > 0 && !prefix.endsWith("\n");
+  const leading = needsLeadingNewline ? "\n" : "";
+  const needsTrailingNewline = suffix.length > 0 && !suffix.startsWith("\n");
+  const trailing = needsTrailingNewline ? "\n" : "";
+  return {
+    nextSource: `${prefix}${leading}${requireLine}${trailing}${suffix}`,
+    changed: true,
+  };
+}
+
+function findRequireInsertionIndexAfterDirectives(sourceFile: ts.SourceFile, source: string): number {
+  let lastDirectiveEnd = -1;
+  for (const statement of sourceFile.statements) {
+    if (!ts.isExpressionStatement(statement) || !ts.isStringLiteral(statement.expression)) {
+      break;
+    }
+    lastDirectiveEnd = statement.getEnd();
+  }
+  if (lastDirectiveEnd < 0) {
+    return findImportInsertionIndex(sourceFile);
+  }
+  let cursor = lastDirectiveEnd;
+  while (cursor < source.length && (source[cursor] === " " || source[cursor] === "\t")) {
+    cursor += 1;
+  }
+  if (cursor < source.length && source[cursor] === "\n") {
+    cursor += 1;
+  }
+  return cursor;
+}
+
+function findNamespaceImportAlias(sourceFile: ts.SourceFile, importPath: string): string | undefined {
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (statement.moduleSpecifier.text !== importPath) {
+      continue;
+    }
+
+    const namedBindings = statement.importClause?.namedBindings;
+    if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+      return namedBindings.name.text;
+    }
+  }
+
+  return undefined;
+}
+
+function ensureNamespaceImport(
+  file: string,
+  source: string,
+  importPath: string,
+  namespaceAlias: string,
+): { nextSource: string; changed: boolean } {
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (statement.moduleSpecifier.text !== importPath) {
+      continue;
+    }
+
+    const namedBindings = statement.importClause?.namedBindings;
+    if (namedBindings && ts.isNamespaceImport(namedBindings) && namedBindings.name.text === namespaceAlias) {
+      return { nextSource: source, changed: false };
+    }
+
+    const importLine = `import * as ${namespaceAlias} from "${importPath}";\n`;
+    const insertion = statement.getEnd();
+    return {
+      nextSource: `${source.slice(0, insertion)}\n${importLine}${source.slice(insertion)}`,
+      changed: true,
+    };
+  }
+
+  const insertionIndex = findImportInsertionIndex(sourceFile);
+  const importLine = `import * as ${namespaceAlias} from "${importPath}";`;
+  const prefix = source.slice(0, insertionIndex);
+  const suffix = source.slice(insertionIndex);
+  const needsLeadingNewline = prefix.length > 0 && !prefix.endsWith("\n");
+  const leading = needsLeadingNewline ? "\n" : "";
+  const needsTrailingNewline = suffix.length > 0 && !suffix.startsWith("\n") && !importLine.endsWith("\n");
+  const trailing = needsTrailingNewline ? "\n" : "";
+
+  return {
+    nextSource: `${prefix}${leading}${importLine}${trailing}${suffix}`,
+    changed: true,
+  };
+}
+
+function buildNamedImportText(
+  importPath: string,
+  defaultImport: string | undefined,
+  namedImports: readonly string[],
+): string {
+  const uniqueNamed = Array.from(new Set(namedImports));
+  const namedImportText = `{ ${uniqueNamed.join(", ")} }`;
+  if (defaultImport) {
+    return `import ${defaultImport}, ${namedImportText} from "${importPath}";`;
+  }
+
+  return `import ${namedImportText} from "${importPath}";`;
+}
+
+function findImportInsertionIndex(sourceFile: ts.SourceFile): number {
+  let index = 0;
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement)) {
+      break;
+    }
+    index = statement.end;
+  }
+  return index;
+}
+
+function isArcGisDynamicImportCall(node: ts.Node): node is ts.CallExpression {
+  if (!ts.isCallExpression(node)) {
+    return false;
+  }
+  if (node.expression.kind !== ts.SyntaxKind.ImportKeyword) {
+    return false;
+  }
+  return node.arguments.length === 1;
+}
+
+function buildCompatDynamicImportExpression(compatImportPath: string, compatSymbol: string): string {
+  return `import("${compatImportPath}").then((m) => ({ default: m.${compatSymbol} }))`;
+}
+
+function buildEsriLeafletConstructorExpression(
+  kind: CodemodConstructorKind,
+  node: ts.NewExpression,
+  sourceFile: ts.SourceFile,
+  namespaceAlias: string,
+): string | undefined {
+  const method = esriLeafletMethodForKind(kind);
+  if (!method) {
+    return undefined;
+  }
+
+  const argsText = node.arguments?.map((arg) => arg.getText(sourceFile)).join(", ") ?? "";
+  return `${namespaceAlias}.${method}(${argsText})`;
+}
+
+function buildEsriLeafletDynamicImportExpression(
+  kind: CodemodConstructorKind,
+  namespaceAlias: string,
+): string | undefined {
+  const method = esriLeafletMethodForKind(kind);
+  if (!method) {
+    return undefined;
+  }
+
+  return `Promise.resolve({ default: ${namespaceAlias}.${method} })`;
+}
+
+function buildHonuaMapLibreConstructorExpression(
+  kind: CodemodConstructorKind,
+  node: ts.NewExpression,
+  sourceFile: ts.SourceFile,
+  mapLibreNamespaceAlias: string,
+): { text: string; helperSymbols: string[]; requiresMapLibreImport: boolean } | undefined {
+  if (!HONUA_MAPLIBRE_NATIVE_KINDS.has(kind)) {
+    return undefined;
+  }
+
+  switch (kind) {
+    case "feature-layer":
+      return {
+        text: `createHonuaFeatureServiceLayer(${buildHonuaMapLibreLayerOptionsText(node, sourceFile)})`,
+        helperSymbols: ["createHonuaFeatureServiceLayer"],
+        requiresMapLibreImport: false,
+      };
+    case "map-image-layer":
+      return {
+        text: `createHonuaMapServiceLayer(${buildHonuaMapLibreLayerOptionsText(node, sourceFile)})`,
+        helperSymbols: ["createHonuaMapServiceLayer"],
+        requiresMapLibreImport: false,
+      };
+    case "tile-layer":
+      return {
+        text: `createHonuaTileServiceLayer(${buildHonuaMapLibreLayerOptionsText(node, sourceFile)})`,
+        helperSymbols: ["createHonuaTileServiceLayer"],
+        requiresMapLibreImport: false,
+      };
+    case "map":
+      return {
+        text: `createHonuaMapLibreStyle(${buildOptionalObjectOptionsText(node, sourceFile)})`,
+        helperSymbols: ["createHonuaMapLibreStyle"],
+        requiresMapLibreImport: false,
+      };
+    case "map-view":
+      return {
+        text: `new ${mapLibreNamespaceAlias}.Map(createHonuaMapLibreMapOptions(${buildOptionalObjectOptionsText(
+          node,
+          sourceFile,
+        )}))`,
+        helperSymbols: ["createHonuaMapLibreMapOptions"],
+        requiresMapLibreImport: true,
+      };
+    default:
+      return undefined;
+  }
+}
+
+function buildHonuaMapLibreLayerOptionsText(node: ts.NewExpression, sourceFile: ts.SourceFile): string {
+  const arg = node.arguments?.[0];
+  if (!arg || !ts.isObjectLiteralExpression(arg)) {
+    return "{}";
+  }
+
+  const assignedIdentifier = resolveAssignedIdentifierForNewExpression(node, sourceFile);
+  if (!assignedIdentifier || objectLiteralHasProperty(arg, "id")) {
+    return arg.getText(sourceFile);
+  }
+
+  return addObjectLiteralPropertyText(arg, sourceFile, "id", JSON.stringify(assignedIdentifier));
+}
+
+function buildOptionalObjectOptionsText(node: ts.NewExpression, sourceFile: ts.SourceFile): string {
+  const arg = node.arguments?.[0];
+  if (!arg) {
+    return "{}";
+  }
+  return arg.getText(sourceFile);
+}
+
+type HonuaMapLibreWebMapOutcome =
+  | { kind: "rewrite"; text: string; manualGaps: readonly WebMapMapLibreManualGap[] }
+  | { kind: "manual"; reason: string };
+
+/**
+ * Decide how to migrate a `new WebMap({...})` call for the `honua-maplibre`
+ * target. Safe WebMap JSON object literals are rewritten to a
+ * `webmapJsonToMapLibreStyle({...})` call; any other shape (string portal
+ * item id, identifier references, computed properties, spreads, ?)
+ * falls through to a manual TODO carrying a clear reason.
+ */
+function handleHonuaMapLibreWebMapNewExpression(
+  node: ts.NewExpression,
+  sourceFile: ts.SourceFile,
+): HonuaMapLibreWebMapOutcome {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { kind: "manual", reason: HONUA_MAPLIBRE_WEBMAP_DYNAMIC_REASON };
+  }
+  if (args.length !== 1) {
+    return { kind: "manual", reason: HONUA_MAPLIBRE_WEBMAP_UNSUPPORTED_SHAPE_REASON };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return { kind: "manual", reason: HONUA_MAPLIBRE_WEBMAP_UNSUPPORTED_SHAPE_REASON };
+  }
+
+  // Reject portal-loaded / dynamic shapes outright ? they have no static
+  // JSON to feed into webmapJsonToMapLibreStyle.
+  if (objectLiteralHasProperty(arg, "portalItem")) {
+    return { kind: "manual", reason: HONUA_MAPLIBRE_WEBMAP_DYNAMIC_REASON };
+  }
+
+  const evaluated = evaluateObjectLiteralAsJson(arg);
+  if (!evaluated.ok) {
+    return { kind: "manual", reason: HONUA_MAPLIBRE_WEBMAP_UNSUPPORTED_SHAPE_REASON };
+  }
+
+  // Require at least one WebMap-JSON-specific top-level key so we don't
+  // mistake an ArcGIS JS API constructor literal (e.g. `{ basemap:
+  // 'streets' }`) for a WebMap JSON document. WebMap JSON uses
+  // `baseMap` (capital M) and/or `operationalLayers`.
+  const json = evaluated.value as Record<string, unknown>;
+  const looksLikeWebMapJson =
+    Object.prototype.hasOwnProperty.call(json, "operationalLayers") ||
+    Object.prototype.hasOwnProperty.call(json, "baseMap");
+  if (!looksLikeWebMapJson) {
+    return { kind: "manual", reason: HONUA_MAPLIBRE_WEBMAP_DYNAMIC_REASON };
+  }
+
+  let result: { manualGaps: readonly WebMapMapLibreManualGap[] };
+  try {
+    result = webmapJsonToMapLibreStyle(json as WebMapJson);
+  } catch {
+    return { kind: "manual", reason: HONUA_MAPLIBRE_WEBMAP_UNSUPPORTED_SHAPE_REASON };
+  }
+
+  return {
+    kind: "rewrite",
+    text: `webmapJsonToMapLibreStyle(${arg.getText(sourceFile)})`,
+    manualGaps: result.manualGaps,
+  };
+}
+
+function formatWebMapMapLibreGapReason(gap: WebMapMapLibreManualGap): string {
+  const pathSuffix = gap.path ? ` at ${gap.path}` : "";
+  return `WebMap ? MapLibre style derivation [${gap.kind}]${pathSuffix}: ${gap.reason}`;
+}
+
+/**
+ * Evaluate a TypeScript object literal as a JSON value. Returns ok:false
+ * if any node is non-literal (identifier, call, template expression,
+ * computed property, spread, method shorthand, etc.). Used by the
+ * WebMap ? MapLibre style derivation rewrite to gate which constructor
+ * arguments can be statically converted.
+ */
+function evaluateObjectLiteralAsJson(
+  node: ts.ObjectLiteralExpression,
+): { ok: true; value: Record<string, unknown> } | { ok: false } {
+  const result: Record<string, unknown> = {};
+  for (const property of node.properties) {
+    if (!ts.isPropertyAssignment(property)) {
+      return { ok: false };
+    }
+    const name = getPropertyNameText(property.name);
+    if (!name) {
+      return { ok: false };
+    }
+    const value = evaluateExpressionAsJson(property.initializer);
+    if (!value.ok) {
+      return { ok: false };
+    }
+    result[name] = value.value;
+  }
+  return { ok: true, value: result };
+}
+
+function evaluateExpressionAsJson(node: ts.Expression): { ok: true; value: unknown } | { ok: false } {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    return { ok: true, value: node.text };
+  }
+  if (ts.isNumericLiteral(node)) {
+    return { ok: true, value: Number(node.text) };
+  }
+  if (node.kind === ts.SyntaxKind.TrueKeyword) {
+    return { ok: true, value: true };
+  }
+  if (node.kind === ts.SyntaxKind.FalseKeyword) {
+    return { ok: true, value: false };
+  }
+  if (node.kind === ts.SyntaxKind.NullKeyword) {
+    return { ok: true, value: null };
+  }
+  if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.MinusToken) {
+    const inner = evaluateExpressionAsJson(node.operand);
+    if (!inner.ok || typeof inner.value !== "number") {
+      return { ok: false };
+    }
+    return { ok: true, value: -inner.value };
+  }
+  if (ts.isArrayLiteralExpression(node)) {
+    const values: unknown[] = [];
+    for (const element of node.elements) {
+      if (ts.isOmittedExpression(element) || ts.isSpreadElement(element)) {
+        return { ok: false };
+      }
+      const evaluated = evaluateExpressionAsJson(element);
+      if (!evaluated.ok) {
+        return { ok: false };
+      }
+      values.push(evaluated.value);
+    }
+    return { ok: true, value: values };
+  }
+  if (ts.isObjectLiteralExpression(node)) {
+    return evaluateObjectLiteralAsJson(node);
+  }
+  if (ts.isParenthesizedExpression(node)) {
+    return evaluateExpressionAsJson(node.expression);
+  }
+  return { ok: false };
+}
+
+function esriLeafletMethodForKind(kind: CodemodConstructorKind): string | undefined {
+  if (!ESRI_LEAFLET_NATIVE_KINDS.has(kind)) {
+    return undefined;
+  }
+
+  switch (kind) {
+    case "feature-layer":
+      return "featureLayer";
+    case "map-image-layer":
+      return "dynamicMapLayer";
+    case "tile-layer":
+      return "tiledMapLayer";
+    default:
+      return undefined;
+  }
+}
+
+function esriLeafletCompatFallbackSymbolForKind(kind: CodemodConstructorKind): string | undefined {
+  if (!ESRI_LEAFLET_COMPAT_FALLBACK_KINDS.has(kind)) {
+    return undefined;
+  }
+  return specForKind(kind).compatSymbol;
+}
+
+function resolveEsriLeafletForcedCompatFallbackSymbol(
+  kind: CodemodConstructorKind,
+  node: ts.NewExpression,
+  sourceFile: ts.SourceFile,
+  usageIndex: Map<string, Set<string>>,
+): string | undefined {
+  if (!ESRI_LEAFLET_NATIVE_KINDS.has(kind)) {
+    return undefined;
+  }
+
+  const assignedIdentifier = resolveAssignedIdentifierForNewExpression(node, sourceFile);
+  if (!assignedIdentifier) {
+    return undefined;
+  }
+
+  const memberUsage = usageIndex.get(assignedIdentifier);
+  if (!memberUsage || memberUsage.size === 0) {
+    return undefined;
+  }
+
+  if (kind === "feature-layer" && shouldForceFeatureLayerCompatFallback(memberUsage)) {
+    return specForKind(kind).compatSymbol;
+  }
+  if (kind === "map-image-layer" && shouldForceMapImageLayerCompatFallback(memberUsage)) {
+    return specForKind(kind).compatSymbol;
+  }
+
+  return undefined;
+}
+
+function shouldForceFeatureLayerCompatFallback(memberUsage: ReadonlySet<string>): boolean {
+  const methods = [
+    "queryFeatures",
+    "queryFeaturesAll",
+    "queryObjectIds",
+    "queryFeatureCount",
+    "queryExtent",
+    "queryRelatedFeatures",
+    "queryRelatedRecords",
+    "applyEdits",
+    "queryAttachments",
+    "listAttachments",
+    "deleteAttachments",
+    "addAttachment",
+    "updateAttachment",
+    "getField",
+    "listFields",
+    "createQuery",
+  ] as const;
+  for (const method of methods) {
+    if (memberUsage.has(method)) {
+      return true;
+    }
+  }
+  if (memberUsage.has("fields")) {
+    return true;
+  }
+  return false;
+}
+
+function shouldForceMapImageLayerCompatFallback(memberUsage: ReadonlySet<string>): boolean {
+  const methods = [
+    "exportImage",
+    "getLegend",
+    "legend",
+    "find",
+    "identify",
+    "createQuery",
+    "queryFeatures",
+    "queryFeaturesAll",
+    "queryFeatureCount",
+    "queryObjectIds",
+    "queryExtent",
+    "queryRelatedFeatures",
+    "queryRelatedRecords",
+    "sublayer",
+    "findSublayerById",
+  ] as const;
+  for (const method of methods) {
+    if (memberUsage.has(method)) {
+      return true;
+    }
+  }
+  if (memberUsage.has("allSublayers")) {
+    return true;
+  }
+  return false;
+}
+
+function resolveAssignedIdentifierForNewExpression(
+  node: ts.NewExpression,
+  sourceFile: ts.SourceFile,
+): string | undefined {
+  const parent = node.parent;
+  if (ts.isVariableDeclaration(parent) && parent.initializer === node && ts.isIdentifier(parent.name)) {
+    return parent.name.text;
+  }
+
+  if (
+    ts.isBinaryExpression(parent) &&
+    parent.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    parent.right === node &&
+    ts.isIdentifier(parent.left)
+  ) {
+    return parent.left.text;
+  }
+
+  if (
+    ts.isCallExpression(parent) &&
+    ts.isPropertyAccessExpression(parent.expression) &&
+    parent.expression.name.text === "push" &&
+    parent.arguments.some((argument) => argument === node)
+  ) {
+    // Constructor passed into a push call cannot be reliably tracked to subsequent member access.
+    return undefined;
+  }
+
+  if (
+    ts.isAsExpression(parent) &&
+    ts.isVariableDeclaration(parent.parent) &&
+    parent.parent.initializer === parent &&
+    ts.isIdentifier(parent.parent.name)
+  ) {
+    return parent.parent.name.text;
+  }
+
+  const nodeStart = node.getStart(sourceFile);
+  const statement = findEnclosingStatement(node);
+  if (!statement) {
+    return undefined;
+  }
+  if (statement.getStart(sourceFile) > nodeStart) {
+    return undefined;
+  }
+  return undefined;
+}
+
+function buildIdentifierMemberUsageIndex(sourceFile: ts.SourceFile): Map<string, Set<string>> {
+  const usageByIdentifier = new Map<string, Set<string>>();
+
+  walk(sourceFile, (node) => {
+    if (!ts.isPropertyAccessExpression(node) || !ts.isIdentifier(node.expression)) {
+      return;
+    }
+    const identifier = node.expression.text;
+    const member = node.name.text;
+    if (!identifier || !member) {
+      return;
+    }
+
+    let memberUsage = usageByIdentifier.get(identifier);
+    if (!memberUsage) {
+      memberUsage = new Set();
+      usageByIdentifier.set(identifier, memberUsage);
+    }
+    memberUsage.add(member);
+  });
+
+  return usageByIdentifier;
+}
+
+function findEnclosingStatement(node: ts.Node): ts.Statement | undefined {
+  let current: ts.Node | undefined = node;
+  while (current) {
+    if (ts.isStatement(current)) {
+      return current;
+    }
+    current = current.parent;
+  }
+  return undefined;
+}
+
+/**
+ * Receiver key for tracking which identifiers/this-properties are bound to a
+ * tracked arcgis `new XCompat(...)`. Identifiers are stored as their text; this
+ * member accesses are stored as `this.<name>`.
+ */
+function receiverKeyForExpression(expression: ts.Expression): string | undefined {
+  if (ts.isIdentifier(expression)) {
+    return expression.text;
+  }
+  if (
+    ts.isPropertyAccessExpression(expression) &&
+    expression.expression.kind === ts.SyntaxKind.ThisKeyword &&
+    ts.isIdentifier(expression.name)
+  ) {
+    return `this.${expression.name.text}`;
+  }
+  return undefined;
+}
+
+/**
+ * Collect the set of receiver keys (identifier names and `this.<name>`
+ * patterns) that are bound to a `new X(...)` whose constructor identifier
+ * resolves through the codemod's tracked imports. The result is used to scope
+ * receiver-sensitive rewrites (event-name remap, reactiveUtils.watch accessor)
+ * so we don't touch unrelated emitters that happen to live in a file with
+ * arcgis imports.
+ */
+function collectTrackedCompatReceiverKeys(
+  sourceFile: ts.SourceFile,
+  importsByLocalName: ReadonlyMap<string, ArcGisImportBinding>,
+): Set<string> {
+  const keys = new Set<string>();
+
+  walk(sourceFile, (node) => {
+    if (!ts.isNewExpression(node)) {
+      return;
+    }
+    const rewriteTarget = resolveConstructorRewriteTarget(node.expression, sourceFile, importsByLocalName);
+    if (!rewriteTarget) {
+      return;
+    }
+
+    const parent = node.parent;
+    if (ts.isVariableDeclaration(parent) && parent.initializer === node && ts.isIdentifier(parent.name)) {
+      keys.add(parent.name.text);
+      return;
+    }
+    if (
+      ts.isBinaryExpression(parent) &&
+      parent.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      parent.right === node
+    ) {
+      const key = receiverKeyForExpression(parent.left);
+      if (key) {
+        keys.add(key);
+      }
+      return;
+    }
+    if (
+      ts.isAsExpression(parent) &&
+      ts.isVariableDeclaration(parent.parent) &&
+      parent.parent.initializer === parent &&
+      ts.isIdentifier(parent.parent.name)
+    ) {
+      keys.add(parent.parent.name.text);
+      return;
+    }
+    if (ts.isPropertyDeclaration(parent) && parent.initializer === node && ts.isIdentifier(parent.name)) {
+      keys.add(`this.${parent.name.text}`);
+      return;
+    }
+  });
+
+  return keys;
+}
+
+/**
+ * Resolve the local name of a property access receiver used as `<receiver>.on`
+ * or `<receiver>.watch` ? returning an identifier text or `this.<name>`.
+ */
+function resolveReceiverKey(expression: ts.PropertyAccessExpression): string | undefined {
+  return receiverKeyForExpression(expression.expression);
+}
+
+/**
+ * Collect the local names that resolve to the reactiveUtils import binding
+ * (any of namespace import, default import, or `reactiveUtils` named import).
+ * `watch`-as-named-import is handled separately via the `watch` local name.
+ */
+function collectReactiveUtilsLocalNames(sourceFile: ts.SourceFile): {
+  namespaceNames: Set<string>;
+  watchNames: Set<string>;
+} {
+  const namespaceNames = new Set<string>();
+  const watchNames = new Set<string>();
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "reactive-utils") {
+      continue;
+    }
+    const importClause = statement.importClause;
+    if (!importClause) {
+      continue;
+    }
+    if (importClause.name) {
+      namespaceNames.add(importClause.name.text);
+    }
+    const namedBindings = importClause.namedBindings;
+    if (!namedBindings) {
+      continue;
+    }
+    if (ts.isNamespaceImport(namedBindings)) {
+      namespaceNames.add(namedBindings.name.text);
+      continue;
+    }
+    for (const element of namedBindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      const localName = element.name.text;
+      if (importedName === "default" || importedName === "reactiveUtils") {
+        namespaceNames.add(localName);
+      } else if (importedName === "watch") {
+        watchNames.add(localName);
+      }
+    }
+  }
+  return { namespaceNames, watchNames };
+}
+
+/**
+ * Inspect an arrow/function accessor passed to `reactiveUtils.watch(accessor, h)`.
+ * If the accessor body is a single property access chain on a tracked compat
+ * receiver, return the receiver key and the dot-joined property path. Otherwise
+ * return undefined so the caller can emit a manual TODO.
+ */
+function parseReactiveUtilsWatchAccessor(
+  accessor: ts.Expression,
+  trackedReceivers: ReadonlySet<string>,
+): { kind: "simple"; receiverText: string; propertyPath: string } | { kind: "complex" } | undefined {
+  if (!ts.isArrowFunction(accessor) && !ts.isFunctionExpression(accessor)) {
+    return undefined;
+  }
+  if (accessor.parameters.length !== 0) {
+    return { kind: "complex" };
+  }
+  let bodyExpression: ts.Expression | undefined;
+  if (ts.isArrowFunction(accessor) && !ts.isBlock(accessor.body)) {
+    bodyExpression = accessor.body;
+  } else {
+    const block = accessor.body as ts.Block;
+    if (block.statements.length !== 1) {
+      return { kind: "complex" };
+    }
+    const only = block.statements[0];
+    if (ts.isReturnStatement(only) && only.expression) {
+      bodyExpression = only.expression;
+    } else if (ts.isExpressionStatement(only)) {
+      bodyExpression = only.expression;
+    } else {
+      return { kind: "complex" };
+    }
+  }
+  if (!bodyExpression) {
+    return { kind: "complex" };
+  }
+  // Walk a property access chain. The deepest node must be an identifier (or `this`).
+  const segments: string[] = [];
+  let current: ts.Expression = bodyExpression;
+  while (ts.isPropertyAccessExpression(current)) {
+    if (!ts.isIdentifier(current.name)) {
+      return { kind: "complex" };
+    }
+    segments.unshift(current.name.text);
+    current = current.expression;
+  }
+  const receiverKey = receiverKeyForExpression(current);
+  if (!receiverKey || segments.length === 0) {
+    return { kind: "complex" };
+  }
+  if (!trackedReceivers.has(receiverKey)) {
+    return { kind: "complex" };
+  }
+  // current is the receiver expression ? produce its raw text using getText() at
+  // call site (we only have its node here, not the source file). The caller
+  // computes the receiver text from the original source.
+  return { kind: "simple", receiverText: receiverKey, propertyPath: segments.join(".") };
+}
+
+function handleReactiveUtilsWatchAccessor(options: {
+  node: ts.CallExpression;
+  accessor: ts.Expression;
+  parsed: ReturnType<typeof parseReactiveUtilsWatchAccessor>;
+  sourceFile: ts.SourceFile;
+  source: string;
+  file: string;
+  annotateTodos: boolean;
+  eventNameEdits: TextEdit[];
+  manualTodos: MigrationTodo[];
+  todoCommentEdits: TextEdit[];
+}): void {
+  const { node, accessor, parsed, sourceFile, source, file, annotateTodos } = options;
+  if (!parsed) {
+    return;
+  }
+  if (parsed.kind === "complex") {
+    const nodeStart = node.getStart(sourceFile);
+    const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+    options.manualTodos.push({
+      kind: "reactive-utils",
+      file,
+      line: location.line + 1,
+      column: location.character + 1,
+      reason: REACTIVE_UTILS_WATCH_ACCESSOR_REASON,
+      difficulty: "moderate",
+    });
+    if (annotateTodos) {
+      const lineStart = findLineStartOffset(source, nodeStart);
+      if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+        options.todoCommentEdits.push({
+          start: lineStart,
+          end: lineStart,
+          text: `// ${TODO_MARKER}[reactive-utils]: ${REACTIVE_UTILS_WATCH_ACCESSOR_REASON}\n`,
+        });
+      }
+    }
+    return;
+  }
+  // Simple: rewrite the accessor argument to `receiver, "propertyPath"`.
+  options.eventNameEdits.push({
+    start: accessor.getStart(sourceFile),
+    end: accessor.getEnd(),
+    text: `${parsed.receiverText}, "${parsed.propertyPath}"`,
+  });
+}
+
+function removeUnusedArcGisImports(file: string, source: string): { nextSource: string; removedCount: number } {
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+  const removals: TextEdit[] = [];
+
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    const modulePath = statement.moduleSpecifier.text;
+    if (!MODULE_TO_SPEC.has(modulePath) && !isSupportedArcGisBarrelModulePath(modulePath)) {
+      continue;
+    }
+
+    const importClause = statement.importClause;
+    if (!importClause) {
+      continue;
+    }
+
+    const localIdentifiers = extractImportClauseLocalIdentifiers(importClause);
+    if (localIdentifiers.length === 0) {
+      continue;
+    }
+
+    const hasReferences = localIdentifiers.some(
+      (identifier) => countIdentifierUsagesExcludingImports(sourceFile, identifier) > 0,
+    );
+    if (hasReferences) {
+      continue;
+    }
+
+    const bounds = expandToFullLine(source, statement.getStart(sourceFile), statement.getEnd());
+    removals.push({
+      start: bounds.start,
+      end: bounds.end,
+      text: "",
+    });
+  }
+
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) {
+      continue;
+    }
+
+    if (statement.declarationList.declarations.length !== 1) {
+      continue;
+    }
+
+    const declaration = statement.declarationList.declarations[0];
+    const requireBinding = extractRequireBindingFromDeclaration(declaration);
+    if (!requireBinding) {
+      continue;
+    }
+
+    if (!MODULE_TO_SPEC.has(requireBinding.modulePath)) {
+      continue;
+    }
+
+    const references = countIdentifierUsagesExcludingImportsAndDefinitions(sourceFile, requireBinding.localName);
+    if (references > 0) {
+      continue;
+    }
+
+    const bounds = expandToFullLine(source, statement.getStart(sourceFile), statement.getEnd());
+    removals.push({
+      start: bounds.start,
+      end: bounds.end,
+      text: "",
+    });
+  }
+
+  if (removals.length === 0) {
+    return { nextSource: source, removedCount: 0 };
+  }
+
+  return {
+    nextSource: applyTextEdits(source, removals),
+    removedCount: removals.length,
+  };
+}
+
+function extractModulePathFromRequireInitializer(initializer: ts.Expression): string | undefined {
+  if (ts.isCallExpression(initializer) && initializer.arguments.length === 1) {
+    if (
+      ts.isIdentifier(initializer.expression) &&
+      initializer.expression.text === "require" &&
+      ts.isStringLiteral(initializer.arguments[0])
+    ) {
+      return initializer.arguments[0].text;
+    }
+    return undefined;
+  }
+
+  if (
+    ts.isPropertyAccessExpression(initializer) &&
+    initializer.name.text === "default" &&
+    ts.isCallExpression(initializer.expression) &&
+    initializer.expression.arguments.length === 1 &&
+    ts.isIdentifier(initializer.expression.expression) &&
+    initializer.expression.expression.text === "require" &&
+    ts.isStringLiteral(initializer.expression.arguments[0])
+  ) {
+    return initializer.expression.arguments[0].text;
+  }
+
+  return undefined;
+}
+
+function extractRequireBindingFromDeclaration(declaration: ts.VariableDeclaration): RequireBinding | undefined {
+  if (!declaration.initializer) {
+    return undefined;
+  }
+
+  const modulePath = extractModulePathFromRequireInitializer(declaration.initializer);
+  if (!modulePath) {
+    return undefined;
+  }
+
+  if (ts.isIdentifier(declaration.name)) {
+    return {
+      modulePath,
+      localName: declaration.name.text,
+    };
+  }
+
+  if (!ts.isObjectBindingPattern(declaration.name)) {
+    return undefined;
+  }
+
+  for (const element of declaration.name.elements) {
+    let propertyNameText: string | undefined;
+    if (!element.propertyName) {
+      propertyNameText = ts.isIdentifier(element.name) ? element.name.text : undefined;
+    } else if (ts.isIdentifier(element.propertyName)) {
+      propertyNameText = element.propertyName.text;
+    } else {
+      propertyNameText = element.propertyName.getText();
+    }
+    if (propertyNameText !== "default") {
+      continue;
+    }
+    if (!ts.isIdentifier(element.name)) {
+      continue;
+    }
+    return {
+      modulePath,
+      localName: element.name.text,
+    };
+  }
+
+  return undefined;
+}
+
+function extractImportClauseLocalIdentifiers(importClause: ts.ImportClause): string[] {
+  const names: string[] = [];
+  if (importClause.name) {
+    names.push(importClause.name.text);
+  }
+
+  const namedBindings = importClause.namedBindings;
+  if (!namedBindings) {
+    return names;
+  }
+
+  if (ts.isNamespaceImport(namedBindings)) {
+    names.push(namedBindings.name.text);
+    return names;
+  }
+
+  for (const element of namedBindings.elements) {
+    names.push(element.name.text);
+  }
+
+  return names;
+}
+
+function countIdentifierUsagesExcludingImports(sourceFile: ts.SourceFile, name: string): number {
+  let count = 0;
+
+  walk(sourceFile, (node) => {
+    if (!ts.isIdentifier(node) || node.text !== name) {
+      return;
+    }
+    if (isInImportContext(node)) {
+      return;
+    }
+    if (isPropertyAccessName(node)) {
+      return;
+    }
+    count += 1;
+  });
+
+  return count;
+}
+
+function countIdentifierUsagesExcludingImportsAndDefinitions(sourceFile: ts.SourceFile, name: string): number {
+  let count = 0;
+
+  walk(sourceFile, (node) => {
+    if (!ts.isIdentifier(node) || node.text !== name) {
+      return;
+    }
+    if (isInImportContext(node)) {
+      return;
+    }
+    if (isVariableDeclarationName(node)) {
+      return;
+    }
+    if (isPropertyAccessName(node)) {
+      return;
+    }
+    count += 1;
+  });
+
+  return count;
+}
+
+function isInImportContext(node: ts.Identifier): boolean {
+  let current: ts.Node | undefined = node;
+  while (current) {
+    if (
+      ts.isImportClause(current) ||
+      ts.isImportDeclaration(current) ||
+      ts.isImportSpecifier(current) ||
+      ts.isNamespaceImport(current) ||
+      ts.isNamedImports(current)
+    ) {
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
+function isPropertyAccessName(node: ts.Identifier): boolean {
+  return ts.isPropertyAccessExpression(node.parent) && node.parent.name === node;
+}
+
+function isVariableDeclarationName(node: ts.Identifier): boolean {
+  return (
+    (ts.isVariableDeclaration(node.parent) && node.parent.name === node) ||
+    (ts.isBindingElement(node.parent) && node.parent.name === node)
+  );
+}
+
+function expandToFullLine(source: string, start: number, end: number): { start: number; end: number } {
+  let expandedStart = start;
+  while (expandedStart > 0 && source[expandedStart - 1] !== "\n") {
+    expandedStart -= 1;
+  }
+
+  let expandedEnd = end;
+  while (expandedEnd < source.length && source[expandedEnd] !== "\n") {
+    expandedEnd += 1;
+  }
+  if (expandedEnd < source.length && source[expandedEnd] === "\n") {
+    expandedEnd += 1;
+  }
+
+  return { start: expandedStart, end: expandedEnd };
+}
+
+function findLineStartOffset(source: string, position: number): number {
+  let start = position;
+  while (start > 0 && source[start - 1] !== "\n") {
+    start -= 1;
+  }
+  return start;
+}
+
+function shouldInsertTodoComment(source: string, lineStart: number, nodeStart: number): boolean {
+  const currentPrefix = source.slice(lineStart, nodeStart);
+  if (currentPrefix.includes(TODO_MARKER)) {
+    return false;
+  }
+
+  if (lineStart === 0) {
+    return true;
+  }
+
+  const previousLineEnd = lineStart - 1;
+  const previousLineStart = findLineStartOffset(source, previousLineEnd);
+  const previousLine = source.slice(previousLineStart, lineStart);
+  return !previousLine.includes(TODO_MARKER);
+}
+
+function applyTextEdits(source: string, edits: readonly TextEdit[]): string {
+  const sorted = edits.slice().sort((a, b) => (a.start === b.start ? b.end - a.end : b.start - a.start));
+
+  let previousStart = source.length + 1;
+  for (const edit of sorted) {
+    if (edit.start < 0 || edit.end < edit.start || edit.end > source.length) {
+      throw new Error("Invalid text edit range.");
+    }
+    if (edit.end > previousStart) {
+      throw new Error("Overlapping text edits are not supported.");
+    }
+    previousStart = edit.start;
+  }
+
+  let nextSource = source;
+  for (const edit of sorted) {
+    nextSource = `${nextSource.slice(0, edit.start)}${edit.text}${nextSource.slice(edit.end)}`;
+  }
+  return nextSource;
+}
+
+function collectUnsupportedPropertyNames(arg: ts.ObjectLiteralExpression, allowed: ReadonlySet<string>): string[] {
+  const unsupported: string[] = [];
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) continue;
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      unsupported.push(name ?? "<computed>");
+    }
+  }
+  return unsupported;
+}
+
+function objectLiteralHasProperty(arg: ts.ObjectLiteralExpression, propertyName: string): boolean {
+  return arg.properties.some(
+    (property) => isAssignableObjectProperty(property) && getObjectPropertyName(property) === propertyName,
+  );
+}
+
+function addObjectLiteralPropertyText(
+  arg: ts.ObjectLiteralExpression,
+  sourceFile: ts.SourceFile,
+  propertyName: string,
+  valueText: string,
+): string {
+  const text = arg.getText(sourceFile);
+  const inner = text.slice(1, -1).trim();
+  if (!inner) {
+    return `{ ${propertyName}: ${valueText} }`;
+  }
+  return `{ ${propertyName}: ${valueText}, ${inner} }`;
+}
+
+function isSafeConstructorCall(
+  kind: CodemodConstructorKind,
+  node: ts.NewExpression,
+  target: CodemodTarget,
+): { ok: true } | { ok: false; reason: string } {
+  if (target === "honua-maplibre" && !HONUA_MAPLIBRE_NATIVE_KINDS.has(kind)) {
+    return {
+      ok: false,
+      reason: HONUA_MAPLIBRE_UNSUPPORTED_CONSTRUCTOR_REASON,
+    };
+  }
+
+  switch (kind) {
+    case "feature-layer":
+      return isSafeFeatureLayerCompatCall(node, target);
+    case "graphic":
+      return isSafeGraphicCompatCall(node);
+    case "point-geometry":
+      return isSafePointGeometryCompatCall(node);
+    case "polyline-geometry":
+      return isSafePolylineGeometryCompatCall(node);
+    case "polygon-geometry":
+      return isSafePolygonGeometryCompatCall(node);
+    case "extent-geometry":
+      return isSafeExtentGeometryCompatCall(node);
+    case "spatial-reference":
+      return isSafeSpatialReferenceCompatCall(node);
+    case "color":
+      return isSafeColorCompatCall(node);
+    case "simple-line-symbol":
+      return isSafeSimpleLineSymbolCompatCall(node);
+    case "simple-marker-symbol":
+      return isSafeSimpleMarkerSymbolCompatCall(node);
+    case "picture-marker-symbol":
+      return isSafePictureMarkerSymbolCompatCall(node);
+    case "text-symbol":
+      return isSafeTextSymbolCompatCall(node);
+    case "label-class":
+      return isSafeLabelClassCompatCall(node);
+    case "simple-fill-symbol":
+      return isSafeSimpleFillSymbolCompatCall(node);
+    case "class-breaks-renderer":
+      return isSafeClassBreaksRendererCompatCall(node);
+    case "simple-renderer":
+      return isSafeSimpleRendererCompatCall(node);
+    case "unique-value-renderer":
+      return isSafeUniqueValueRendererCompatCall(node);
+    case "graphics-layer":
+      return isSafeGraphicsLayerCompatCall(node);
+    case "group-layer":
+      return isSafeGroupLayerCompatCall(node);
+    case "map-image-layer":
+      return isSafeMapImageLayerCompatCall(node, target);
+    case "tile-layer":
+      return isSafeTileLayerCompatCall(node, target);
+    case "route-layer":
+      return isSafeRouteLayerCompatCall(node);
+    case "route-task":
+      return isSafeRouteTaskCompatCall(node);
+    case "basemap":
+      return isSafeBasemapCompatCall(node);
+    case "map":
+      return isSafeMapCompatCall(node, target);
+    case "map-view":
+      return isSafeMapViewCompatCall(node, target);
+    case "scene-view":
+      return isSafeSceneViewCompatCall(node);
+    case "web-map":
+      return isSafeWebMapCompatCall(node);
+    case "layer-list":
+      return isSafeLayerListCompatCall(node);
+    case "table-list-widget":
+      return isSafeTableListWidgetCompatCall(node);
+    case "feature-widget":
+      return isSafeFeatureWidgetCompatCall(node);
+    case "feature-templates-widget":
+      return isSafeFeatureTemplatesWidgetCompatCall(node);
+    case "feature-form-widget":
+      return isSafeFeatureFormWidgetCompatCall(node);
+    case "feature-table-widget":
+      return isSafeFeatureTableWidgetCompatCall(node);
+    case "feature-set":
+      return isSafeFeatureSetCompatCall(node);
+    case "legend-widget":
+      return isSafeLegendWidgetCompatCall(node);
+    case "popup-widget":
+      return isSafePopupWidgetCompatCall(node);
+    case "popup-template":
+      return isSafePopupTemplateCompatCall(node);
+    case "swipe-widget":
+      return isSafeSwipeWidgetCompatCall(node);
+    case "print-widget":
+      return isSafePrintWidgetCompatCall(node);
+    case "home-widget":
+      return isSafeHomeWidgetCompatCall(node);
+    case "basemap-toggle-widget":
+      return isSafeBasemapToggleWidgetCompatCall(node);
+    case "locate-widget":
+      return isSafeLocateWidgetCompatCall(node);
+    case "scale-bar-widget":
+      return isSafeScaleBarWidgetCompatCall(node);
+    case "search-widget":
+      return isSafeSearchWidgetCompatCall(node);
+    case "basemap-layer-list-widget":
+      return isSafeBasemapLayerListWidgetCompatCall(node);
+    case "basemap-gallery-widget":
+      return isSafeBasemapGalleryWidgetCompatCall(node);
+    case "expand-widget":
+      return isSafeExpandWidgetCompatCall(node);
+    case "compass-widget":
+      return isSafeCompassWidgetCompatCall(node);
+    case "bookmarks-widget":
+      return isSafeBookmarksWidgetCompatCall(node);
+    case "fullscreen-widget":
+      return isSafeFullscreenWidgetCompatCall(node);
+    case "zoom-widget":
+      return isSafeZoomWidgetCompatCall(node);
+    case "attribution-widget":
+      return isSafeAttributionWidgetCompatCall(node);
+    case "sketch-widget":
+      return isSafeSketchWidgetCompatCall(node);
+    case "editor-widget":
+      return isSafeEditorWidgetCompatCall(node);
+    case "track-widget":
+      return isSafeTrackWidgetCompatCall(node);
+    case "distance-measurement-2d-widget":
+      return isSafeDistanceMeasurement2dWidgetCompatCall(node);
+    case "area-measurement-2d-widget":
+      return isSafeAreaMeasurement2dWidgetCompatCall(node);
+    case "measurement-widget":
+      return isSafeMeasurementWidgetCompatCall(node);
+    case "time-slider-widget":
+      return isSafeTimeSliderWidgetCompatCall(node);
+    case "directions-widget":
+      return isSafeDirectionsWidgetCompatCall(node);
+    case "coordinate-conversion-widget":
+      return isSafeCoordinateConversionWidgetCompatCall(node);
+    case "query":
+      return isSafeQueryCompatCall(node);
+    case "oauth-info":
+      return isSafeOAuthInfoCompatCall(node);
+    case "identity-manager":
+      return {
+        ok: false,
+        reason: "IdentityManager is not a constructor and requires import-based migration.",
+      };
+    case "esri-request":
+      return {
+        ok: false,
+        reason: "esriRequest is not a constructor and requires import-based migration.",
+      };
+    case "esri-config":
+      return {
+        ok: false,
+        reason: "esriConfig is not a constructor and requires import-based migration.",
+      };
+    case "reactive-utils":
+      return {
+        ok: false,
+        reason: "ReactiveUtils is not a constructor and requires import-based migration.",
+      };
+    case "geometry-engine":
+      return {
+        ok: false,
+        reason: "geometryEngine is not a constructor and requires import-based migration.",
+      };
+    case "feature-filter":
+      return isSafeAllowedPropertiesCall(node, "FeatureFilter", FEATURE_FILTER_ALLOWED_PROPS);
+    case "vector-tile-layer":
+      return isSafeAllowedPropertiesCall(node, "VectorTileLayer", VECTOR_TILE_LAYER_ALLOWED_PROPS);
+    case "geojson-layer":
+      return isSafeAllowedPropertiesCall(node, "GeoJSONLayer", GEOJSON_LAYER_ALLOWED_PROPS);
+    case "wms-layer":
+      return isSafeAllowedPropertiesCall(node, "WMSLayer", WMS_LAYER_ALLOWED_PROPS);
+    case "wfs-layer":
+      return isSafeAllowedPropertiesCall(node, "WFSLayer", WFS_LAYER_ALLOWED_PROPS);
+    case "imagery-layer":
+      return isSafeAllowedPropertiesCall(node, "ImageryLayer", IMAGERY_LAYER_ALLOWED_PROPS);
+    default:
+      return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
+  }
+}
+
+const FEATURE_FILTER_ALLOWED_PROPS = new Set([
+  "where",
+  "objectIds",
+  "geometry",
+  "spatialRelationship",
+  "distance",
+  "units",
+  "timeExtent",
+]);
+const VECTOR_TILE_LAYER_ALLOWED_PROPS = new Set([
+  "url",
+  "style",
+  "id",
+  "title",
+  "opacity",
+  "visible",
+  "minScale",
+  "maxScale",
+  "listMode",
+]);
+const GEOJSON_LAYER_ALLOWED_PROPS = new Set([
+  "url",
+  "data",
+  "id",
+  "title",
+  "opacity",
+  "visible",
+  "minScale",
+  "maxScale",
+  "listMode",
+  "renderer",
+  "popupTemplate",
+  "outFields",
+  "objectIdField",
+  "fields",
+  "geometryType",
+  "spatialReference",
+]);
+const WMS_LAYER_ALLOWED_PROPS = new Set([
+  "url",
+  "sublayers",
+  "version",
+  "spatialReference",
+  "imageFormat",
+  "id",
+  "title",
+  "opacity",
+  "visible",
+  "customLayerParameters",
+  "customParameters",
+  "listMode",
+]);
+const WFS_LAYER_ALLOWED_PROPS = new Set([
+  "url",
+  "name",
+  "version",
+  "id",
+  "title",
+  "opacity",
+  "visible",
+  "listMode",
+  "outFields",
+  "customParameters",
+  "spatialReference",
+]);
+const IMAGERY_LAYER_ALLOWED_PROPS = new Set([
+  "url",
+  "id",
+  "title",
+  "opacity",
+  "visible",
+  "listMode",
+  "format",
+  "pixelType",
+  "bandIds",
+  "renderingRule",
+  "mosaicRule",
+]);
+
+function isSafeAllowedPropertiesCall(
+  node: ts.NewExpression,
+  displayName: string,
+  allowed: ReadonlySet<string>,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) return { ok: true };
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: `${displayName} constructor has more than one argument; requires manual migration.`,
+    };
+  }
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return { ok: false, reason: `${displayName} constructor argument is not an object literal.` };
+  }
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: `${displayName} options contain spread/method/computed property syntax; requires manual migration.`,
+      };
+    }
+  }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `${displayName} options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+  return { ok: true };
+}
+
+function isSafeRouteLayerCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "RouteLayer constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "RouteLayer constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "id",
+    "title",
+    "url",
+    "visible",
+    "opacity",
+    "listMode",
+    "stops",
+    "autoSolve",
+    "routeProvider",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "RouteLayer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `RouteLayer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeRouteTaskCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "RouteTask constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) {
+    return { ok: true };
+  }
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "RouteTask constructor argument is not an object literal or string literal.",
+    };
+  }
+
+  const allowed = new Set(["url", "apiKey", "requestOptions"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "RouteTask options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `RouteTask options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeBasemapCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Basemap constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Basemap constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["id", "title", "baseLayers", "referenceLayers"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Basemap options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Basemap options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeFeatureLayerCompatCall(
+  node: ts.NewExpression,
+  target: CodemodTarget,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length !== 1) {
+    return {
+      ok: false,
+      reason: "FeatureLayer constructor is not a single object-literal argument.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "FeatureLayer constructor argument is not an object literal.",
+    };
+  }
+
+  let hasUrlOption = false;
+  const allowed =
+    target === "honua-compat"
+      ? new Set([
+          "url",
+          "id",
+          "title",
+          "outFields",
+          "definitionExpression",
+          "renderer",
+          "popupTemplate",
+          "labelingInfo",
+          "labelsVisible",
+          "opacity",
+          "visible",
+          "minScale",
+          "maxScale",
+          "legendEnabled",
+          "listMode",
+          "client",
+          "maxAttachmentBytes",
+        ])
+      : target === "honua-maplibre"
+        ? new Set([
+            "url",
+            "id",
+            "title",
+            "outFields",
+            "definitionExpression",
+            "returnGeometry",
+            "outSR",
+            "opacity",
+            "visible",
+            "minScale",
+            "maxScale",
+            "attribution",
+            "paint",
+            "layout",
+            "layerType",
+          ])
+        : new Set(["url", "outFields", "definitionExpression"]);
+
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "FeatureLayer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (name === "url") {
+      hasUrlOption = true;
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `FeatureLayer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  if (!hasUrlOption) {
+    return {
+      ok: false,
+      reason: "FeatureLayer options missing required url property; requires manual migration.",
+    };
+  }
+
+  const propertyValueIssue = collectFeatureLayerPropertyValueIssue(arg);
+  if (propertyValueIssue) {
+    return { ok: false, reason: propertyValueIssue };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Inspect a FeatureLayer constructor option literal for Honua-divergent
+ * property values that the codemod cannot transform deterministically:
+ * - `renderer.field` containing any uppercase character (Honua expects
+ *   lowercase field names).
+ * - `popupTemplate.content` arrays containing a `{ type: "fields", fieldInfos:
+ *   [{ format: (v) => ... }] }` entry, since arrow-function field formatters
+ *   need manual translation.
+ *
+ * Returns a manual-TODO reason string when one of these divergences is found,
+ * otherwise undefined.
+ */
+function collectFeatureLayerPropertyValueIssue(arg: ts.ObjectLiteralExpression): string | undefined {
+  for (const property of arg.properties) {
+    if (!ts.isPropertyAssignment(property)) {
+      continue;
+    }
+    const name = getObjectPropertyName(property);
+    if (name === "renderer" && ts.isObjectLiteralExpression(property.initializer)) {
+      for (const rendererProp of property.initializer.properties) {
+        if (!ts.isPropertyAssignment(rendererProp)) {
+          continue;
+        }
+        if (getObjectPropertyName(rendererProp) !== "field") {
+          continue;
+        }
+        if (
+          ts.isStringLiteral(rendererProp.initializer) ||
+          ts.isNoSubstitutionTemplateLiteral(rendererProp.initializer)
+        ) {
+          const fieldValue = rendererProp.initializer.text;
+          if (/[A-Z]/.test(fieldValue)) {
+            return FEATURE_LAYER_RENDERER_FIELD_CASE_REASON;
+          }
+        }
+      }
+    }
+    if (name === "popupTemplate" && ts.isObjectLiteralExpression(property.initializer)) {
+      for (const popupProp of property.initializer.properties) {
+        if (!ts.isPropertyAssignment(popupProp)) {
+          continue;
+        }
+        if (getObjectPropertyName(popupProp) !== "content") {
+          continue;
+        }
+        if (!ts.isArrayLiteralExpression(popupProp.initializer)) {
+          continue;
+        }
+        for (const element of popupProp.initializer.elements) {
+          if (!ts.isObjectLiteralExpression(element)) {
+            continue;
+          }
+          const typeText = readStringPropertyText(element, "type");
+          if (typeText !== "fields") {
+            continue;
+          }
+          const fieldInfosProp = element.properties.find(
+            (p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && getObjectPropertyName(p) === "fieldInfos",
+          );
+          if (!fieldInfosProp || !ts.isArrayLiteralExpression(fieldInfosProp.initializer)) {
+            continue;
+          }
+          for (const info of fieldInfosProp.initializer.elements) {
+            if (!ts.isObjectLiteralExpression(info)) {
+              continue;
+            }
+            const formatProp = info.properties.find(
+              (p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && getObjectPropertyName(p) === "format",
+            );
+            if (!formatProp) {
+              continue;
+            }
+            if (ts.isArrowFunction(formatProp.initializer) || ts.isFunctionExpression(formatProp.initializer)) {
+              return FEATURE_LAYER_POPUP_FIELD_INFO_FORMAT_REASON;
+            }
+          }
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+function readStringPropertyText(literal: ts.ObjectLiteralExpression, propertyName: string): string | undefined {
+  for (const property of literal.properties) {
+    if (!ts.isPropertyAssignment(property)) {
+      continue;
+    }
+    if (getObjectPropertyName(property) !== propertyName) {
+      continue;
+    }
+    if (ts.isStringLiteral(property.initializer) || ts.isNoSubstitutionTemplateLiteral(property.initializer)) {
+      return property.initializer.text;
+    }
+  }
+  return undefined;
+}
+
+function isSafeGraphicCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Graphic constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Graphic constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["geometry", "symbol", "attributes", "popupTemplate", "layer"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Graphic options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Graphic options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafePointGeometryCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Point constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Point constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["x", "y", "z", "m", "spatialReference"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Point options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Point options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafePolylineGeometryCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Polyline constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Polyline constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["paths", "spatialReference", "hasZ", "hasM"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Polyline options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Polyline options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafePolygonGeometryCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Polygon constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Polygon constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["rings", "spatialReference", "hasZ", "hasM"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Polygon options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Polygon options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeExtentGeometryCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Extent constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Extent constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["xmin", "ymin", "xmax", "ymax", "zmin", "zmax", "mmin", "mmax", "spatialReference"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Extent options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Extent options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeSpatialReferenceCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "SpatialReference constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "SpatialReference constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["wkid", "latestWkid", "wkt", "vcsWkid", "latestVcsWkid"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "SpatialReference options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `SpatialReference options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeColorCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Color constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (ts.isStringLiteralLike(arg) || ts.isArrayLiteralExpression(arg) || ts.isObjectLiteralExpression(arg)) {
+    return { ok: true };
+  }
+
+  return {
+    ok: false,
+    reason: "Color constructor argument is not a string/array/object literal.",
+  };
+}
+
+function isSafeSimpleLineSymbolCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "SimpleLineSymbol constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "SimpleLineSymbol constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["style", "color", "width"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "SimpleLineSymbol options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `SimpleLineSymbol options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeSimpleMarkerSymbolCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "SimpleMarkerSymbol constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "SimpleMarkerSymbol constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["style", "color", "size", "outline"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "SimpleMarkerSymbol options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `SimpleMarkerSymbol options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafePictureMarkerSymbolCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "PictureMarkerSymbol constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "PictureMarkerSymbol constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["url", "width", "height", "xoffset", "yoffset", "angle", "opacity"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason:
+          "PictureMarkerSymbol options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `PictureMarkerSymbol options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeTextSymbolCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "TextSymbol constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "TextSymbol constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["text", "color", "haloColor", "haloSize", "font", "xoffset", "yoffset", "angle"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "TextSymbol options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `TextSymbol options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeLabelClassCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "LabelClass constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "LabelClass constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["labelExpressionInfo", "symbol", "where", "minScale", "maxScale"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "LabelClass options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `LabelClass options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeSimpleFillSymbolCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "SimpleFillSymbol constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "SimpleFillSymbol constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["style", "color", "outline"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "SimpleFillSymbol options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `SimpleFillSymbol options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeClassBreaksRendererCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "ClassBreaksRenderer constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "ClassBreaksRenderer constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "field",
+    "normalizationField",
+    "normalizationTotal",
+    "minValue",
+    "defaultSymbol",
+    "defaultLabel",
+    "legendOptions",
+    "valueExpression",
+    "valueExpressionTitle",
+    "classBreakInfos",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason:
+          "ClassBreaksRenderer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `ClassBreaksRenderer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeSimpleRendererCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "SimpleRenderer constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "SimpleRenderer constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["symbol", "label", "description", "visualVariables"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "SimpleRenderer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `SimpleRenderer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeUniqueValueRendererCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "UniqueValueRenderer constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "UniqueValueRenderer constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["field", "field2", "field3", "defaultSymbol", "defaultLabel", "uniqueValueInfos"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason:
+          "UniqueValueRenderer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `UniqueValueRenderer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeMapImageLayerCompatCall(
+  node: ts.NewExpression,
+  target: CodemodTarget,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length !== 1) {
+    return {
+      ok: false,
+      reason: "MapImageLayer constructor is not a single object-literal argument.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "MapImageLayer constructor argument is not an object literal.",
+    };
+  }
+
+  let hasUrlOption = false;
+  const allowed =
+    target === "honua-compat"
+      ? new Set([
+          "url",
+          "id",
+          "title",
+          "sublayers",
+          "opacity",
+          "visible",
+          "minScale",
+          "maxScale",
+          "listMode",
+          "legendEnabled",
+          "client",
+        ])
+      : target === "honua-maplibre"
+        ? new Set([
+            "url",
+            "id",
+            "title",
+            "sublayers",
+            "layers",
+            "dpi",
+            "format",
+            "transparent",
+            "opacity",
+            "visible",
+            "minScale",
+            "maxScale",
+            "attribution",
+            "paint",
+            "layout",
+          ])
+        : new Set(["url", "sublayers", "opacity", "visible"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "MapImageLayer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (name === "url") {
+      hasUrlOption = true;
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `MapImageLayer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  if (!hasUrlOption) {
+    return {
+      ok: false,
+      reason: "MapImageLayer options missing required url property; requires manual migration.",
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeTileLayerCompatCall(
+  node: ts.NewExpression,
+  target: CodemodTarget,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length !== 1) {
+    return {
+      ok: false,
+      reason: "TileLayer constructor is not a single object-literal argument.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "TileLayer constructor argument is not an object literal.",
+    };
+  }
+
+  let hasUrlOption = false;
+  const allowed =
+    target === "honua-compat"
+      ? new Set(["url", "id", "title", "opacity", "visible", "minScale", "maxScale", "listMode", "client"])
+      : target === "honua-maplibre"
+        ? new Set([
+            "url",
+            "id",
+            "title",
+            "opacity",
+            "visible",
+            "minScale",
+            "maxScale",
+            "attribution",
+            "paint",
+            "layout",
+            "tileSize",
+          ])
+        : new Set(["url", "opacity", "visible"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "TileLayer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (name === "url") {
+      hasUrlOption = true;
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `TileLayer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  if (!hasUrlOption) {
+    return {
+      ok: false,
+      reason: "TileLayer options missing required url property; requires manual migration.",
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeGraphicsLayerCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "GraphicsLayer constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "GraphicsLayer constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["graphics", "id", "title", "visible", "opacity", "listMode"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "GraphicsLayer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `GraphicsLayer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeGroupLayerCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "GroupLayer constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "GroupLayer constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["layers", "id", "title", "visible", "opacity", "listMode", "visibilityMode"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "GroupLayer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `GroupLayer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeMapCompatCall(
+  node: ts.NewExpression,
+  target: CodemodTarget,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Map constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Map constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed =
+    target === "honua-maplibre"
+      ? new Set(["basemap", "layers", "name", "center", "zoom"])
+      : new Set(["basemap", "layers", "ground", "tables", "portalItem", "spatialReference"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Map options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Map options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeMapViewCompatCall(
+  node: ts.NewExpression,
+  target: CodemodTarget,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "MapView constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "MapView constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed =
+    target === "honua-maplibre"
+      ? new Set(["map", "style", "container", "center", "zoom", "bearing", "pitch"])
+      : new Set([
+          "map",
+          "container",
+          "center",
+          "zoom",
+          "scale",
+          "rotation",
+          "extent",
+          "constraints",
+          "padding",
+          "highlightOptions",
+          "spatialReference",
+          "popup",
+        ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "MapView options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `MapView options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeWebMapCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "WebMap constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "WebMap constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["portalItem", "basemap", "layers", "ground", "tables", "spatialReference"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "WebMap options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `WebMap options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeSceneViewCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "SceneView constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "SceneView constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "map",
+    "container",
+    "center",
+    "zoom",
+    "scale",
+    "rotation",
+    "extent",
+    "constraints",
+    "padding",
+    "highlightOptions",
+    "spatialReference",
+    "popup",
+    "camera",
+    "qualityProfile",
+    "viewingMode",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "SceneView options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `SceneView options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeLayerListCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "LayerList constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "LayerList constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "map", "container", "includeHidden", "autoRefresh", "listItemCreatedFunction"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "LayerList options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `LayerList options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeTableListWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "TableList constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "TableList constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "map", "container", "tables", "autoRefresh"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "TableList options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `TableList options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeFeatureWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Feature constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Feature constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "map", "container", "graphic", "title"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Feature options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Feature options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeFeatureTemplatesWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "FeatureTemplates constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "FeatureTemplates constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "layerInfos", "container", "filterFunction", "groupBy"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "FeatureTemplates options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `FeatureTemplates options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeFeatureFormWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "FeatureForm constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "FeatureForm constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "layer",
+    "container",
+    "feature",
+    "fieldConfig",
+    "groupDisplay",
+    "headingLevel",
+    "visibleElements",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "FeatureForm options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `FeatureForm options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeFeatureTableWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "FeatureTable constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "FeatureTable constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "layer",
+    "container",
+    "title",
+    "description",
+    "actionColumnConfig",
+    "attachmentsEnabled",
+    "paginationEnabled",
+    "objectIdField",
+    "where",
+    "filterGeometry",
+    "filterBySelectionEnabled",
+    "relatedRecordsEnabled",
+    "tableTemplate",
+    "visibleElements",
+    "fieldConfigs",
+    "editingEnabled",
+    "multiSortEnabled",
+    "highlightIds",
+    "selectionMode",
+    "rowSelectionEnabled",
+    "highlightEnabled",
+    "pageSize",
+    "autoRefreshEnabled",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "FeatureTable options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `FeatureTable options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeFeatureSetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "FeatureSet constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "FeatureSet constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "features",
+    "fields",
+    "geometryType",
+    "spatialReference",
+    "objectIdFieldName",
+    "displayFieldName",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "FeatureSet options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `FeatureSet options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeLegendWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Legend constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Legend constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "map", "layers", "container", "includeHidden", "autoRefresh"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Legend options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Legend options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafePopupWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Popup constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Popup constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "autoOpenEnabled", "dockEnabled", "dockOptions"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Popup options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Popup options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafePopupTemplateCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "PopupTemplate constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "PopupTemplate constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["title", "content", "fieldInfos", "actions", "expressionInfos", "outFields"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "PopupTemplate options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `PopupTemplate options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeSwipeWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Swipe constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Swipe constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "leadingLayers", "trailingLayers", "position"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Swipe options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Swipe options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafePrintWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Print constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Print constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "printServiceUrl", "templateOptions"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Print options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Print options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeHomeWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Home constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Home constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "viewpoint"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Home options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Home options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeBasemapToggleWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "BasemapToggle constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "BasemapToggle constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "map", "container", "nextBasemap"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "BasemapToggle options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `BasemapToggle options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeLocateWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Locate constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Locate constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "zoom", "locateProvider"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Locate options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Locate options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeScaleBarWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "ScaleBar constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "ScaleBar constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "unit"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "ScaleBar options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `ScaleBar options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeSearchWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Search constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Search constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "container",
+    "sources",
+    "includeDefaultSources",
+    "autoNavigate",
+    "autoRefreshSources",
+    "searchAllEnabled",
+    "popupEnabled",
+    "maxResults",
+    "allPlaceholder",
+    "locationEnabled",
+    "resultGraphicEnabled",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Search options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Search options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeBasemapLayerListWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "BasemapLayerList constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "BasemapLayerList constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "map", "container", "autoRefresh"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "BasemapLayerList options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `BasemapLayerList options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeBasemapGalleryWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "BasemapGallery constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "BasemapGallery constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "map", "container", "source", "autoRefresh"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "BasemapGallery options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `BasemapGallery options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeExpandWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Expand constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Expand constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "content", "expanded", "mode", "group"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Expand options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Expand options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeCompassWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Compass constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Compass constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Compass options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Compass options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeBookmarksWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Bookmarks constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Bookmarks constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "bookmarks"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Bookmarks options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Bookmarks options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeFullscreenWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Fullscreen constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Fullscreen constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "element"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Fullscreen options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Fullscreen options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeZoomWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Zoom constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Zoom constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "layout"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Zoom options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Zoom options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeAttributionWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Attribution constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Attribution constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "map", "container", "itemDelimiter", "attributions"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Attribution options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Attribution options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeSketchWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Sketch constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Sketch constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "layer",
+    "container",
+    "creationMode",
+    "updateOnGraphicClick",
+    "defaultCreateOptions",
+    "defaultUpdateOptions",
+    "snappingOptions",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Sketch options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Sketch options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeEditorWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Editor constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Editor constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "container",
+    "layerInfos",
+    "allowedWorkflows",
+    "supportingWidgetDefaults",
+    "snappingOptions",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Editor options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Editor options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeTrackWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Track constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Track constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "container",
+    "tracking",
+    "goToLocationEnabled",
+    "useHeadingEnabled",
+    "rotationEnabled",
+    "scale",
+    "trackProvider",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Track options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Track options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeDistanceMeasurement2dWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "DistanceMeasurement2D constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "DistanceMeasurement2D constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "unit"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason:
+          "DistanceMeasurement2D options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `DistanceMeasurement2D options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeAreaMeasurement2dWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "AreaMeasurement2D constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "AreaMeasurement2D constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "unit"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "AreaMeasurement2D options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `AreaMeasurement2D options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeMeasurementWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Measurement constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Measurement constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "activeTool", "linearUnit", "areaUnit"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Measurement options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Measurement options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeTimeSliderWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "TimeSlider constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "TimeSlider constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "fullTimeExtent", "timeExtent", "stops", "mode", "loop", "playRate"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "TimeSlider options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `TimeSlider options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeDirectionsWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Directions constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Directions constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "container",
+    "layer",
+    "routeProvider",
+    "stops",
+    "useDefaultRouteLayer",
+    "showSaveAsButton",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Directions options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Directions options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeCoordinateConversionWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "CoordinateConversion constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "CoordinateConversion constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "formats", "mode", "multipleConversionsEnabled"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason:
+          "CoordinateConversion options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `CoordinateConversion options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * ArcGIS-side `Query` property names that map to Honua-side
+ * `QueryFeaturesRequest` field names via straightforward rename.
+ *
+ * The values are the Honua-side names. Used by both the codemod
+ * argument rewrite and the QueryCompat constructor (which accepts
+ * either spelling).
+ */
+const QUERY_ARG_RENAME_MAP: Readonly<Record<string, string>> = {
+  start: "resultOffset",
+  num: "resultRecordCount",
+  outSpatialReference: "outSr",
+  spatialRelationship: "spatialRel",
+};
+
+/** Known ArcGIS `Query.outStatistics[i].statisticType` enum values. */
+const QUERY_STATISTIC_TYPES: ReadonlySet<string> = new Set(["count", "sum", "min", "max", "avg", "stddev", "var"]);
+
+/**
+ * Maps an ArcGIS `geometry.type` discriminator to the Honua-side
+ * `EsriGeometryType` field value (which mirrors the Esri REST API).
+ */
+const QUERY_GEOMETRY_TYPE_MAP: Readonly<Record<string, string>> = {
+  point: "esriGeometryPoint",
+  multipoint: "esriGeometryMultipoint",
+  polyline: "esriGeometryPolyline",
+  polygon: "esriGeometryPolygon",
+  extent: "esriGeometryEnvelope",
+  envelope: "esriGeometryEnvelope",
+};
+
+/**
+ * Properties allowed at the top of a `new Query({ ... })` literal.
+ * Some are pass-through; some are renamed; some are split; some are
+ * always manual-TODO (kept in the allowlist so we can give a precise
+ * reason instead of a generic "unsupported properties" message).
+ */
+const QUERY_ALLOWED_PROPS: ReadonlySet<string> = new Set([
+  // pass-through (same name on both sides)
+  "where",
+  "outFields",
+  "returnGeometry",
+  "orderByFields",
+  "objectIds",
+  "groupByFieldsForStatistics",
+  "distance",
+  "units",
+  "returnDistinctValues",
+  // renamed
+  ...Object.keys(QUERY_ARG_RENAME_MAP),
+  // split into geometry + geometryType
+  "geometry",
+  // normalized inner shape
+  "outStatistics",
+  // explicitly handled (manual TODO with reason)
+  "timeExtent",
+  "quantizationParameters",
+  "relationParam",
+]);
+
+function isSafeQueryCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Query constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Query constructor argument is not an object literal.",
+    };
+  }
+
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Query options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, QUERY_ALLOWED_PROPS);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Query options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  // Reject divergent options up front so the caller gets a precise reason.
+  for (const property of arg.properties) {
+    const name = getObjectPropertyName(property);
+    if (name === "timeExtent") {
+      return {
+        ok: false,
+        reason:
+          "Query.timeExtent has no direct Honua QueryFeaturesRequest field; pass via `extraParams.time` and migrate manually.",
+      };
+    }
+    if (name === "quantizationParameters") {
+      return {
+        ok: false,
+        reason:
+          "Query.quantizationParameters is an ArcGIS server-side optimization hint with no Honua equivalent; remove or migrate manually.",
+      };
+    }
+    if (name === "relationParam") {
+      return {
+        ok: false,
+        reason:
+          "Query.relationParam (used with `spatialRelationship: 'relation'`) is not supported by Honua; migrate manually.",
+      };
+    }
+  }
+
+  // Validate inner shape of complex sub-objects.
+  for (const property of arg.properties) {
+    if (!ts.isPropertyAssignment(property)) continue;
+    const name = getPropertyNameText(property.name);
+    if (name === "geometry") {
+      const reason = validateQueryGeometryShape(property.initializer);
+      if (reason) return { ok: false, reason };
+    }
+    if (name === "outStatistics") {
+      const reason = validateQueryOutStatisticsShape(property.initializer);
+      if (reason) return { ok: false, reason };
+    }
+  }
+
+  return { ok: true };
+}
+
+function validateQueryGeometryShape(expr: ts.Expression): string | undefined {
+  if (!ts.isObjectLiteralExpression(expr)) {
+    return "Query.geometry is not an object literal; cannot split into Honua `geometry` + `geometryType`. Migrate manually.";
+  }
+  let typeProp: ts.PropertyAssignment | undefined;
+  for (const property of expr.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return "Query.geometry contains spread/method/computed property syntax; migrate manually.";
+    }
+    if (ts.isPropertyAssignment(property) && getPropertyNameText(property.name) === "type") {
+      typeProp = property;
+    }
+  }
+  if (!typeProp) {
+    return "Query.geometry is missing a `type` discriminator; Honua requires a separate `geometryType` field. Migrate manually.";
+  }
+  const typeValue = typeProp.initializer;
+  if (!ts.isStringLiteral(typeValue) && !ts.isNoSubstitutionTemplateLiteral(typeValue)) {
+    return "Query.geometry.type is not a string literal; cannot resolve Honua `geometryType` statically. Migrate manually.";
+  }
+  if (!QUERY_GEOMETRY_TYPE_MAP[typeValue.text]) {
+    return `Query.geometry.type "${typeValue.text}" is not a recognized ArcGIS geometry kind (point/polyline/polygon/extent/multipoint); migrate manually.`;
+  }
+  return undefined;
+}
+
+function validateQueryOutStatisticsShape(expr: ts.Expression): string | undefined {
+  if (!ts.isArrayLiteralExpression(expr)) {
+    return "Query.outStatistics is not an array literal; cannot validate statisticType values. Migrate manually.";
+  }
+  for (let index = 0; index < expr.elements.length; index++) {
+    const element = expr.elements[index];
+    if (!ts.isObjectLiteralExpression(element)) {
+      return `Query.outStatistics[${index}] is not an object literal; migrate manually.`;
+    }
+    let statisticTypeProp: ts.PropertyAssignment | undefined;
+    let onFieldProp: ts.PropertyAssignment | undefined;
+    for (const property of element.properties) {
+      if (!isAssignableObjectProperty(property)) {
+        return `Query.outStatistics[${index}] contains spread/method/computed property syntax; migrate manually.`;
+      }
+      if (ts.isPropertyAssignment(property)) {
+        const name = getPropertyNameText(property.name);
+        if (name === "statisticType") statisticTypeProp = property;
+        if (name === "onStatisticField") onFieldProp = property;
+      }
+    }
+    if (!statisticTypeProp) {
+      return `Query.outStatistics[${index}] is missing \`statisticType\`; migrate manually.`;
+    }
+    if (!onFieldProp) {
+      return `Query.outStatistics[${index}] is missing \`onStatisticField\`; migrate manually.`;
+    }
+    const typeExpr = statisticTypeProp.initializer;
+    if (!ts.isStringLiteral(typeExpr) && !ts.isNoSubstitutionTemplateLiteral(typeExpr)) {
+      return `Query.outStatistics[${index}].statisticType is a dynamic expression; the Honua adapter requires a known enum string. Migrate manually.`;
+    }
+    if (!QUERY_STATISTIC_TYPES.has(typeExpr.text.toLowerCase())) {
+      return `Query.outStatistics[${index}].statisticType "${typeExpr.text}" is not in Honua's STATISTIC_TYPE_MAP (count/sum/min/max/avg/stddev/var); migrate manually.`;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Build a text edit that rewrites the Query constructor argument from
+ * the ArcGIS shape into the Honua QueryFeaturesRequest shape:
+ *   - rename `start`/`num`/`outSpatialReference`/`spatialRelationship`
+ *   - split `geometry: { type, ...rest }` into `geometry: { ...rest }`
+ *     plus a sibling `geometryType: "esriGeometry?"`
+ *   - lowercase `outStatistics[i].statisticType`
+ *
+ * Callers must have already passed `isSafeQueryCompatCall`. Returns
+ * `null` when no rewrites are needed (pure pass-through).
+ */
+function buildQueryArgumentRewrite(node: ts.NewExpression, sourceFile: ts.SourceFile, source: string): TextEdit[] {
+  const edits: TextEdit[] = [];
+  const args = node.arguments;
+  if (!args || args.length === 0) return edits;
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) return edits;
+
+  for (const property of arg.properties) {
+    if (!ts.isPropertyAssignment(property)) continue;
+    const name = getPropertyNameText(property.name);
+    if (!name) continue;
+
+    // Rename of top-level property key.
+    const renamed = QUERY_ARG_RENAME_MAP[name];
+    if (renamed) {
+      edits.push({
+        start: property.name.getStart(sourceFile),
+        end: property.name.getEnd(),
+        text: renamed,
+      });
+      continue;
+    }
+
+    if (name === "geometry" && ts.isObjectLiteralExpression(property.initializer)) {
+      const geometryEdits = buildGeometrySplitEdits(property, sourceFile, source);
+      edits.push(...geometryEdits);
+      continue;
+    }
+
+    if (name === "outStatistics" && ts.isArrayLiteralExpression(property.initializer)) {
+      edits.push(...buildOutStatisticsNormalizationEdits(property.initializer, sourceFile));
+    }
+  }
+
+  return edits;
+}
+
+function buildGeometrySplitEdits(
+  property: ts.PropertyAssignment,
+  sourceFile: ts.SourceFile,
+  source: string,
+): TextEdit[] {
+  const literal = property.initializer as ts.ObjectLiteralExpression;
+  let typeProp: ts.PropertyAssignment | undefined;
+  for (const prop of literal.properties) {
+    if (ts.isPropertyAssignment(prop) && getPropertyNameText(prop.name) === "type") {
+      typeProp = prop;
+      break;
+    }
+  }
+  if (!typeProp) return [];
+  const typeInit = typeProp.initializer;
+  if (!ts.isStringLiteral(typeInit) && !ts.isNoSubstitutionTemplateLiteral(typeInit)) {
+    return [];
+  }
+  const honuaType = QUERY_GEOMETRY_TYPE_MAP[typeInit.text];
+  if (!honuaType) return [];
+
+  const edits: TextEdit[] = [];
+
+  // Remove the `type: "..."` property from the geometry object literal,
+  // including its trailing comma + whitespace if present.
+  const removeStart = typeProp.getStart(sourceFile);
+  let removeEnd = typeProp.getEnd();
+  // Swallow a trailing comma immediately after the property.
+  while (removeEnd < source.length && /[\s]/.test(source.charAt(removeEnd))) {
+    removeEnd++;
+  }
+  if (source.charAt(removeEnd) === ",") {
+    removeEnd++;
+    // Eat one trailing space if it looks like single-line layout.
+    if (source.charAt(removeEnd) === " ") removeEnd++;
+  } else {
+    // If there's no trailing comma, also remove the leading comma+space
+    // before this property so we don't leave a dangling `,` from a
+    // preceding sibling.
+    let before = removeStart - 1;
+    while (before >= 0 && /[ \t]/.test(source.charAt(before))) before--;
+    if (before >= 0 && source.charAt(before) === ",") {
+      // Trim back the leading whitespace + comma.
+      removeEnd = typeProp.getEnd();
+      const preceding = before + 1;
+      // Reset removeStart to start at the leading comma's position.
+      edits.push({ start: before, end: removeStart, text: "" });
+      // Keep removeStart unchanged in the property-removal edit below.
+      // (We still need to drop the property itself.)
+      void preceding;
+    }
+  }
+  edits.push({ start: removeStart, end: removeEnd, text: "" });
+
+  // Append a sibling `geometryType: "..."` directly after the geometry
+  // property's closing token in the outer Query options literal.
+  const insertAt = property.getEnd();
+  edits.push({
+    start: insertAt,
+    end: insertAt,
+    text: `, geometryType: "${honuaType}"`,
+  });
+
+  return edits;
+}
+
+function buildOutStatisticsNormalizationEdits(
+  arrayLiteral: ts.ArrayLiteralExpression,
+  sourceFile: ts.SourceFile,
+): TextEdit[] {
+  const edits: TextEdit[] = [];
+  for (const element of arrayLiteral.elements) {
+    if (!ts.isObjectLiteralExpression(element)) continue;
+    for (const prop of element.properties) {
+      if (!ts.isPropertyAssignment(prop)) continue;
+      if (getPropertyNameText(prop.name) !== "statisticType") continue;
+      const init = prop.initializer;
+      if (!ts.isStringLiteral(init) && !ts.isNoSubstitutionTemplateLiteral(init)) continue;
+      const lower = init.text.toLowerCase();
+      if (lower === init.text) continue;
+      edits.push({
+        start: init.getStart(sourceFile),
+        end: init.getEnd(),
+        text: `"${lower}"`,
+      });
+    }
+  }
+  return edits;
+}
+
+function isSafeOAuthInfoCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "OAuthInfo constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "OAuthInfo constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "appId",
+    "portalUrl",
+    "popup",
+    "flowType",
+    "expiration",
+    "authNamespace",
+    "preserveUrlHash",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "OAuthInfo options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `OAuthInfo options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function getPropertyNameText(name: ts.PropertyName): string | undefined {
+  if (ts.isIdentifier(name)) {
+    return name.text;
+  }
+  if (ts.isStringLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name)) {
+    return name.text;
+  }
+  return undefined;
+}
+
+function isAssignableObjectProperty(property: ts.ObjectLiteralElementLike): boolean {
+  return ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property);
+}
+
+function getObjectPropertyName(property: ts.ObjectLiteralElementLike): string | undefined {
+  if (ts.isPropertyAssignment(property)) {
+    return getPropertyNameText(property.name);
+  }
+  if (ts.isShorthandPropertyAssignment(property)) {
+    return property.name.text;
+  }
+  return undefined;
+}
+
+function collectSourceFiles(rootDir: string): string[] {
+  const queue = [rootDir];
+  const result: string[] = [];
+
+  while (queue.length > 0) {
+    const current = queue.pop()!;
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name)) {
+          queue.push(fullPath);
+        }
+        continue;
+      }
+
+      if (SOURCE_EXTENSIONS.has(path.extname(entry.name))) {
+        result.push(fullPath);
+      }
+    }
+  }
+
+  return result;
+}
+
+function walk(node: ts.Node, visit: (node: ts.Node) => void): void {
+  visit(node);
+  node.forEachChild((child) => walk(child, visit));
+}
+
+function specForKind(kind: CodemodConstructorKind): ConstructorRewriteSpec {
+  for (const spec of REWRITE_SPECS) {
+    if (spec.kind === kind) {
+      return spec;
+    }
+  }
+  throw new Error(`Unknown constructor rewrite kind: ${kind}`);
+}
+
+function compareTodos(a: MigrationTodo, b: MigrationTodo): number {
+  const fileCmp = a.file.localeCompare(b.file);
+  if (fileCmp !== 0) {
+    return fileCmp;
+  }
+  if (a.line !== b.line) {
+    return a.line - b.line;
+  }
+  if (a.column !== b.column) {
+    return a.column - b.column;
+  }
+  if (a.kind !== b.kind) {
+    return a.kind.localeCompare(b.kind);
+  }
+  return a.reason.localeCompare(b.reason);
+}
+
+function compareFileErrors(a: CodemodFileError, b: CodemodFileError): number {
+  const fileCmp = a.file.localeCompare(b.file);
+  if (fileCmp !== 0) {
+    return fileCmp;
+  }
+  if (a.stage !== b.stage) {
+    return a.stage.localeCompare(b.stage);
+  }
+  return a.message.localeCompare(b.message);
+}

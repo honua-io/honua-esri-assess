@@ -1,0 +1,111 @@
+{
+  "schemaVersion": "honua.esri-sample-corpus.v1",
+  "generatedBy": "honua",
+  "guardrails": {
+    "noVendoredEsriSampleCode": true,
+    "noCommittedEsriServiceData": true,
+    "prCiUsesFixtureOnly": true,
+    "liveRunsRequireOptIn": true,
+    "liveRunLanes": ["manual-live", "scheduled-live"],
+    "notes": [
+      "Fixture snippets are Honua-authored and mimic reference patterns only.",
+      "Esri sample URLs are metadata references, not vendored source.",
+      "Live evidence lanes must rate-limit requests and skip samples requiring credentials unless explicitly configured."
+    ]
+  },
+  "samples": [
+    {
+      "id": "feature-layer-popup-public",
+      "title": "FeatureLayer popup sample pattern",
+      "source": {
+        "url": "https://developers.arcgis.com/javascript/latest/sample-code/featurelayer-query/",
+        "sampleCodePath": "sample-code/featurelayer-query/",
+        "referenceOnly": true
+      },
+      "fixture": {
+        "root": "feature-layer-popup-public",
+        "entrypoints": ["src/main.ts"],
+        "ownership": "honua",
+        "description": "Minimal Honua-owned snippet with FeatureServer and Portal item references."
+      },
+      "status": "ci-fixture",
+      "license": {
+        "label": "Reference metadata only",
+        "url": "https://developers.arcgis.com/terms/",
+        "notice": "Do not vendor Esri sample source without a separate license and notice review."
+      },
+      "terms": {
+        "sampleCode": "Reference only; no Esri sample code is committed.",
+        "serviceContent": "No Esri service data is committed.",
+        "liveEvidence": "Manual/scheduled lanes only; PR CI uses local fixtures."
+      },
+      "expected": {
+        "serviceKinds": ["FeatureServer"],
+        "portalItemIds": ["0123456789abcdef0123456789abcdef"],
+        "guardrailFlags": ["external-live-service-reference"]
+      }
+    },
+    {
+      "id": "routing-api-key-skipped",
+      "title": "Routing sample pattern requiring credentials",
+      "source": {
+        "url": "https://developers.arcgis.com/javascript/latest/sample-code/widgets-directions/",
+        "sampleCodePath": "sample-code/widgets-directions/",
+        "referenceOnly": true
+      },
+      "fixture": {
+        "root": "routing-api-key-skipped",
+        "entrypoints": ["src/main.ts"],
+        "ownership": "honua",
+        "description": "Minimal Honua-owned snippet that exercises skip classification for API-key and premium routing patterns."
+      },
+      "status": "skipped",
+      "skipReasons": ["requires-api-key", "premium-service"],
+      "license": {
+        "label": "Reference metadata only",
+        "url": "https://developers.arcgis.com/terms/",
+        "notice": "Do not vendor Esri sample source without a separate license and notice review."
+      },
+      "terms": {
+        "sampleCode": "Reference only; no Esri sample code is committed.",
+        "serviceContent": "No Esri service data is committed.",
+        "liveEvidence": "Skipped unless credentials, permissions, and terms review are configured."
+      },
+      "expected": {
+        "serviceKinds": ["RouteServer"],
+        "guardrailFlags": ["api-key-reference", "external-live-service-reference", "premium-service-reference"]
+      }
+    },
+    {
+      "id": "private-portal-skipped",
+      "title": "Private Portal content pattern",
+      "source": {
+        "url": "https://developers.arcgis.com/javascript/latest/sample-code/webmap-basic/",
+        "sampleCodePath": "sample-code/webmap-basic/",
+        "referenceOnly": true
+      },
+      "fixture": {
+        "root": "private-portal-skipped",
+        "entrypoints": ["src/main.ts"],
+        "ownership": "honua",
+        "description": "Minimal Honua-owned snippet that mimics OAuth/private Portal access."
+      },
+      "status": "skipped",
+      "skipReasons": ["requires-oauth", "private-content"],
+      "license": {
+        "label": "Reference metadata only",
+        "url": "https://developers.arcgis.com/terms/",
+        "notice": "Do not vendor Esri sample source without a separate license and notice review."
+      },
+      "terms": {
+        "sampleCode": "Reference only; no Esri sample code is committed.",
+        "serviceContent": "No private Portal content or exported data is committed.",
+        "liveEvidence": "Skipped unless credentials and content permissions are explicitly configured."
+      },
+      "expected": {
+        "portalItemIds": ["privatePortalItem001"],
+        "guardrailFlags": ["oauth-reference"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "NodeNext", "moduleResolution": "NodeNext",
+    "strict": true, "declaration": true, "outDir": "dist", "rootDir": "upstream/src",
+    "skipLibCheck": true, "verbatimModuleSyntax": true, "noEmitOnError": true
+  },
+  "include": ["upstream/src"]
+}

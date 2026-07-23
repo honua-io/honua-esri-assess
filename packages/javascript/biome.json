@@ -1,0 +1,36 @@
+{
+  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "organizeImports": { "enabled": true },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "complexity": { "noForEach": "off", "useLiteralKeys": "off" },
+      "correctness": { "noSelfAssign": "off" },
+      "performance": { "noDelete": "off" },
+      "style": {
+        "noNonNullAssertion": "off",
+        "noParameterAssign": "off",
+        "useNodejsImportProtocol": "off"
+      },
+      "suspicious": { "noConfusingVoidType": "off", "noExplicitAny": "warn" }
+    }
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineEnding": "lf",
+    "lineWidth": 120
+  },
+  "overrides": [
+    {
+      "include": ["upstream/test/**/*.ts"],
+      "linter": { "rules": { "suspicious": { "noExplicitAny": "off" } } }
+    }
+  ],
+  "files": {
+    "include": ["upstream/src/**/*.ts", "upstream/test/**/*.ts"],
+    "ignore": ["dist", "node_modules", "upstream/test/fixtures"]
+  }
+}

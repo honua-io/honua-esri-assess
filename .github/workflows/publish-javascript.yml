@@ -130,4 +130,6 @@ jobs:
       - name: Publish with npm trusted publishing and provenance
         run: |
           npm install --global npm@11
-          npm publish dist/*.tgz --access public --provenance
+          for tarball in dist/*.tgz; do
+            npm publish "./$tarball" --access public --provenance
+          done

@@ -10,6 +10,12 @@ import typer
 from honua_esri_assess.app import cli_app as assess_app
 
 from .contracts import EXIT_APPLY_REFUSED, EXIT_UNAVAILABLE, MigrationError
+from .runs.cli import (
+    apply_resume_command,
+    apply_run_command,
+    reconcile_compare_command,
+    verify_plan_command,
+)
 
 cli_app = typer.Typer(
     add_completion=False,
@@ -63,10 +69,14 @@ def _discover_service_apps() -> None:
 
 plan_app.command("create")(unavailable("plan create"))
 plan_app.command("show")(unavailable("plan show"))
+plan_app.command("verify")(verify_plan_command)
 content_app.command("migrate")(unavailable("content migrate"))
 code_app.command("migrate")(unavailable("code migrate"))
 apply_app.command("plan")(unavailable("apply plan", apply=True))
+apply_app.command("run")(apply_run_command)
+apply_app.command("resume")(apply_resume_command)
 reconcile_app.command("run")(unavailable("reconcile run"))
+reconcile_app.command("compare")(reconcile_compare_command)
 
 # ``assess`` is mounted below rather than reimplementing its read-only commands.
 cli_app.add_typer(assess_app, name="assess")

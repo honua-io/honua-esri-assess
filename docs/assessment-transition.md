@@ -5,6 +5,10 @@ It mounts the existing assessment application directly, so command options,
 exit codes, `EsriFootprint.json`, `EsriAccessFootprint.json`, schema versions,
 and redaction behavior do not change during the transition.
 
+Both command/import families ship from the single `honua-migrate` PyPI
+distribution. The obsolete `honua-esri-assess` distribution name is not a
+dependency and is not republished from this repository.
+
 | Compatibility surface | Replacement |
 |---|---|
 | `honua-esri-assess <args>` | `honua-migrate assess <args>` |

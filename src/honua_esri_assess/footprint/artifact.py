@@ -17,6 +17,7 @@ from honua_esri_assess.redaction import sanitize_handoff_url
 
 SCHEMA_VERSION = "v0.2"
 TOOL_NAME = "honua-esri-assess"
+DISTRIBUTION_NAME = "honua-migrate"
 ITEM_KINDS = ("portal-item", "server-service", "filegdb-feature-class")
 
 
@@ -24,7 +25,7 @@ def installed_tool_version() -> str:
     """Return the installed package version, falling back in editable checkouts."""
 
     try:
-        return version(TOOL_NAME)
+        return version(DISTRIBUTION_NAME)
     except PackageNotFoundError:
         return __version__
 
@@ -167,6 +168,7 @@ def _counts(items: list[dict[str, Any]]) -> dict[str, Any]:
 __all__ = [
     "ITEM_KINDS",
     "SCHEMA_VERSION",
+    "DISTRIBUTION_NAME",
     "TOOL_NAME",
     "build_footprint",
     "footprint_to_json",

@@ -227,7 +227,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
         from honua_sdk import HonuaClient
     except ImportError:
         print(
-            "run requires the public honua-sdk package; install the python extra.",
+            "run requires the public honua-sdk package. honua-sdk 0.x also owns "
+            "the honua-migrate console script; use an isolated environment and "
+            "invoke this distribution as python -m honua_migrate. See "
+            "https://github.com/honua-io/honua-migrate/blob/trunk/docs/"
+            "console-script-collision.md.",
             file=sys.stderr,
         )
         return EXIT_UNAVAILABLE

@@ -3,11 +3,12 @@
   "packages": {
     ".": {
       "release-type": "python",
-      "component": "honua-esri-assess",
+      "component": "honua-migrate",
       "tag-separator": "-",
       "include-component-in-tag": true,
       "bump-minor-pre-major": true,
       "extra-files": [
+        "src/honua_migrate/__init__.py",
         "src/honua_esri_assess/__init__.py"
       ]
     },

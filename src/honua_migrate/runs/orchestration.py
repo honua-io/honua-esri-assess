@@ -200,7 +200,9 @@ def _lock(stream: BinaryIO) -> None:
     if os.name == "nt":
         import msvcrt
 
-        msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+        msvcrt.locking(  # type: ignore[attr-defined]
+            stream.fileno(), msvcrt.LK_NBLCK, 1  # type: ignore[attr-defined]
+        )
     else:  # pragma: no cover - exercised by Linux CI
         import fcntl
 
@@ -214,7 +216,9 @@ def _unlock(stream: BinaryIO) -> None:
     if os.name == "nt":
         import msvcrt
 
-        msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+        msvcrt.locking(  # type: ignore[attr-defined]
+            stream.fileno(), msvcrt.LK_UNLCK, 1  # type: ignore[attr-defined]
+        )
     else:  # pragma: no cover - exercised by Linux CI
         import fcntl
 

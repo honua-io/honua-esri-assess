@@ -106,7 +106,7 @@ def scan_filegdb_workspace(
                 scope="filegdb",
                 hint=(
                     "Install the FileGDB extra, for example: "
-                    'python -m pip install "honua-esri-assess[filegdb]".'
+                    'python -m pip install "honua-migrate[filegdb]".'
                 ),
             )
         )

@@ -10,6 +10,7 @@ from honua_migrate.code.python._cli import main as module_main
 from honua_migrate.contracts import (
     EXIT_SAFETY_REFUSAL,
     EXIT_SUCCESS,
+    EXIT_UNAVAILABLE,
     EXIT_VALIDATION_ERROR,
 )
 
@@ -85,6 +86,35 @@ def test_dry_run_needs_no_ack_and_does_not_import_sdk(
         )
         == EXIT_SUCCESS
     )
+
+
+def test_live_run_without_sdk_fails_closed_with_collision_guidance(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    original_import = builtins.__import__
+
+    def missing_sdk(name, *args, **kwargs):
+        if name == "honua_sdk" or name.startswith("honua_sdk."):
+            raise ImportError("honua-sdk is intentionally absent")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", missing_sdk)
+    result = module_main(
+        [
+            "run",
+            str(_script(tmp_path)),
+            "--server",
+            "https://example.test",
+            "--yes",
+        ]
+    )
+
+    assert result == EXIT_UNAVAILABLE
+    captured = capsys.readouterr()
+    assert "python -m honua_migrate" in captured.err
+    assert "console-script-collision.md" in captured.err
 
 
 def test_existing_output_refuses_then_force_replaces(tmp_path: Path) -> None:

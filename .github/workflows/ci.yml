@@ -47,6 +47,8 @@ jobs:
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
       - name: Build wheel and source distribution
         run: python -m build --outdir "$RUNNER_TEMP/python-dist"
+      - name: Validate Python distribution metadata and contents
+        run: python scripts/validate_python_dist.py "$RUNNER_TEMP/python-dist"
       - name: Smoke-install wheel
         run: |
           python -m venv "$RUNNER_TEMP/python-smoke"

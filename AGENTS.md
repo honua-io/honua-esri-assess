@@ -2,11 +2,10 @@
 
 ## Overview
 
-`honua-esri-assess` is an open-source (Apache-2.0), **read-only** Esri footprint
-assessment CLI used for Honua migration discovery. It scans ArcGIS Online,
-ArcGIS Server, and FileGDB inventories and emits a single versioned handoff
-artifact, `EsriFootprint.json` (v0.1 schema), plus an optional human-readable
-Markdown readiness report.
+`honua-migrate` is the open-source (Apache-2.0) migration CLI. Its
+`honua-migrate assess` surface is a **read-only** Esri footprint assessment
+tool used for Honua migration discovery. The `honua-esri-assess` command and
+`honua_esri_assess` import package remain supported compatibility surfaces.
 
 Hard project constraints (do not violate):
 - The legacy assessment modules and `honua-migrate assess` are strictly read-only
@@ -60,7 +59,8 @@ and `pyproject.toml`.
 - Type check: `mypy`
 - Dependency license guard: `python scripts/check_dep_licenses.py`
 - Build distribution: `python -m build`
-- Run the CLI: `honua-esri-assess <command>` or `python -m honua_esri_assess <command>`
+- Run the CLI: `honua-migrate <command>` or `python -m honua_migrate <command>`
+- Run assessment compatibility: `honua-esri-assess <command>` or `python -m honua_esri_assess <command>`
 
 pytest config (`pyproject.toml`): `pythonpath = ["src"]`, `testpaths = ["tests"]`,
 `addopts = ["--import-mode=importlib"]`.

@@ -1,7 +1,7 @@
-# honua-esri-assess
+# honua-migrate
 
-[![CI](https://github.com/honua-io/honua-esri-assess/actions/workflows/ci.yml/badge.svg?branch=trunk)](https://github.com/honua-io/honua-esri-assess/actions/workflows/ci.yml)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/honua-io/honua-esri-assess/badge)](https://scorecard.dev/viewer/?uri=github.com/honua-io/honua-esri-assess)
+[![CI](https://github.com/honua-io/honua-migrate/actions/workflows/ci.yml/badge.svg?branch=trunk)](https://github.com/honua-io/honua-migrate/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/honua-io/honua-migrate/badge)](https://scorecard.dev/viewer/?uri=github.com/honua-io/honua-migrate)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 > **Command transition:** `honua-migrate assess` is now the primary assessment
@@ -10,22 +10,23 @@
 > window, with removal no earlier than `honua-migrate` 1.2. See the
 > [assessment transition policy](docs/assessment-transition.md).
 
-A **read-only** command-line tool that inventories an organization's Esri
+An Apache-2.0 migration command-line suite whose **read-only assessment
+surface** inventories an organization's Esri
 footprint — ArcGIS Online, ArcGIS Server / Enterprise, and FileGDB workspaces —
 and produces a versioned `EsriFootprint.json` artifact plus human-readable
 Markdown reports: a readiness report, a per-shop-profile migratability
 verdict, and a crosswalk from that footprint to Honua capability keys. It
 exists so GIS teams can size a migration to
 [Honua](https://honua.io) (or simply audit their own estate) before committing
-to anything. The tool is Apache-2.0 by design so your security team can audit
+to anything. The suite is Apache-2.0 by design so your security team can audit
 every line before pointing it at production.
 
-## Read-only and no phone-home, verifiably
+## Assessment is read-only and no-phone-home, verifiably
 
-This tool is built for skeptical review. The guarantees below are enforced in
-code and by tests in this repository — not just promised:
+The assessment surface is built for skeptical review. The guarantees below
+are enforced in code and by tests in this repository — not just promised:
 
-- **Strictly read-only.** Every request against an Esri system is an HTTP
+- **Strictly read-only assessment.** Every request against an Esri system is an HTTP
   `GET`. The HTTP wrappers expose no write helpers; no `POST`/`PUT`/`DELETE`/
   `PATCH` is ever issued.
 - **No network telemetry.** No usage pings, crash uploads, or update checks —
@@ -54,19 +55,29 @@ grant. An anonymous "Tier 1" scan needs no credentials at all.
 
 ## Status
 
-Alpha, pre-1.0 (current release 0.7.x — see the [CHANGELOG](CHANGELOG.md)).
+Alpha, pre-1.0 (current source version 0.7.x — see the [CHANGELOG](CHANGELOG.md)).
 The `EsriFootprint.json` schema is at **v0.2** and unstable until v1.0:
 breaking changes are permitted between v0.x minors, per the
-[versioning policy](docs/schemas/versioning.md). The package is not yet
-published to PyPI; install from source.
+[versioning policy](docs/schemas/versioning.md). An installed command's
+`--version` output is the authoritative application version.
 
 ## Quick start
 
 Requires Python 3.11+.
 
+Install the application in an isolated environment:
+
 ```bash
-git clone https://github.com/honua-io/honua-esri-assess
-cd honua-esri-assess
+pipx install honua-migrate
+honua-migrate assess --help
+honua-esri-assess --help  # supported compatibility command
+```
+
+For development against an unreleased source checkout:
+
+```bash
+git clone https://github.com/honua-io/honua-migrate
+cd honua-migrate
 python3 -m pip install .
 ```
 
@@ -74,7 +85,7 @@ Scan an ArcGIS Online org (anonymous scans work too — just omit the token):
 
 ```bash
 export AGOL_TOKEN="..."   # optional, pre-existing token
-honua-esri-assess scan agol \
+honua-migrate assess scan agol \
   --target https://yourorg.maps.arcgis.com/sharing/rest \
   --token-env AGOL_TOKEN \
   --output EsriFootprint.json \
@@ -84,22 +95,24 @@ honua-esri-assess scan agol \
 Then render the human-readable companions:
 
 ```bash
-honua-esri-assess report  --input EsriFootprint.json --output readiness-report.md
-honua-esri-assess verdict --input EsriFootprint.json
-honua-esri-assess caps    --input EsriFootprint.json
+honua-migrate assess report  --input EsriFootprint.json --output readiness-report.md
+honua-migrate assess verdict --input EsriFootprint.json
+honua-migrate assess caps    --input EsriFootprint.json
 ```
 
 Inspect or validate against the bundled schema at any time:
 
 ```bash
-honua-esri-assess schema show
-honua-esri-assess schema validate EsriFootprint.json
+honua-migrate assess schema show
+honua-migrate assess schema validate EsriFootprint.json
 ```
 
 ## Commands
 
-Run `honua-esri-assess --help` (or `python -m honua_esri_assess --help`) for
-full option listings. Every `scan` subcommand is read-only against the target.
+Run `honua-migrate --help` for the complete migration command tree, or
+`honua-migrate assess --help` for assessment options. The compatibility forms
+`honua-esri-assess --help` and `python -m honua_esri_assess --help` remain
+available. Every assessment `scan` subcommand is read-only against the target.
 
 | Command | What it does |
 |---------|--------------|
@@ -130,12 +143,12 @@ uses (`honua_esri_assess.verdict.registry` — portal item types, server
 crosswalk document:
 
 ```bash
-honua-esri-assess caps --input EsriFootprint.json
+honua-migrate assess caps --input EsriFootprint.json
 # writes ./honua-caps.json, prints a Markdown summary + the shareable URL
 ```
 
 ```bash
-honua-esri-assess caps \
+honua-migrate assess caps \
   --input EsriFootprint.json \
   --json honua-caps.json \
   --output caps-summary.md
@@ -183,7 +196,7 @@ file (e.g. a copy of the published artifact carried into an air-gapped
 network) with zero network access:
 
 ```bash
-honua-esri-assess caps --input EsriFootprint.json --crosswalk ./capability-keys.v1.json
+honua-migrate assess caps --input EsriFootprint.json --crosswalk ./capability-keys.v1.json
 ```
 
 `--crosswalk` also accepts an `http(s)://` URL once the canonical artifact is
@@ -191,7 +204,7 @@ published — this is the *one* deliberate, explicit exception to the tool's
 no-network posture, and it only runs when you pass a URL yourself:
 
 ```bash
-honua-esri-assess caps --input EsriFootprint.json \
+honua-migrate assess caps --input EsriFootprint.json \
   --crosswalk https://example.com/capability-keys.v1.json
 ```
 
@@ -291,6 +304,9 @@ rehosting of licensed data, no embedded proprietary assets) is documented in
 Migration implementation ownership, retained SDK/server API boundaries,
 release provenance, licensing, and legacy-entry removal gates are defined in
 the [ownership and deprecation policy](docs/ownership-and-deprecation.md).
+The temporary `honua-sdk` 0.x launcher collision and its fail-closed isolated
+invocation path are documented in the
+[`honua-migrate` console-script ownership policy](docs/console-script-collision.md).
 
 ## Related Honua projects
 

@@ -24,11 +24,18 @@ PyPI project or release component.
    dispatch is required because events created by the default GitHub Actions
    token do not recursively trigger tag workflows.
 5. The publish workflow validates the tag/commit identity, repeats
-   the release gates, builds and validates deterministic artifacts, runs
-   isolated wheel and sdist smoke installs, attaches the artifacts,
-   `SHA256SUMS`, and version-specific install notes to that GitHub release,
-   creates build-provenance attestations, and then uploads to PyPI through
-   Trusted Publishing.
+   the release gates from hash-locked tools, builds and validates deterministic
+   artifacts, and runs isolated wheel and sdist smoke installs.
+6. A read-only preflight checks the exact release filenames and SHA-256 hashes
+   on PyPI. A missing version is eligible for upload; an exact existing version
+   is a successful retry; any partial or mismatched release fails closed.
+7. The isolated release-asset job attaches the artifacts, `SHA256SUMS`, and
+   version-specific install notes to the matching GitHub release. Existing
+   assets are accepted only when their bytes match, so retries neither
+   overwrite nor silently diverge.
+8. When the exact version is absent from PyPI, the environment-protected job
+   creates build-provenance attestations and uploads through Trusted
+   Publishing.
 
 Manual `workflow_dispatch` runs with blank release inputs are build-only. A
 publish-capable dispatch must be launched at an existing `honua-migrate-v*`
@@ -54,19 +61,23 @@ Before the environment-protected upload job can start, the workflow requires:
   Python version, license expression, console entry point, required content,
   unsafe path, private-key, and assessment no-telemetry validation;
 - isolated wheel and sdist installs with `pip check`, both console commands,
-  both module invocations, the complete fixture-backed smoke suite, and an
+  both module invocations, the canonical typed-package marker, the complete
+  fixture-backed smoke suite, and an
   installed `scan -> EsriFootprint.json -> report` workflow; and
-- a matching GitHub release that accepts the wheel, sdist, checksum manifest,
-  and rendered install/upgrade notes before the PyPI action is invoked.
+- exact PyPI filename/hash parity when a version already exists; and
+- a matching GitHub release that accepts new assets or byte-identical existing
+  assets without overwrite.
 
 Third-party actions in the publish and Release Please workflows are pinned to
-full commit SHAs. Release Please receives `actions: write` only so its default
-short-lived GitHub token can dispatch the exact release ref without a PAT.
-The PyPI job receives only `contents: write` for its release
-asset attachment, `attestations: write` for provenance, and `id-token: write`
-for short-lived OIDC credentials. No PyPI username, password, API token, or
-long-lived publishing secret is used. Duplicate filenames or versions fail;
-the workflow does not use `skip-existing` or overwrite release assets.
+full commit SHAs. The Release Please action runs in a job with only
+`contents: write` and `pull-requests: write`; a later first-party shell job
+receives `actions: write` and revalidates the exact tag and commit before it
+dispatches publication. In the publish workflow, `contents: write` exists only
+in the isolated release-asset job because GitHub requires it to attach files to
+an existing release. The PyPI job has `contents: read`, `attestations: write`,
+and `id-token: write` for provenance and short-lived OIDC credentials. No PyPI
+username, password, API token, long-lived publishing secret, Scorecard
+suppression, `skip-existing`, or release-asset overwrite is used.
 
 ## One-time owner configuration
 

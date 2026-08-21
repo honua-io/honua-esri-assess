@@ -36,5 +36,9 @@
     "@biomejs/biome": "1.9.4",
     "@types/node": "^24.3.1",
     "vitest": "^4.0.16"
+  },
+  "overrides": {
+    "nanoid": "3.3.18",
+    "postcss": "8.5.26"
   }
 }

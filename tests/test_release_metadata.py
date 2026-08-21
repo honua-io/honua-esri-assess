@@ -37,6 +37,7 @@ def test_project_metadata_declares_release_contract() -> None:
         "Programming Language :: Python :: 3.12",
         "Programming Language :: Python :: 3.13",
         "Topic :: Scientific/Engineering :: GIS",
+        "Typing :: Typed",
     ):
         assert classifier in project["classifiers"]
 
@@ -129,10 +130,26 @@ def test_publish_workflow_publishes_only_from_validated_release_tags() -> None:
     assert "environment:\n      name: pypi-honua-migrate" in workflow
     assert "id-token: write" in workflow
     assert "gh release upload" in workflow
+    assert "check_pypi_parity.py" in workflow
+    assert workflow.count("contents: write") == 1
+    release_asset_job = workflow.split("  release-assets:\n", maxsplit=1)[1].split(
+        "  publish:\n", maxsplit=1
+    )[0]
+    assert "contents: write" in release_asset_job
+    assert "cmp --silent" in release_asset_job
+    publish_job = workflow.split("  publish:\n", maxsplit=1)[1]
+    assert "contents: write" not in publish_job
+    assert "contents: read" in publish_job
+    assert "needs.pypi-preflight.outputs.publish_required == 'true'" in publish_job
+    assert "--require-hashes -r requirements/release.txt" in workflow
+    assert "python -m build --no-isolation" in workflow
     assert "validate_python_dist.py" in workflow
     assert "--compare" in workflow
     assert "honua-migrate\" assess --help" in workflow
     assert "honua-esri-assess\" --help" in workflow
+    assert workflow.count("-m honua_migrate assess --help") >= 2
+    assert workflow.count("-m honua_esri_assess --help") >= 2
+    assert workflow.count("joinpath('py.typed').is_file()") == 2
     assert "skip-existing" not in workflow
     assert "password:" not in workflow
     assert "dry_run" not in workflow
@@ -140,11 +157,58 @@ def test_publish_workflow_publishes_only_from_validated_release_tags() -> None:
     release_please = (
         REPO_ROOT / ".github" / "workflows" / "release-please.yml"
     ).read_text(encoding="utf-8")
-    assert "actions: write" in release_please
-    assert "steps.release.outputs.release_created == 'true'" in release_please
+    release_job, dispatch_job = release_please.split(
+        "  dispatch-python-release:\n", maxsplit=1
+    )
+    assert "actions: write" not in release_job
+    assert "contents: write" in release_job
+    assert "pull-requests: write" in release_job
+    assert "googleapis/release-please-action@" in release_job
+    assert "actions: write" in dispatch_job
+    assert "contents: write" not in dispatch_job
+    assert "googleapis/release-please-action@" not in dispatch_job
+    assert "needs.release-please.outputs.release_created == 'true'" in dispatch_job
+    assert '[[ "$RELEASE_TAG" == honua-migrate-v* ]]' in dispatch_job
+    assert '[[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]' in dispatch_job
+    assert 'commits/$RELEASE_TAG" --jq .sha' in dispatch_job
+    assert 'release view "$RELEASE_TAG" --json tagName' in dispatch_job
     assert "gh workflow run publish.yml --ref \"$RELEASE_TAG\"" in release_please
     assert '-f release_tag="$RELEASE_TAG"' in release_please
     assert '-f release_sha="$RELEASE_SHA"' in release_please
+
+
+def test_python_release_docs_are_installation_stable() -> None:
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    install_notes = (REPO_ROOT / "docs" / "release-installation.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "pipx install honua-migrate" in readme
+    assert "not yet published" not in readme
+    assert "After the first tagged release" not in readme
+    assert "pipx install" in install_notes
+    module_section = install_notes.split(
+        "Module and import compatibility", maxsplit=1
+    )[1]
+    assert "python3 -m venv .venv" in module_section
+    assert ".venv/bin/python -m honua_migrate" in module_section
+
+
+def test_release_toolchain_is_fully_hash_locked() -> None:
+    lock = (REPO_ROOT / "requirements" / "release.txt").read_text(
+        encoding="utf-8"
+    )
+    package_lines = [
+        line
+        for line in lock.splitlines()
+        if line and not line.startswith(("#", " "))
+    ]
+
+    assert package_lines
+    assert all("==" in line and line.endswith("\\") for line in package_lines)
+    assert lock.count("    --hash=sha256:") >= len(package_lines)
+    assert "-e " not in lock
+    assert " @ " not in lock
 
 
 def test_release_workflows_pin_third_party_actions_to_commits() -> None:

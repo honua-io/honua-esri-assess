@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import importlib.metadata as metadata
 import sys
+import tomllib
+from pathlib import Path
 
 from packaging.requirements import Requirement
 
@@ -21,9 +23,17 @@ def requirement_name(requirement: str) -> str | None:
 
 def runtime_dependency_names() -> set[str]:
     seen: set[str] = set()
+    try:
+        root_requirements = metadata.requires(PROJECT) or []
+    except metadata.PackageNotFoundError:
+        with Path("pyproject.toml").open("rb") as fh:
+            project = tomllib.load(fh)["project"]
+        if project.get("name") != PROJECT:
+            raise ValueError(f"pyproject.toml is not the {PROJECT} project")
+        root_requirements = project["dependencies"]
     pending = [
         name
-        for req in metadata.requires(PROJECT) or []
+        for req in root_requirements
         if (name := requirement_name(req)) is not None
     ]
     while pending:

@@ -58,16 +58,14 @@ grant. An anonymous "Tier 1" scan needs no credentials at all.
 Alpha, pre-1.0 (current source version 0.7.x — see the [CHANGELOG](CHANGELOG.md)).
 The `EsriFootprint.json` schema is at **v0.2** and unstable until v1.0:
 breaking changes are permitted between v0.x minors, per the
-[versioning policy](docs/schemas/versioning.md). The package is not yet
-published to PyPI; the first release is prepared under
-[`#81`](https://github.com/honua-io/honua-migrate/issues/81).
+[versioning policy](docs/schemas/versioning.md). An installed command's
+`--version` output is the authoritative application version.
 
 ## Quick start
 
 Requires Python 3.11+.
 
-After the first tagged release, install the application in an isolated
-environment:
+Install the application in an isolated environment:
 
 ```bash
 pipx install honua-migrate
@@ -75,7 +73,7 @@ honua-migrate assess --help
 honua-esri-assess --help  # supported compatibility command
 ```
 
-Until that release is published, install from the successor repository:
+For development against an unreleased source checkout:
 
 ```bash
 git clone https://github.com/honua-io/honua-migrate

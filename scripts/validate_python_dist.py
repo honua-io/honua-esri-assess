@@ -183,6 +183,7 @@ def validate_wheel(path: Path, version: str) -> None:
             "honua_migrate/__init__.py",
             "honua_migrate/__main__.py",
             "honua_migrate/cli.py",
+            "honua_migrate/py.typed",
             "honua_migrate/code/python/provenance.json",
             "honua_migrate/contract_schemas/v1/run.schema.json",
             "honua_esri_assess/__init__.py",
@@ -221,9 +222,13 @@ def validate_sdist(path: Path, version: str) -> None:
         f"{root}/PKG-INFO",
         f"{root}/docs/console-script-collision.md",
         f"{root}/pyproject.toml",
+        f"{root}/requirements/release.in",
+        f"{root}/requirements/release.txt",
+        f"{root}/scripts/check_pypi_parity.py",
         f"{root}/scripts/validate_publish_tag.py",
         f"{root}/scripts/validate_python_dist.py",
         f"{root}/src/honua_migrate/cli.py",
+        f"{root}/src/honua_migrate/py.typed",
         f"{root}/src/honua_esri_assess/cli.py",
     }
     with tarfile.open(path, mode="r:gz") as archive:

@@ -76,6 +76,7 @@ def test_publish_lanes_are_tag_validated_and_build_only_dispatch_capable() -> No
         assert "workflow_dispatch:" in workflow
         if package == "python":
             assert "github.event_name == 'push'" in workflow
+            assert "inputs.release_tag != ''" in workflow
             assert "dry_run:" not in workflow
         else:
             assert "dry_run:" in workflow

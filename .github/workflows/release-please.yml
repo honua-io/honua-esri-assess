@@ -6,6 +6,7 @@ on:
       - trunk
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -14,6 +15,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      - name: Dispatch the exact Python release tag
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
+        run: |
+          test -n "$RELEASE_TAG"
+          test -n "$RELEASE_SHA"
+          gh workflow run publish.yml --ref "$RELEASE_TAG" \
+            -f release_tag="$RELEASE_TAG" \
+            -f release_sha="$RELEASE_SHA"

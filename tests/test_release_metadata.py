@@ -122,6 +122,9 @@ def test_publish_workflow_publishes_only_from_validated_release_tags() -> None:
     assert 'tags:\n      - "honua-migrate-v*"' in workflow
     assert "github.event_name == 'push'" in workflow
     assert "startsWith(github.ref, 'refs/tags/honua-migrate-v')" in workflow
+    assert "inputs.release_tag != ''" in workflow
+    assert 'test "$RELEASE_TAG" = "$GITHUB_REF_NAME"' in workflow
+    assert 'test "$RELEASE_SHA" = "$GITHUB_SHA"' in workflow
     assert "--require-git-ref" in workflow
     assert "environment:\n      name: pypi-honua-migrate" in workflow
     assert "id-token: write" in workflow
@@ -133,6 +136,15 @@ def test_publish_workflow_publishes_only_from_validated_release_tags() -> None:
     assert "skip-existing" not in workflow
     assert "password:" not in workflow
     assert "dry_run" not in workflow
+
+    release_please = (
+        REPO_ROOT / ".github" / "workflows" / "release-please.yml"
+    ).read_text(encoding="utf-8")
+    assert "actions: write" in release_please
+    assert "steps.release.outputs.release_created == 'true'" in release_please
+    assert "gh workflow run publish.yml --ref \"$RELEASE_TAG\"" in release_please
+    assert '-f release_tag="$RELEASE_TAG"' in release_please
+    assert '-f release_sha="$RELEASE_SHA"' in release_please
 
 
 def test_release_workflows_pin_third_party_actions_to_commits() -> None:

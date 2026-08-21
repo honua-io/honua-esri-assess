@@ -19,18 +19,23 @@ PyPI project or release component.
 3. Review the generated `pyproject.toml`, both Python `__version__` fallbacks,
    `.release-please-manifest.json`, and `CHANGELOG.md` changes.
 4. Merge the release PR. Release Please creates the matching
-   `honua-migrate-v<semver>` tag and GitHub release.
-5. `.github/workflows/publish.yml` validates the tag/commit identity, repeats
+   `honua-migrate-v<semver>` tag and GitHub release, then dispatches
+   `.github/workflows/publish.yml` at that exact tag and commit. This explicit
+   dispatch is required because events created by the default GitHub Actions
+   token do not recursively trigger tag workflows.
+5. The publish workflow validates the tag/commit identity, repeats
    the release gates, builds and validates deterministic artifacts, runs
    isolated wheel and sdist smoke installs, attaches the artifacts,
    `SHA256SUMS`, and version-specific install notes to that GitHub release,
    creates build-provenance attestations, and then uploads to PyPI through
    Trusted Publishing.
 
-Manual `workflow_dispatch` runs are always build-only. There is no workflow
-input that converts a branch dispatch into a publish. A real upload requires a
-`push` event for an exact `honua-migrate-v*` tag and approval through the
-`pypi-honua-migrate` GitHub environment.
+Manual `workflow_dispatch` runs with blank release inputs are build-only. A
+publish-capable dispatch must be launched at an existing `honua-migrate-v*`
+tag and supply that exact tag and commit; mismatches fail before building.
+Release Please supplies those values without a PAT or long-lived secret. A
+direct protected-tag push remains supported. Either path requires approval
+through the `pypi-honua-migrate` GitHub environment.
 
 ## Fail-closed release gates
 
@@ -55,7 +60,9 @@ Before the environment-protected upload job can start, the workflow requires:
   and rendered install/upgrade notes before the PyPI action is invoked.
 
 Third-party actions in the publish and Release Please workflows are pinned to
-full commit SHAs. The PyPI job receives only `contents: write` for its release
+full commit SHAs. Release Please receives `actions: write` only so its default
+short-lived GitHub token can dispatch the exact release ref without a PAT.
+The PyPI job receives only `contents: write` for its release
 asset attachment, `attestations: write` for provenance, and `id-token: write`
 for short-lived OIDC credentials. No PyPI username, password, API token, or
 long-lived publishing secret is used. Duplicate filenames or versions fail;

@@ -64,7 +64,7 @@ def test_ci_preserves_python_and_self_activates_runtime_gates() -> None:
     assert "node-version: 20.19.0" in javascript_workflow
 
 
-def test_publish_lanes_are_tag_validated_and_dry_run_capable() -> None:
+def test_publish_lanes_are_tag_validated_and_build_only_dispatch_capable() -> None:
     for name, package in (
         ("publish.yml", "python"),
         ("publish-javascript.yml", "javascript"),
@@ -73,7 +73,12 @@ def test_publish_lanes_are_tag_validated_and_dry_run_capable() -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / name).read_text(
             encoding="utf-8"
         )
-        assert "dry_run:" in workflow
+        assert "workflow_dispatch:" in workflow
+        if package == "python":
+            assert "github.event_name == 'push'" in workflow
+            assert "dry_run:" not in workflow
+        else:
+            assert "dry_run:" in workflow
         assert "validate_publish_tag.py" in workflow
         if package != "python":
             assert f"--package {package}" in workflow

@@ -56,6 +56,6 @@ def test_client_module_does_not_hardcode_any_real_host() -> None:
         if "." in match.group(0).split("://", 1)[1].split("/", 1)[0]
     ]
     # Repo-link in the default User-Agent is intentional; everything else is forbidden.
-    allowed = {"https://github.com/honua-io/honua-esri-assess"}
+    allowed = {"https://github.com/honua-io/honua-migrate"}
     leftovers = [url for url in hardcoded if url not in allowed]
     assert not leftovers, f"unexpected hardcoded URLs in client.py: {leftovers}"

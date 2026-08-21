@@ -304,7 +304,7 @@ def test_filegdb_scanner_emits_error_diagnostic_when_reader_is_unavailable(
     assert artifact["counts"]["items"]["filegdb-feature-class"] == 0
     assert artifact["diagnostics"][0]["code"] == "partial-coverage"
     assert artifact["diagnostics"][0]["severity"] == "error"
-    assert "honua-esri-assess[filegdb]" in artifact["diagnostics"][0]["hint"]
+    assert "honua-migrate[filegdb]" in artifact["diagnostics"][0]["hint"]
 
 
 def test_filegdb_workspace_writes_schema_valid_artifact_with_fake_scanner(

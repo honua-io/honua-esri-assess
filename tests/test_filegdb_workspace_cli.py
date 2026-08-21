@@ -155,7 +155,7 @@ def test_handler_surfaces_missing_dependency_as_diagnostic(tmp_path: Path) -> No
     assert diagnostic.code == "partial-coverage"
     assert diagnostic.severity == "error"
     assert diagnostic.hint is not None
-    assert "honua-esri-assess[filegdb]" in diagnostic.hint
+    assert "honua-migrate[filegdb]" in diagnostic.hint
 
 
 def test_handler_rejects_non_gdb_directory(tmp_path: Path) -> None:

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 from typer.testing import CliRunner
 
@@ -47,8 +49,15 @@ def test_plan_contract_is_json_compatible_and_versioned() -> None:
 
 
 def test_python_module_entry_point_displays_help() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        filter(None, (str(repo_root / "src"), env.get("PYTHONPATH", "")))
+    )
     result = subprocess.run(
         [sys.executable, "-m", "honua_migrate", "--help"],
+        cwd=repo_root,
+        env=env,
         capture_output=True,
         check=False,
         text=True,

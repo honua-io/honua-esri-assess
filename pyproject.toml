@@ -3,9 +3,9 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "honua-esri-assess"
+name = "honua-migrate"
 version = "0.7.1"
-description = "Read-only Esri footprint assessment CLI for Honua migration discovery."
+description = "Open-source assessment and migration tooling for Honua."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -36,6 +36,7 @@ dependencies = [
 Homepage = "https://github.com/honua-io/honua-migrate"
 Issues = "https://github.com/honua-io/honua-migrate/issues"
 Repository = "https://github.com/honua-io/honua-migrate"
+Changelog = "https://github.com/honua-io/honua-migrate/blob/trunk/CHANGELOG.md"
 
 [project.scripts]
 honua-esri-assess = "honua_esri_assess.cli:main"
@@ -44,9 +45,6 @@ honua-migrate = "honua_migrate.cli:main"
 [project.optional-dependencies]
 filegdb = [
   "pyogrio>=0.12,<0.13",
-]
-python = [
-  "honua-sdk>=0.1.9,<0.2",
 ]
 dev = [
   "build>=1.2,<2",
@@ -98,7 +96,8 @@ addopts = ["--import-mode=importlib"]
 
 [tool.mypy]
 python_version = "3.11"
-packages = ["honua_esri_assess"]
+packages = ["honua_esri_assess", "honua_migrate"]
+mypy_path = "src"
 ignore_missing_imports = true
 disable_error_code = ["import-untyped"]
 warn_unused_configs = true

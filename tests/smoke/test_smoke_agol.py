@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -96,6 +97,18 @@ def test_agol_console_script_installed() -> None:
         if console_script.exists()
         else [sys.executable, "-m", "honua_esri_assess", "--version"]
     )
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+    env = os.environ.copy()
+    repo_root = Path(__file__).resolve().parents[2]
+    env["PYTHONPATH"] = os.pathsep.join(
+        filter(None, (str(repo_root / "src"), env.get("PYTHONPATH", "")))
+    )
+    result = subprocess.run(
+        cmd,
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip(), "expected a version line on stdout"

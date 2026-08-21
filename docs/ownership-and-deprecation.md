@@ -112,3 +112,9 @@ all of the following telemetry-independent evidence:
 
 If any evidence is absent, the shim remains. The consolidated 1.0 cutover gate
 is tracked in [#103](https://github.com/honua-io/honua-migrate/issues/103).
+
+Until the SDK removal release exists, the Python distribution does not depend
+on `honua-sdk`: pip cannot safely arbitrate the duplicate `honua-migrate`
+launcher. Co-installed live execution uses the collision-free
+`python -m honua_migrate` path described in the
+[console-script ownership policy](console-script-collision.md).

@@ -17,7 +17,7 @@ if not getattr(sys, "_honua_migrate_mounting_assessment", False):
     warn_legacy_surface(stacklevel=2)
 
 try:
-    __version__ = version("honua-esri-assess")
+    __version__ = version("honua-migrate")
 except PackageNotFoundError:
     __version__ = "0.7.1"
 

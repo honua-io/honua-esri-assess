@@ -8,7 +8,7 @@ import sys
 
 from packaging.requirements import Requirement
 
-PROJECT = "honua-esri-assess"
+PROJECT = "honua-migrate"
 INCOMPATIBLE = ("AGPL", "GPL", "LGPL", "ELV2", "SSPL", "PROPRIETARY")
 
 

@@ -171,7 +171,7 @@ def test_packaged_report_strict_schema_failure_is_typed(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
     )
-    wheel = next(wheel_dir.glob("honua_esri_assess-*.whl"))
+    wheel = next(wheel_dir.glob("honua_migrate-*.whl"))
     with zipfile.ZipFile(wheel) as archive:
         assert "honua_esri_assess/schemas/esri-footprint-v0.1.json" in archive.namelist()
 

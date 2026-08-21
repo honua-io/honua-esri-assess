@@ -9,7 +9,7 @@
 > stop and escalate rather than guess.
 
 This is the documentation deliverable of the coordination epic
-[#33 "Esri IP & licensing compliance guardrails"](https://github.com/honua-io/honua-esri-assess/issues/33).
+[#33 "Esri IP & licensing compliance guardrails"](https://github.com/honua-io/honua-migrate/issues/33).
 The epic itself stays open as a living coordination surface for per-ticket
 constraint review and counsel sign-offs; this doc captures the durable policy
 those activities apply.

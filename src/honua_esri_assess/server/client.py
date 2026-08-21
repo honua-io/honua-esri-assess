@@ -34,7 +34,10 @@ from ..logging import get_logger
 from ._safe import credential_free_url, redact_params, safe_url
 from .auth import AnonymousCredential, Credential
 
-_DEFAULT_USER_AGENT = f"honua-esri-assess/{__version__} (+https://github.com/honua-io/honua-esri-assess)"
+_DEFAULT_USER_AGENT = (
+    f"honua-esri-assess/{__version__} "
+    "(+https://github.com/honua-io/honua-migrate)"
+)
 _DEFAULT_TIMEOUT = 30.0
 _REST_SUFFIX = "/arcgis/rest/services"
 _ARCGIS_PREFIX = "/arcgis"

@@ -30,7 +30,7 @@
   "dependencies": {
     "@honua/sdk": "^0.1.2-beta.0",
     "@honua/sdk-esri-compat": "^0.1.2-beta.0",
-    "typescript": "^5.9.2"
+    "typescript": "^7.0.2"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

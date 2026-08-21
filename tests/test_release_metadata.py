@@ -90,6 +90,7 @@ def test_release_please_config_uses_component_tags() -> None:
     config = json.loads(
         (REPO_ROOT / "release-please-config.json").read_text(encoding="utf-8")
     )
+    assert config["separate-pull-requests"] is True
     package = config["packages"]["."]
 
     assert package["release-type"] == "python"

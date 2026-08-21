@@ -158,7 +158,7 @@ jobs:
       - name: Report absent package
         if: steps.package.outputs.present == 'false'
         run: echo "packages/maui contains markers only; .NET gate is dormant."
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         if: steps.package.outputs.present == 'true'
         with:
           dotnet-version: "10.0.x"

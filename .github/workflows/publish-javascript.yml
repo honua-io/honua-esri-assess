@@ -55,7 +55,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
@@ -93,7 +93,7 @@ jobs:
         with:
           name: javascript-dist-${{ github.sha }}
           path: ${{ runner.temp }}/javascript-dist
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - name: Install and invoke packaged CLI
@@ -121,7 +121,7 @@ jobs:
         with:
           name: javascript-dist-${{ github.sha }}
           path: dist
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - uses: actions/attest-build-provenance@v3

@@ -310,7 +310,7 @@ invocation path are documented in the
 
 ## Related Honua projects
 
-- [honua-server](https://github.com/honua-io/honua-server) — the flagship multi-protocol geospatial server (GeoServices REST, OGC API, WMS/WFS/WMTS/WCS, STAC, vector tiles, and more) that Esri clients such as ArcGIS Pro connect to unmodified; the migration target this tool sizes.
+- [honua-server](https://github.com/honua-io/honua-server) — the flagship multi-protocol geospatial server (GeoServices REST, OGC API, WMS/WFS/WMTS/WCS, STAC, vector tiles, and more) with protocol-level compatibility for selected, operation-scoped Esri client workflows, bounded by its published [compatibility matrix](https://github.com/honua-io/honua-server/blob/trunk/docs/reference/compatibility/geoservices-parity.md) and [certified client envelope](https://github.com/honua-io/honua-server/blob/trunk/docs/gis/CLIENT_CERTIFICATION_ROSTER.md); the migration target this tool sizes.
 - [honua-console](https://github.com/honua-io/honua-console) — unified web console (Studio, Catalog, Operate, Share).
 - [honua-helm](https://github.com/honua-io/honua-helm) — Helm chart, the Kubernetes deploy path.
 - [geobench](https://github.com/honua-io/geobench) — open, vendor-neutral benchmark suite for geospatial servers.

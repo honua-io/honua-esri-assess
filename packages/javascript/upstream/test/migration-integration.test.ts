@@ -1554,6 +1554,45 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/widgets/CoordinateConversion");
   });
 
+  it("migrates a React function-component (.tsx) fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-react-map-view-app");
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(7);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(7);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind.map).toEqual({ total: 1, autoMigrated: 1, manual: 0 });
+    expect(codemodResult.metrics.byKind["map-view"]).toEqual({ total: 1, autoMigrated: 1, manual: 0 });
+    expect(codemodResult.metrics.byKind["feature-layer"]).toEqual({ total: 1, autoMigrated: 1, manual: 0 });
+    expect(codemodResult.metrics.byKind["layer-list"]).toEqual({ total: 1, autoMigrated: 1, manual: 0 });
+    expect(codemodResult.metrics.byKind["legend-widget"]).toEqual({ total: 1, autoMigrated: 1, manual: 0 });
+    expect(codemodResult.metrics.byKind["search-widget"]).toEqual({ total: 1, autoMigrated: 1, manual: 0 });
+    expect(codemodResult.metrics.byKind["popup-widget"]).toEqual({ total: 1, autoMigrated: 1, manual: 0 });
+    expect(report.readiness).toBe("ready");
+    expect(report.manualTodos).toEqual([]);
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedComponent = fs.readFileSync(path.join(workingCopy, "src", "ParcelMap.tsx"), "utf8");
+    expect(migratedComponent).toContain(
+      'import { FeatureLayerCompat, LayerListCompat, LegendCompat, MapCompat, MapViewCompat, PopupCompat, SearchCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedComponent).toContain('import { useEffect, useRef } from "react";');
+    expect(migratedComponent).toContain("const parcels = new FeatureLayerCompat({");
+    expect(migratedComponent).toContain("const map = new MapCompat({");
+    expect(migratedComponent).toContain("const view = new MapViewCompat({");
+    expect(migratedComponent).toContain("container: containerRef.current,");
+    expect(migratedComponent).toContain("const layerList = new LayerListCompat({ view });");
+    expect(migratedComponent).toContain("const legend = new LegendCompat({ view });");
+    expect(migratedComponent).toContain("const search = new SearchCompat({ view, includeDefaultSources: false });");
+    expect(migratedComponent).toContain("const popup = new PopupCompat({ view, dockEnabled: true });");
+    // Hook lifecycle and JSX return must survive the codemod untouched.
+    expect(migratedComponent).toContain("return () => {");
+    expect(migratedComponent).toContain("view.destroy();");
+    expect(migratedComponent).toContain('return <div className="parcel-map" ref={containerRef} />;');
+    expect(migratedComponent).not.toContain("@arcgis/core/");
+  });
+
   it("migrates supported dynamic import usage with ready gating", () => {
     const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-dynamic-map-app");
 

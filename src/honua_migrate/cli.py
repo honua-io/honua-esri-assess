@@ -5,24 +5,24 @@ from __future__ import annotations
 from typing import cast
 
 import click
+import typer
+
+from .app import cli_app
+from .contracts import EXIT_INTERNAL_ERROR, MigrationError
+
+# ``typer.Exit`` is stable public API across Typer versions, unlike the
+# private ``_click`` vendored fork below, so it is resolved unconditionally.
+_EXIT_EXCEPTIONS: tuple[type[BaseException], ...] = (click.exceptions.Exit, typer.Exit)
 
 try:  # pragma: no cover - import-time compatibility wiring
     from typer import _click as _typer_click  # type: ignore[attr-defined]
 
-    _EXIT_EXCEPTIONS: tuple[type[BaseException], ...] = (
-        click.exceptions.Exit,
-        _typer_click.exceptions.Exit,
-    )
     _CLICK_EXCEPTIONS: tuple[type[BaseException], ...] = (
         click.ClickException,
         _typer_click.exceptions.ClickException,
     )
 except Exception:  # pragma: no cover - older Typer shares standalone Click
-    _EXIT_EXCEPTIONS = (click.exceptions.Exit,)
     _CLICK_EXCEPTIONS = (click.ClickException,)
-
-from .app import cli_app
-from .contracts import EXIT_INTERNAL_ERROR, MigrationError
 
 
 def main(argv: list[str] | None = None) -> int:

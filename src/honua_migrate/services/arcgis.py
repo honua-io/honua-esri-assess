@@ -178,7 +178,7 @@ def _preflight_output(path: Path | None, *, force: bool) -> None:
         )
 
 
-def _read_artifact(path: Path) -> tuple[str, dict[str, Any]]:
+def _read_artifact(path: Path) -> tuple[str, dict[str, Any], dict[str, Any]]:
     try:
         artifact = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -208,7 +208,7 @@ def _read_artifact(path: Path) -> tuple[str, dict[str, Any]]:
     )
     if not contract.verify(artifact):
         raise ArcGisMigrationError("Plan artifact was modified after it was reviewed.")
-    return stored_id, request
+    return stored_id, request, artifact
 
 
 @dataclass
@@ -427,7 +427,7 @@ def _apply(
     if not yes:
         raise typer.BadParameter("Apply mutates the Honua target. Re-run with --yes.")
     _preflight_output(output, force=force)
-    plan_id, request = _read_artifact(plan)
+    plan_id, request, _plan_artifact = _read_artifact(plan)
     validated_secret_reference = _validate_secret_reference(token_secret_ref)
     if validated_secret_reference:
         request["credentials"] = {
@@ -585,5 +585,390 @@ def cancel_command(
         _job_command(
             "cancel", job_id, output, honua_url, api_key, timeout_seconds, retries, force
         )
+    except ArcGisMigrationError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+# --- Existing-app handoff ---------------------------------------------------
+#
+# A bounded incremental import (discover -> plan -> apply -> verify) hands off
+# to a retained Esri JS application that keeps running against the imported
+# layers. This artifact is the reviewable, credential-free record of that
+# handoff: it exports the target endpoint and the source-to-target
+# service/layer ID mapping, and it separates import completion, reconciliation,
+# and retained-app validation into distinct outcomes so a feature-count match
+# is never read as proof of a working application.
+
+HANDOFF_KIND = "arcgis-existing-app-handoff"
+HANDOFF_RUNTIME = "existing-esri-js-retained"
+OUTCOME_VALUES = ("success", "partial", "failed", "unknown")
+MODE_VALUES = ("read-only-coexistence", "writable-cutover")
+SOURCE_CHANGE_VALUES = ("endpoint", "ids", "auth", "none")
+RECOVERY_ACTIONS = (
+    "none",
+    "monitoring-reconnect",
+    "transfer-retry",
+    "endpoint-switchback",
+    "data-restoration",
+)
+DIVERGENCE_HANDLING_VALUES = ("preserved", "reconciled", "discarded-with-consent")
+
+
+def _load_handoff_manifest(path: Path) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ArcGisMigrationError("Could not read the handoff manifest.") from exc
+    if not isinstance(payload, list) or not payload:
+        raise ArcGisMigrationError(
+            "Handoff manifest must be a non-empty JSON array of layer entries."
+        )
+    return payload
+
+
+def _handoff_job_id(apply_path: str, expected_plan_id: str) -> str | None:
+    try:
+        artifact = json.loads(Path(apply_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ArcGisMigrationError(
+            "Could not read a handoff manifest 'apply' artifact."
+        ) from exc
+    if not isinstance(artifact, dict) or artifact.get("kind") != "apply":
+        raise ArcGisMigrationError(
+            "A handoff manifest 'apply' artifact is not a supported apply artifact."
+        )
+    if artifact.get("planId") != expected_plan_id:
+        raise ArcGisMigrationError(
+            "A handoff manifest 'apply' artifact does not match its plan."
+        )
+    response = artifact.get("response")
+    job_id = response.get("jobId") if isinstance(response, dict) else None
+    return job_id if isinstance(job_id, str) and job_id else None
+
+
+def _handoff_scope(
+    manifest: list[dict[str, Any]], target_service_url: str
+) -> tuple[list[dict[str, Any]], list[str], list[str], list[str], list[str], list[int]]:
+    """Resolve one dependency-closure scope and ID mapping from a manifest.
+
+    Every entry names a reviewed plan artifact (source scope) plus an
+    operator-verified target layer ID; the source is never re-queried here.
+    """
+    id_mapping: list[dict[str, Any]] = []
+    plan_ids: list[str] = []
+    plan_digests: list[str] = []
+    job_ids: list[str] = []
+    service_urls: list[str] = []
+    layer_ids: list[int] = []
+    for index, entry in enumerate(manifest):
+        if not isinstance(entry, dict):
+            raise ArcGisMigrationError(f"Handoff manifest entry {index} must be an object.")
+        plan_value = entry.get("plan")
+        target_layer_id = entry.get("targetLayerId")
+        if not isinstance(plan_value, str) or not plan_value:
+            raise ArcGisMigrationError(f"Handoff manifest entry {index} is missing 'plan'.")
+        if not isinstance(target_layer_id, int) or isinstance(target_layer_id, bool):
+            raise ArcGisMigrationError(
+                f"Handoff manifest entry {index} needs a verified integer 'targetLayerId'."
+            )
+        plan_id, request, plan_artifact = _read_artifact(Path(plan_value))
+
+        manifest_job_id = entry.get("jobId")
+        apply_value = entry.get("apply")
+        if apply_value is not None:
+            if manifest_job_id is not None:
+                raise ArcGisMigrationError(
+                    f"Handoff manifest entry {index} must not set both 'jobId' and 'apply'."
+                )
+            if not isinstance(apply_value, str) or not apply_value:
+                raise ArcGisMigrationError(
+                    f"Handoff manifest entry {index} has an invalid 'apply' path."
+                )
+            manifest_job_id = _handoff_job_id(apply_value, plan_id)
+        elif manifest_job_id is not None and not isinstance(manifest_job_id, str):
+            raise ArcGisMigrationError(f"Handoff manifest entry {index} has an invalid 'jobId'.")
+
+        source_service_url = request["serviceUrl"]
+        source_layer_id = request["layerId"]
+        mapping_entry: dict[str, Any] = {
+            "sourceServiceUrl": source_service_url,
+            "sourceLayerId": source_layer_id,
+            "tableName": request["tableName"],
+            "targetServiceUrl": target_service_url,
+            "targetLayerId": target_layer_id,
+        }
+        if manifest_job_id:
+            mapping_entry["jobId"] = manifest_job_id
+            if manifest_job_id not in job_ids:
+                job_ids.append(manifest_job_id)
+        id_mapping.append(mapping_entry)
+        if plan_id not in plan_ids:
+            plan_ids.append(plan_id)
+        if plan_artifact["plan_digest"] not in plan_digests:
+            plan_digests.append(plan_artifact["plan_digest"])
+        if source_service_url not in service_urls:
+            service_urls.append(source_service_url)
+        if source_layer_id not in layer_ids:
+            layer_ids.append(source_layer_id)
+    return id_mapping, plan_ids, plan_digests, job_ids, service_urls, layer_ids
+
+
+def _handoff_mode_fields(
+    mode: str,
+    *,
+    source_still_serving: bool,
+    baseline_evidence: str | None,
+    route_back_method: str | None,
+    write_authority: str | None,
+    quiescence_window: str | None,
+    divergence_limit: str | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if mode == "read-only-coexistence":
+        if write_authority or quiescence_window or divergence_limit:
+            raise ArcGisMigrationError(
+                "--write-authority, --quiescence-window, and --divergence-limit only "
+                "apply to --mode writable-cutover."
+            )
+        if not source_still_serving or not baseline_evidence or not route_back_method:
+            raise ArcGisMigrationError(
+                "--mode read-only-coexistence requires proving the source still serves "
+                "the baseline: pass --source-still-serving, --baseline-evidence, and "
+                "--route-back-method."
+            )
+        return (
+            {
+                "sourceStillServing": True,
+                "evidence": baseline_evidence,
+                "routeBackOperatorControlled": True,
+                "routeBackMethod": route_back_method,
+            },
+            None,
+        )
+    if baseline_evidence or route_back_method:
+        raise ArcGisMigrationError(
+            "--baseline-evidence and --route-back-method only apply to "
+            "--mode read-only-coexistence."
+        )
+    if (
+        write_authority not in {"source", "target"}
+        or not quiescence_window
+        or not divergence_limit
+    ):
+        raise ArcGisMigrationError(
+            "--mode writable-cutover requires declaring --write-authority "
+            "(source or target), --quiescence-window, and --divergence-limit."
+        )
+    return (
+        None,
+        {
+            "writeAuthority": write_authority,
+            "quiescenceWindow": quiescence_window,
+            "divergenceLimit": divergence_limit,
+        },
+    )
+
+
+def _handoff_source_changes(values: list[str] | None) -> list[str]:
+    unique: list[str] = []
+    for value in values or []:
+        if value not in SOURCE_CHANGE_VALUES:
+            raise ArcGisMigrationError(
+                "--source-change must be one of: endpoint, ids, auth, none."
+            )
+        if value not in unique:
+            unique.append(value)
+    if not unique:
+        raise ArcGisMigrationError("--source-change must be supplied at least once.")
+    if "none" in unique and len(unique) > 1:
+        raise ArcGisMigrationError(
+            "--source-change none must not be combined with endpoint, ids, or auth; "
+            "this handoff is never a zero-change, complete Honua SDK conversion."
+        )
+    return unique
+
+
+def _handoff_status(
+    recovery_action: str,
+    customer_message: str,
+    diagnostics_links: list[str] | None,
+    divergence_handling: str | None,
+) -> dict[str, Any]:
+    if recovery_action not in RECOVERY_ACTIONS:
+        raise ArcGisMigrationError(
+            "--recovery-action must be one of: none, monitoring-reconnect, "
+            "transfer-retry, endpoint-switchback, data-restoration."
+        )
+    if not customer_message:
+        raise ArcGisMigrationError("--customer-message is required.")
+    status: dict[str, Any] = {
+        "recoveryAction": recovery_action,
+        "customerMessage": customer_message,
+    }
+    links = [_safe_url(link) for link in diagnostics_links or []]
+    if links:
+        status["diagnosticsLinks"] = links
+    if recovery_action == "endpoint-switchback":
+        if divergence_handling not in DIVERGENCE_HANDLING_VALUES:
+            raise ArcGisMigrationError(
+                "--recovery-action endpoint-switchback requires --divergence-handling "
+                "(preserved, reconciled, or discarded-with-consent) so target-only "
+                "writes are never silently discarded on switchback."
+            )
+        status["divergenceHandling"] = divergence_handling
+    elif divergence_handling is not None:
+        raise ArcGisMigrationError(
+            "--divergence-handling only applies to --recovery-action endpoint-switchback."
+        )
+    return status
+
+
+def _handoff_outcome(import_outcome: str, reconciliation_outcome: str, retained_app_outcome: str) -> str:
+    outcomes = (import_outcome, reconciliation_outcome, retained_app_outcome)
+    if any(value not in OUTCOME_VALUES for value in outcomes):
+        raise ArcGisMigrationError(
+            "--import-outcome, --reconciliation-outcome, and --retained-app-outcome must "
+            "each be one of: success, partial, failed, unknown."
+        )
+    if any(value == "failed" for value in outcomes):
+        return "failed"
+    if any(value in {"partial", "unknown"} for value in outcomes):
+        return "partial"
+    return "success"
+
+
+def _handoff_effort(
+    consent: bool, elapsed_seconds: float | None, manual_interventions: int | None
+) -> dict[str, Any] | None:
+    if elapsed_seconds is None and manual_interventions is None:
+        if consent:
+            raise ArcGisMigrationError(
+                "--effort-consent requires --elapsed-seconds and/or --manual-interventions."
+            )
+        return None
+    if not consent:
+        raise ArcGisMigrationError(
+            "Recording elapsed effort or manual interventions requires --effort-consent."
+        )
+    effort: dict[str, Any] = {"consent": True}
+    if elapsed_seconds is not None:
+        if elapsed_seconds < 0:
+            raise ArcGisMigrationError("--elapsed-seconds must not be negative.")
+        effort["elapsedSeconds"] = elapsed_seconds
+    if manual_interventions is not None:
+        effort["manualInterventions"] = manual_interventions
+    return effort
+
+
+@arcgis_app.command("handoff")
+def handoff_command(
+    manifest: Path = typer.Argument(
+        ..., help="JSON array of {plan, apply|jobId, targetLayerId} layer entries."
+    ),
+    target_service_url: str = typer.Option(..., "--target-service-url"),
+    mode: str = typer.Option(
+        ..., "--mode", help="read-only-coexistence or writable-cutover."
+    ),
+    client_version: str = typer.Option(
+        ..., "--client-version", help="Pinned Esri JS client version of the retained app."
+    ),
+    exercised_rendering: bool = typer.Option(
+        ..., "--exercised-rendering/--not-exercised-rendering"
+    ),
+    exercised_query: bool = typer.Option(..., "--exercised-query/--not-exercised-query"),
+    exercised_popup: bool = typer.Option(..., "--exercised-popup/--not-exercised-popup"),
+    exercised_auth: bool = typer.Option(..., "--exercised-auth/--not-exercised-auth"),
+    source_change: list[str] | None = typer.Option(
+        None, "--source-change", help="Repeatable: endpoint, ids, auth, or none."
+    ),
+    import_outcome: str = typer.Option(..., "--import-outcome"),
+    reconciliation_outcome: str = typer.Option(..., "--reconciliation-outcome"),
+    retained_app_outcome: str = typer.Option(..., "--retained-app-outcome"),
+    recovery_action: str = typer.Option("none", "--recovery-action"),
+    customer_message: str = typer.Option(..., "--customer-message"),
+    diagnostics_link: list[str] | None = typer.Option(None, "--diagnostics-link"),
+    divergence_handling: str | None = typer.Option(None, "--divergence-handling"),
+    source_still_serving: bool = typer.Option(
+        False, "--source-still-serving/--source-not-serving"
+    ),
+    baseline_evidence: str | None = typer.Option(None, "--baseline-evidence"),
+    route_back_method: str | None = typer.Option(None, "--route-back-method"),
+    write_authority: str | None = typer.Option(None, "--write-authority"),
+    quiescence_window: str | None = typer.Option(None, "--quiescence-window"),
+    divergence_limit: str | None = typer.Option(None, "--divergence-limit"),
+    elapsed_seconds: float | None = typer.Option(None, "--elapsed-seconds"),
+    manual_interventions: int | None = typer.Option(
+        None, "--manual-interventions", min=0
+    ),
+    effort_consent: bool = typer.Option(False, "--effort-consent"),
+    output: Path = typer.Option(..., "--output"),
+    force: bool = typer.Option(False, "--force", help="Replace an existing output artifact."),
+) -> None:
+    """Document a verified existing-app handoff: target endpoint and ID mapping."""
+    try:
+        _preflight_output(output, force=force)
+        if mode not in MODE_VALUES:
+            raise ArcGisMigrationError(
+                "--mode must be read-only-coexistence or writable-cutover."
+            )
+        safe_target_service_url = _safe_url(target_service_url)
+        manifest_entries = _load_handoff_manifest(manifest)
+        (
+            id_mapping,
+            plan_ids,
+            plan_digests,
+            job_ids,
+            service_urls,
+            layer_ids,
+        ) = _handoff_scope(manifest_entries, safe_target_service_url)
+        baseline, cutover = _handoff_mode_fields(
+            mode,
+            source_still_serving=source_still_serving,
+            baseline_evidence=baseline_evidence,
+            route_back_method=route_back_method,
+            write_authority=write_authority,
+            quiescence_window=quiescence_window,
+            divergence_limit=divergence_limit,
+        )
+        status = _handoff_status(
+            recovery_action, customer_message, diagnostics_link, divergence_handling
+        )
+        outcome = _handoff_outcome(import_outcome, reconciliation_outcome, retained_app_outcome)
+        artifact: dict[str, Any] = {
+            "contract_version": "v1",
+            "kind": HANDOFF_KIND,
+            "planIds": sorted(plan_ids),
+            "planDigests": sorted(plan_digests),
+            "jobIds": sorted(job_ids),
+            "mode": mode,
+            "runtime": HANDOFF_RUNTIME,
+            "clientVersion": client_version,
+            "exercised": {
+                "rendering": exercised_rendering,
+                "queryFilterPaging": exercised_query,
+                "popupSelection": exercised_popup,
+                "authError": exercised_auth,
+            },
+            "sourceChanges": _handoff_source_changes(source_change),
+            "scope": {
+                "serviceUrls": sorted(service_urls),
+                "layerIds": sorted(layer_ids),
+            },
+            "targetServiceUrl": safe_target_service_url,
+            "idMapping": id_mapping,
+            "importOutcome": import_outcome,
+            "reconciliationOutcome": reconciliation_outcome,
+            "retainedAppOutcome": retained_app_outcome,
+            "outcome": outcome,
+            "status": status,
+        }
+        if baseline is not None:
+            artifact["baseline"] = baseline
+        if cutover is not None:
+            artifact["cutover"] = cutover
+        effort = _handoff_effort(effort_consent, elapsed_seconds, manual_interventions)
+        if effort is not None:
+            artifact["effort"] = effort
+        _validate_shared_contract("handoff", artifact)
+        _emit(artifact, output, force=force)
     except ArcGisMigrationError as exc:
         raise typer.BadParameter(str(exc)) from exc

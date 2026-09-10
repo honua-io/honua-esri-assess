@@ -13,7 +13,7 @@ import jsonschema
 from .contracts import EXIT_VALIDATION_ERROR, MigrationError
 
 SCHEMA_NAMES = frozenset(
-    {"diagnostic", "plan", "report", "reconciliation", "result", "run"}
+    {"diagnostic", "handoff", "plan", "report", "reconciliation", "result", "run"}
 )
 
 _SENSITIVE_KEY = re.compile(

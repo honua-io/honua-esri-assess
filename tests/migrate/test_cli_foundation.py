@@ -48,6 +48,20 @@ def test_plan_contract_is_json_compatible_and_versioned() -> None:
     }
 
 
+def test_main_surfaces_actionable_typer_bad_parameter_errors(capsys) -> None:
+    """A ``typer.BadParameter`` raised deep in a service command must reach the
+    operator with its real message and exit code 2, not the generic internal
+    failure fallback (regression: Typer's vendored ``_click`` fork moved
+    ``Exit`` out of ``_click.exceptions``, which masked every ClickException)."""
+
+    exit_code = main(["services", "arcgis", "status", "../secrets"])
+
+    assert exit_code == 2
+    output = capsys.readouterr().err
+    assert "internal migration command failure" not in output
+    assert "Job ID may contain only letters" in output
+
+
 def test_python_module_entry_point_displays_help() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     env = os.environ.copy()

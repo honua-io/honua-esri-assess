@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.honua.io/migrate/v1/handoff.schema.json",
+  "title": "Honua existing-app migration handoff v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "kind",
+    "planIds",
+    "planDigests",
+    "jobIds",
+    "mode",
+    "runtime",
+    "clientVersion",
+    "exercised",
+    "sourceChanges",
+    "scope",
+    "targetServiceUrl",
+    "idMapping",
+    "importOutcome",
+    "reconciliationOutcome",
+    "retainedAppOutcome",
+    "outcome",
+    "status"
+  ],
+  "properties": {
+    "contract_version": {"const": "v1"},
+    "kind": {"const": "arcgis-existing-app-handoff"},
+    "planIds": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+    "planDigests": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+      "minItems": 1
+    },
+    "jobIds": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "mode": {"enum": ["read-only-coexistence", "writable-cutover"]},
+    "runtime": {"const": "existing-esri-js-retained"},
+    "clientVersion": {"type": "string", "minLength": 1},
+    "exercised": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rendering", "queryFilterPaging", "popupSelection", "authError"],
+      "properties": {
+        "rendering": {"type": "boolean"},
+        "queryFilterPaging": {"type": "boolean"},
+        "popupSelection": {"type": "boolean"},
+        "authError": {"type": "boolean"}
+      }
+    },
+    "sourceChanges": {
+      "type": "array",
+      "items": {"enum": ["endpoint", "ids", "auth", "none"]},
+      "minItems": 1
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serviceUrls", "layerIds"],
+      "properties": {
+        "serviceUrls": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "layerIds": {"type": "array", "items": {"type": "integer"}}
+      }
+    },
+    "targetServiceUrl": {"type": "string", "minLength": 1},
+    "idMapping": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceServiceUrl", "sourceLayerId", "tableName", "targetServiceUrl", "targetLayerId"],
+        "properties": {
+          "sourceServiceUrl": {"type": "string", "minLength": 1},
+          "sourceLayerId": {"type": "integer"},
+          "tableName": {"type": "string", "minLength": 1},
+          "targetServiceUrl": {"type": "string", "minLength": 1},
+          "targetLayerId": {"type": "integer"},
+          "jobId": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceStillServing", "evidence", "routeBackOperatorControlled", "routeBackMethod"],
+      "properties": {
+        "sourceStillServing": {"const": true},
+        "evidence": {"type": "string", "minLength": 1},
+        "routeBackOperatorControlled": {"const": true},
+        "routeBackMethod": {"type": "string", "minLength": 1}
+      }
+    },
+    "cutover": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["writeAuthority", "quiescenceWindow", "divergenceLimit"],
+      "properties": {
+        "writeAuthority": {"enum": ["source", "target"]},
+        "quiescenceWindow": {"type": "string", "minLength": 1},
+        "divergenceLimit": {"type": "string", "minLength": 1}
+      }
+    },
+    "importOutcome": {"enum": ["success", "partial", "failed", "unknown"]},
+    "reconciliationOutcome": {"enum": ["success", "partial", "failed", "unknown"]},
+    "retainedAppOutcome": {"enum": ["success", "partial", "failed", "unknown"]},
+    "outcome": {"enum": ["success", "partial", "failed", "unknown"]},
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recoveryAction", "customerMessage"],
+      "properties": {
+        "recoveryAction": {
+          "enum": [
+            "none",
+            "monitoring-reconnect",
+            "transfer-retry",
+            "endpoint-switchback",
+            "data-restoration"
+          ]
+        },
+        "customerMessage": {"type": "string", "minLength": 1},
+        "diagnosticsLinks": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "divergenceHandling": {"enum": ["preserved", "reconciled", "discarded-with-consent"]}
+      }
+    },
+    "effort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consent"],
+      "properties": {
+        "consent": {"const": true},
+        "elapsedSeconds": {"type": "number", "minimum": 0},
+        "manualInterventions": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

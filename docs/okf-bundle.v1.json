@@ -25,6 +25,10 @@
     {
       "path": "docs/handler-interface.md",
       "why": "The CLI dispatch extension point: how scanner tickets register backend handlers under honua_esri_assess.commands.scan_handlers without changing the command tree. An internal architecture contract for contributors adding handlers, not something a user of the CLI calls."
+    },
+    {
+      "path": "docs/samples/readiness-report.sample.md",
+      "why": "A golden fixture, not prose. tests/report/test_renderer.py compares the renderer's output against this file byte for byte, so anything added to it - including OKF frontmatter - fails the build. The page it illustrates, readiness-report.md, is in the bundle and links to it."
     }
   ],
   "includedFiles": [],

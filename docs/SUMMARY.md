@@ -21,7 +21,6 @@
 * [Migration artifact contracts](contracts/migration-contracts.md)
 * [Esri license entitlement enumeration](entitlements.md)
 * [The readiness report](readiness-report.md)
-* [Sample readiness report](samples/readiness-report.sample.md)
 * [esri-access-footprint v0.1 schema](schemas/esri-access-footprint.v0.1.md)
 * [esri-footprint v0.1 schema](schemas/esri-footprint.v0.1.md)
 * [esri-footprint v0.2 schema](schemas/esri-footprint.v0.2.md)

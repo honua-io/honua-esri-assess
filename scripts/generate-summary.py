@@ -85,8 +85,16 @@ def render(pages: list[tuple[str, str, str]]) -> str:
         # The landing page and the docs map lead their section; a reader
         # arriving cold should not have to scan an alphabetical list to find
         # the front door. Everything else keeps path order.
-        lead = {'index.md': 0, 'README.md': 1}
-        entries.sort(key=lambda e: (lead.get(e[0], 2), e[0]))
+        # Front doors lead their section, ordered by how specific a door they
+        # are: the product landing page, then the docs map, then the feature
+        # map, then everything else in path order. A repo with no index.md
+        # (honua-sdk-js) therefore leads with its feature map rather than an
+        # alphabetically-first example; a repo with one (honua-sdk-python)
+        # leads with it. quickstart.md leads its own section so it precedes
+        # its troubleshooting companion.
+        lead = {'index.md': 0, 'README.md': 1, 'features/README.md': 2,
+                'quickstart.md': 0}
+        entries.sort(key=lambda e: (lead.get(e[0], 3), e[0]))
         for rel, _, _ in entries:
             placed.add(rel)
         lines.append(f"## {section}")

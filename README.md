@@ -330,6 +330,10 @@ release-please and PyPI Trusted Publishing — see [RELEASE.md](RELEASE.md).
 Report vulnerabilities to <security@honua.io>. See the org
 [security policy](https://github.com/honua-io/.github/blob/main/SECURITY.md).
 
+## Documentation
+
+- **[Full documentation index](docs/SUMMARY.md)** — every published page, generated from the documentation bundle so it cannot drift.
+
 ## License
 
 [Apache-2.0](LICENSE).

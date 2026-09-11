@@ -1,3 +1,9 @@
+---
+type: reference
+title: "Migration artifact contracts"
+description: "The packaged JSON Schemas covering diagnostics, engine reports, plans, runs, results and reconciliation, and which contract version applies."
+tags: [contracts, json-schema, artifacts]
+---
 # Migration contract versioning
 
 Honua migration artifacts use the packaged JSON Schemas in

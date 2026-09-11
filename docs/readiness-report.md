@@ -1,3 +1,9 @@
+---
+type: reference
+title: "The readiness report"
+description: "The human-readable companion to the machine artifacts: what each section means and how to read a verdict."
+tags: [reports, readiness]
+---
 # Markdown readiness report
 
 The readiness report is the human-readable companion to

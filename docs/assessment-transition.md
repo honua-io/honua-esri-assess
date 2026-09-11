@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Assess before you migrate"
+description: "honua-migrate assess is the read-only entry point: what it inspects, what it never writes, and how its output feeds the rest of the migration."
+tags: [assess, read-only, workflow]
+---
 # Assessment command transition
 
 `honua-migrate assess` is the primary surface for read-only Esri discovery.

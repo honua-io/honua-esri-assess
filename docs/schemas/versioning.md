@@ -1,3 +1,9 @@
+---
+type: reference
+title: "Schema versioning policy"
+description: "How the migration schemas are versioned while the line is pre-1.0, what counts as additive, and what forces a new major."
+tags: [versioning, schemas, policy]
+---
 # `EsriFootprint.json` Versioning Policy
 
 Status: pre-1.0 (current line: `0.1.x`).

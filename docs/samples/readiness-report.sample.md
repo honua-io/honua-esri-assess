@@ -1,3 +1,9 @@
+---
+type: reference
+title: "Sample readiness report"
+description: "A filled-in readiness report, so you can see the shape of the output before running anything."
+tags: [reports, sample]
+---
 # Honua Esri Readiness Report
 
 | Field | Value |

@@ -1,3 +1,9 @@
+---
+type: reference
+title: "Esri license entitlement enumeration"
+description: "Read-only enumeration of Esri license entitlements: what is discovered, what it is used for, and what is deliberately not collected."
+tags: [entitlements, licensing, esri]
+---
 # Entitlement Enumeration
 
 E6 adds read-only enumeration for Esri license entitlements and extension

@@ -1,3 +1,9 @@
+---
+type: concept
+title: "What this repository owns"
+description: "The public home for Honua migration artifacts: which contracts are stable, how deprecation is signalled, and what downstream may depend on."
+tags: [ownership, deprecation, governance]
+---
 # Migration ownership and deprecation policy
 
 This repository is the public home for Honua migration assessment, planning,

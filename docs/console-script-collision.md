@@ -1,3 +1,9 @@
+---
+type: guide
+title: "When honua-migrate and honua-sdk collide"
+description: "Both distributions declare a honua-migrate console script. Which one wins, why, and what to do if you have installed both."
+tags: [install, troubleshooting, cli]
+---
 # `honua-migrate` console-script ownership
 
 The `honua-migrate` distribution is the canonical owner of the

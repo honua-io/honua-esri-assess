@@ -1,3 +1,9 @@
+---
+type: reference
+title: "esri-access-footprint v0.1 schema"
+description: "The access-footprint schema: what the assessment records about permissions and reachability, separate from the estate itself."
+tags: [schema, access, permissions]
+---
 # EsriAccessFootprint v0.1 reference
 
 - Schema id: `https://schemas.honua.io/esri-access-footprint/v0.1.0/esri-access-footprint.json`

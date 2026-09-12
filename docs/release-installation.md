@@ -1,3 +1,10 @@
+---
+type: guide
+title: "Install a released version"
+description: "Install an exact released version into an isolated application environment, now that honua-migrate is published on PyPI."
+resource: "https://pypi.org/project/honua-migrate/"
+tags: [install, release, pypi]
+---
 # Install and upgrade `honua-migrate`
 
 Install an exact released version in an isolated application environment:

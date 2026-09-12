@@ -1,3 +1,9 @@
+---
+type: reference
+title: "Assessment handoff contract"
+description: "The prospect-facing summary of what an assessment hands over: which artifacts, in what shape, and what each is for."
+tags: [handoff, contracts, artifacts]
+---
 # Handoff Contract: `EsriFootprint.json`
 
 This document is the short, prospect-facing summary of what flows between the

@@ -1,3 +1,9 @@
+---
+type: reference
+title: "esri-footprint v0.1 schema"
+description: "The original footprint schema: every field the assessment emits about an Esri estate, with types and meaning."
+tags: [schema, footprint, v0.1]
+---
 # EsriFootprint v0.1 reference
 
 - Schema id: `https://schemas.honua.io/esri-footprint/v0.1.0/esri-footprint.json`

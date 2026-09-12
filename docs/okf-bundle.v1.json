@@ -1,0 +1,44 @@
+{
+  "version": "honua.okf-bundle/v1",
+  "description": "Which honua-migrate markdown is part of the Open Knowledge Format bundle, and which is deliberately not. Consumed by scripts/check-okf-bundle.py.",
+  "spec": {
+    "name": "Open Knowledge Format",
+    "version": "0.2",
+    "url": "https://github.com/GoogleCloudPlatform/open-knowledge-format",
+    "note": "One markdown file is one concept; the file path is the concept's identity; relative markdown links are the graph edges. `type` is the only required frontmatter field."
+  },
+  "program": "https://github.com/honua-io/agent-delivery-spec/tree/trunk/.specifica/okf-knowledge-graph-agent-effective-docs",
+  "workstream": "WS9 — the other nine repositories. honua-migrate is fourth.",
+  "root": "docs",
+  "conceptTypes": {
+    "index": "A section entry point. Enumerates what the directory holds so a reader or agent can choose before opening.",
+    "concept": "What a thing is and how it fits. No procedure.",
+    "guide": "A task someone performs, start to finish.",
+    "reference": "Lookup material: surfaces, options, contracts, matrices."
+  },
+  "excludedDirs": [],
+  "excludedFiles": [
+    {
+      "path": "docs/SUMMARY.md",
+      "why": "GitBook's table of contents, generated from this bundle by scripts/generate-summary.py. It is navigation OVER the bundle, not a concept in it - the same reason honua-server excludes its own SUMMARY.md."
+    },
+    {
+      "path": "docs/handler-interface.md",
+      "why": "The CLI dispatch extension point: how scanner tickets register backend handlers under honua_esri_assess.commands.scan_handlers without changing the command tree. An internal architecture contract for contributors adding handlers, not something a user of the CLI calls."
+    },
+    {
+      "path": "docs/samples/readiness-report.sample.md",
+      "why": "A golden fixture, not prose. tests/report/test_renderer.py compares the renderer's output against this file byte for byte, so anything added to it - including OKF frontmatter - fails the build. The page it illustrates, readiness-report.md, is in the bundle and links to it."
+    }
+  ],
+  "includedFiles": [],
+  "rejectedFields": {
+    "timestamp": "Not an OKF field in any version. The trust family spells the build stamp `generated`. Rejected by name here so the v0.1-shaped mistake honua-site shipped until 2026-09-10 cannot spread into this bundle."
+  },
+  "dateFields": [
+    "generated",
+    "verified",
+    "stale_after"
+  ],
+  "boundaryNote": "Almost everything here is prospect- or operator-facing by design: an assessment is something a customer runs against their own estate, so the schemas, the permissions it needs, and the guardrails it observes are all documentation they read before agreeing to run it. Only the handler extension point is internal. docs/console-script-collision.md is deliberately IN - installing both honua-sdk and honua-migrate collides on a console script name, which is a user-facing problem and more likely now that honua-migrate is on PyPI."
+}

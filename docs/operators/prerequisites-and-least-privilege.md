@@ -1,3 +1,9 @@
+---
+type: guide
+title: "What access the assessment needs"
+description: "Exactly which Esri permissions an assessment requires and why each one is needed, written so a security reviewer can approve it without guessing."
+tags: [permissions, least-privilege, security]
+---
 # Prerequisites & least-privilege access
 
 This page tells a prospective customer exactly **what access `honua-esri-assess`

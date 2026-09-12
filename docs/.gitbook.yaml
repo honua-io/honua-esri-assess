@@ -1,0 +1,15 @@
+# GitBook configuration for the Honua migration documentation.
+#
+# The table of contents is GENERATED from the OKF bundle, not hand-maintained:
+# `scripts/generate-summary.py` reads docs/okf-bundle.v1.json for the boundary
+# and each page's frontmatter `title`, then writes SUMMARY.md. So the human
+# navigation and the agent-traversable bundle cannot disagree — a page in the
+# bundle appears here, and a page excluded from it cannot be listed.
+#
+# Edit the frontmatter or the bundle, then re-run the generator. CI fails on
+# drift via `generate-summary.py --check`.
+root: ./
+
+structure:
+  readme: README.md
+  summary: SUMMARY.md

@@ -6,24 +6,8 @@ from typing import cast
 
 import click
 
-try:  # pragma: no cover - import-time wiring
-    # Typer >=0.13 vendors its own copy of Click under ``typer._click``.
-    # Exceptions raised by the Typer app are instances of those vendored
-    # classes, which are *not* subclasses of the standalone ``click`` package's
-    # exceptions, so we must catch both hierarchies here.
-    from typer import _click as _typer_click  # type: ignore[attr-defined]
-
-    _EXIT_EXCEPTIONS: tuple[type[BaseException], ...] = (
-        click.exceptions.Exit,
-        _typer_click.exceptions.Exit,
-    )
-    _CLICK_EXCEPTIONS: tuple[type[BaseException], ...] = (
-        click.ClickException,
-        _typer_click.exceptions.ClickException,
-    )
-except Exception:  # pragma: no cover - older Typer shares the standalone Click
-    _EXIT_EXCEPTIONS = (click.exceptions.Exit,)
-    _CLICK_EXCEPTIONS = (click.ClickException,)
+from honua_migrate._click_compat import CLICK_EXCEPTIONS as _CLICK_EXCEPTIONS
+from honua_migrate._click_compat import EXIT_EXCEPTIONS as _EXIT_EXCEPTIONS
 
 from .app import cli_app
 from ._deprecation import warn_legacy_surface

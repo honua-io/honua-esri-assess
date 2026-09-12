@@ -2,6 +2,7 @@
 type: reference
 title: "esri-footprint v0.2 schema"
 description: "An additive, back-compatible revision of the footprint schema. What v0.2 adds over v0.1 and why a v0.1 consumer keeps working."
+resource: "https://github.com/honua-io/honua-migrate/tree/trunk/schemas"
 tags: [schema, footprint, v0.2]
 ---
 # EsriFootprint.json v0.2

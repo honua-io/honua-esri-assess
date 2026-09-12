@@ -2,6 +2,7 @@
 type: reference
 title: "Migration artifact contracts"
 description: "The packaged JSON Schemas covering diagnostics, engine reports, plans, runs, results and reconciliation, and which contract version applies."
+resource: "https://github.com/honua-io/honua-migrate/tree/trunk/schemas"
 tags: [contracts, json-schema, artifacts]
 ---
 # Migration contract versioning

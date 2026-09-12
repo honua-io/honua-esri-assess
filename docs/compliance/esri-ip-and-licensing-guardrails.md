@@ -2,6 +2,7 @@
 type: concept
 title: "Esri IP and licensing guardrails"
 description: "The engineering policy that keeps assessment and migration clear of Esri intellectual property and license terms. Not legal advice, but the rules the tooling is built to."
+resource: "https://github.com/honua-io/honua-migrate/blob/trunk/docs/compliance/esri-ip-and-licensing-guardrails.md"
 tags: [compliance, licensing, policy]
 ---
 # Esri IP & Licensing Clean-Room Guardrails

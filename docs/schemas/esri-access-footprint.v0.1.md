@@ -2,6 +2,7 @@
 type: reference
 title: "esri-access-footprint v0.1 schema"
 description: "The access-footprint schema: what the assessment records about permissions and reachability, separate from the estate itself."
+resource: "https://github.com/honua-io/honua-migrate/tree/trunk/schemas"
 tags: [schema, access, permissions]
 ---
 # EsriAccessFootprint v0.1 reference

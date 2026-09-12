@@ -2,6 +2,7 @@
 type: reference
 title: "Schema versioning policy"
 description: "How the migration schemas are versioned while the line is pre-1.0, what counts as additive, and what forces a new major."
+resource: "https://github.com/honua-io/honua-migrate/tree/trunk/schemas"
 tags: [versioning, schemas, policy]
 ---
 # `EsriFootprint.json` Versioning Policy

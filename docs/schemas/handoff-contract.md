@@ -2,6 +2,7 @@
 type: reference
 title: "Assessment handoff contract"
 description: "The prospect-facing summary of what an assessment hands over: which artifacts, in what shape, and what each is for."
+resource: "https://github.com/honua-io/honua-migrate/tree/trunk/schemas"
 tags: [handoff, contracts, artifacts]
 ---
 # Handoff Contract: `EsriFootprint.json`

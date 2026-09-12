@@ -10,6 +10,26 @@ permissions:
   contents: read
 
 jobs:
+  okf-bundle:
+    name: OKF documentation bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      # docs/okf-bundle.v1.json declares which pages are published
+      # documentation. The gate proves every page inside the boundary carries
+      # valid Open Knowledge Format v0.2 frontmatter and that its relative
+      # links resolve.
+      - name: Verify the bundle
+        run: python3 scripts/check-okf-bundle.py
+
+      # SUMMARY.md is GitBook's table of contents, derived from the same
+      # boundary. A page added to the bundle and not the TOC - or the reverse -
+      # fails here rather than shipping a contents page that disagrees with
+      # the bundle.
+      - name: Verify the table of contents is derived
+        run: python3 scripts/generate-summary.py --check
+
   test:
     name: Python ${{ matrix.python-version }} unit tests
     runs-on: ubuntu-latest

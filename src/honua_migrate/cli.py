@@ -6,21 +6,8 @@ from typing import cast
 
 import click
 
-try:  # pragma: no cover - import-time compatibility wiring
-    from typer import _click as _typer_click  # type: ignore[attr-defined]
-
-    _EXIT_EXCEPTIONS: tuple[type[BaseException], ...] = (
-        click.exceptions.Exit,
-        _typer_click.exceptions.Exit,
-    )
-    _CLICK_EXCEPTIONS: tuple[type[BaseException], ...] = (
-        click.ClickException,
-        _typer_click.exceptions.ClickException,
-    )
-except Exception:  # pragma: no cover - older Typer shares standalone Click
-    _EXIT_EXCEPTIONS = (click.exceptions.Exit,)
-    _CLICK_EXCEPTIONS = (click.ClickException,)
-
+from ._click_compat import CLICK_EXCEPTIONS as _CLICK_EXCEPTIONS
+from ._click_compat import EXIT_EXCEPTIONS as _EXIT_EXCEPTIONS
 from .app import cli_app
 from .contracts import EXIT_INTERNAL_ERROR, MigrationError
 

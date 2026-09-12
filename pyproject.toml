@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "honua-migrate"
-version = "0.7.1"
+version = "0.7.2"
 description = "Open-source assessment and migration tooling for Honua."
 readme = "README.md"
 requires-python = ">=3.11"

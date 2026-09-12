@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.2](https://github.com/honua-io/honua-migrate/compare/honua-migrate-v0.7.1...honua-migrate-v0.7.2) (2026-09-12)
+
+
+### Documentation
+
+* **okf:** bring honua-migrate into the OKF bundle, and give it a front door ([#148](https://github.com/honua-io/honua-migrate/issues/148)) ([08d9e36](https://github.com/honua-io/honua-migrate/commit/08d9e3612c8abf6f01fdea3462e690b39da45512))
+* **okf:** give the pages a resource, so the bundle is a graph ([#151](https://github.com/honua-io/honua-migrate/issues/151)) ([2fcde9b](https://github.com/honua-io/honua-migrate/commit/2fcde9bbcf208afb0c03d81ee7e8c26d8c5ee707))
+* **okf:** take the generator's examples-section revision ([#150](https://github.com/honua-io/honua-migrate/issues/150)) ([a75a426](https://github.com/honua-io/honua-migrate/commit/a75a42664e50b3666da252ba00dcf364a6fdd4e0))
+
 ## [0.7.1](https://github.com/honua-io/honua-esri-assess/compare/honua-esri-assess-v0.7.0...honua-esri-assess-v0.7.1) (2026-06-10)
 
 

@@ -31,8 +31,14 @@ SCALAR_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
 # does, then lookup material. A page whose directory matches nothing lands in
 # "Guides", which is the honest default for prose.
 SECTION_ORDER = [
-    ("Start here", lambda rel, kind: rel in {"index.md", "README.md"} or kind == "index"),
+    # A front door is a top-level one. A nested `index` page - an example's own
+    # README, say - enumerates its directory, which is useful where it sits and
+    # misleading at the top of the contents: a reader arriving cold should not
+    # be offered five examples as places to start.
+    ("Start here", lambda rel, kind: rel in {"index.md", "README.md"}
+     or (kind == "index" and rel.count("/") <= 1)),
     ("Quickstart", lambda rel, kind: "quickstart" in rel),
+    ("Examples", lambda rel, kind: rel.startswith("examples/")),
     ("Guides", lambda rel, kind: kind == "guide"),
     ("Concepts", lambda rel, kind: kind == "concept"),
     ("Reference", lambda rel, kind: kind == "reference"),

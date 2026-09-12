@@ -1,15 +1,16 @@
 name: JavaScript migration package
 
+# `verify` is a required status check on trunk, so it has to report on every
+# pull request. A `paths:` filter on the trigger does not skip the job - it
+# stops the workflow from running at all, leaving the required check pending
+# forever and making any pull request that does not touch
+# packages/javascript/** unmergeable. The filter therefore lives inside the job
+# instead: the checkout is cheap, and everything after it is skipped when the
+# package is untouched.
 on:
   pull_request:
-    paths:
-      - "packages/javascript/**"
-      - ".github/workflows/javascript-migration.yml"
   push:
     branches: [trunk]
-    paths:
-      - "packages/javascript/**"
-      - ".github/workflows/javascript-migration.yml"
 
 permissions:
   contents: read
@@ -22,12 +23,40 @@ jobs:
         working-directory: packages/javascript
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Does this change touch the JavaScript package?
+        id: changed
+        working-directory: .
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE_REF" ] || ! git cat-file -e "$BASE_REF^{commit}" 2>/dev/null; then
+            echo "no merge base to compare against; verifying"
+            echo "value=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BASE_REF" HEAD -- \
+               packages/javascript .github/workflows/javascript-migration.yml \
+               | grep -q .; then
+            echo "value=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "packages/javascript is untouched; nothing to verify"
+            echo "value=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-node@v6
+        if: steps.changed.outputs.value == 'true'
         with:
           node-version: 20.19.0
           cache: npm
           cache-dependency-path: packages/javascript/package-lock.json
       - run: npm ci
+        if: steps.changed.outputs.value == 'true'
       - run: npm run typecheck
+        if: steps.changed.outputs.value == 'true'
       - run: npm run lint
+        if: steps.changed.outputs.value == 'true'
       - run: npm test
+        if: steps.changed.outputs.value == 'true'

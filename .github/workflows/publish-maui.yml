@@ -139,7 +139,7 @@ jobs:
         with:
           name: maui-dist-${{ github.sha }}
           path: dist
-      - uses: actions/attest-build-provenance@v3
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*.nupkg
       - name: Exchange OIDC identity for a temporary NuGet API key
